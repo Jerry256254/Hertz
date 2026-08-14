@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, Files, Paperclip, TriangleAlert, X } from "lucide-react";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import type { Budget, HertzSession, PersistedMessage } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
 import { MessageView } from "../components/MessageView";
@@ -135,6 +135,22 @@ export function SessionPage() {
 
   async function send() {
     if ((!text && images.length === 0) || isRunning) return;
+
+    if (text.trim() === "/compact") {
+      setIsRunning(true);
+      setRunError(undefined);
+      setText("");
+      try {
+        await api.post(`/sessions/${sessionId}/compact`);
+      } catch (err) {
+        setRunError(err instanceof ApiError ? err.message : "Couldn't compact this chat");
+      } finally {
+        setIsRunning(false);
+        void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      }
+      return;
+    }
+
     setIsRunning(true);
     setRunError(undefined);
     const payload = { text, images };
@@ -269,7 +285,9 @@ export function SessionPage() {
               onChange={(e) => setText(e.target.value)}
               onKeyDown={onKeyDown}
               onPaste={(e) => void onFiles(e.clipboardData.files)}
-              placeholder={isRunning ? "Agent is working…" : "Message the agent — drop or paste images, Enter to send"}
+              placeholder={
+                isRunning ? "Agent is working…" : "Message the agent — drop or paste images, Enter to send, /compact to shrink context"
+              }
               disabled={isRunning}
               rows={1}
               className="max-h-[200px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle outline-none disabled:opacity-60"

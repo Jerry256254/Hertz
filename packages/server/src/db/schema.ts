@@ -52,6 +52,37 @@ export const agents = sqliteTable("agents", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/**
+ * Additional projects an agent works on beyond its home project (agents.projectId).
+ * Employees (not managers) can be attached to any number of projects so the same
+ * identity — and the same memory below — carries across all of them.
+ */
+export const agentProjects = sqliteTable("agent_projects", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * An agent's own persistent notes, self-managed via the remember/forget tools and
+ * injected into its system prompt on every call regardless of which session,
+ * project, or meeting it's in — this is what makes memory survive across all of
+ * them rather than living inside one session's message history.
+ */
+export const agentMemory = sqliteTable("agent_memory", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  note: text("note").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
   agentId: text("agent_id")
@@ -102,9 +133,23 @@ export const providerConfigs = sqliteTable("provider_configs", {
   provider: text("provider", { enum: ["anthropic", "openai", "google", "openai-compatible"] }).notNull(),
   label: text("label").notNull(),
   baseUrl: text("base_url"),
-  /** JSON-serialized {iv, authTag, ciphertext}, AES-256-GCM. Decrypted only in-process, never sent to clients. */
+  /** JSON-serialized {iv, authTag, ciphertext}, AES-256-GCM. The pool's first/primary key; decrypted only in-process, never sent to clients. */
   encryptedKey: text("encrypted_key").notNull(),
   defaultModel: text("default_model"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Extra keys beyond provider_configs.encrypted_key, for accounts that hold several
+ * API keys (e.g. multiple billing accounts) and want automatic failover: when a
+ * call hits a rate limit, the next key in the pool is tried before giving up.
+ */
+export const providerConfigKeys = sqliteTable("provider_config_keys", {
+  id: text("id").primaryKey(),
+  providerConfigId: text("provider_config_id")
+    .notNull()
+    .references(() => providerConfigs.id, { onDelete: "cascade" }),
+  encryptedKey: text("encrypted_key").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -179,6 +224,36 @@ export const meetingMessages = sqliteTable("meeting_messages", {
   senderAgentId: text("sender_agent_id"),
   content: text("content").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * A task is work the user hands to a chosen subset of the team at once — not
+ * everyone, only whoever is picked. Creating one starts a real session per
+ * assignee, seeded with the task brief, so each assignee actually goes to work
+ * rather than just being "notified."
+ */
+export const tasks = sqliteTable("tasks", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  status: text("status", { enum: ["open", "in_progress", "done"] }).notNull().default("open"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const taskAssignees = sqliteTable("task_assignees", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  /** The session where this assignee's work on the task actually happens. */
+  sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
 });
 
 export const sessionTokens = sqliteTable("session_tokens", {

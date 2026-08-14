@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, KeyRound, Search, Trash2 } from "lucide-react";
+import { Check, KeyRound, Plus, Search, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
-import type { ModelInfo, PresetCategory, ProviderConfig, ProviderPreset } from "../lib/types";
+import type { ModelInfo, PresetCategory, ProviderConfig, ProviderKey, ProviderPreset } from "../lib/types";
 import { Avatar, Badge, Button, Card, IconButton, Input, Label } from "../components/ui";
+import { DeleteButton } from "../components/DeleteButton";
 
 const CATEGORY_LABEL: Record<PresetCategory, string> = {
   frontier: "Frontier labs",
@@ -83,11 +84,81 @@ function AddProviderForm({ preset, onDone }: { preset: ProviderPreset; onDone: (
   );
 }
 
+function KeyPool({ providerId }: { providerId: string }) {
+  const queryClient = useQueryClient();
+  const [newKey, setNewKey] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const { data } = useQuery({
+    queryKey: ["provider-keys", providerId],
+    queryFn: () => api.get<{ keys: ProviderKey[] }>(`/providers/${providerId}/keys`),
+  });
+
+  const addKey = useMutation({
+    mutationFn: () => api.post(`/providers/${providerId}/keys`, { apiKey: newKey }),
+    onSuccess: () => {
+      setNewKey("");
+      void queryClient.invalidateQueries({ queryKey: ["provider-keys", providerId] });
+      void queryClient.invalidateQueries({ queryKey: ["providers"] });
+    },
+    onError: (err) => setError((err as Error).message),
+  });
+
+  const removeKey = useMutation({
+    mutationFn: (keyId: string) => api.delete(`/providers/${providerId}/keys/${keyId}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-keys", providerId] });
+      void queryClient.invalidateQueries({ queryKey: ["providers"] });
+    },
+  });
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(undefined);
+    if (newKey.trim()) addKey.mutate();
+  }
+
+  const keys = data?.keys ?? [];
+
+  return (
+    <div className="mt-2.5 border-t border-border pt-2.5">
+      <p className="mb-2 text-xs text-fg-subtle">
+        Extra keys let this provider rotate to the next one automatically when a request hits a rate limit — useful if
+        you have several accounts.
+      </p>
+      {keys.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {keys.map((k) => (
+            <li key={k.id} className="mono flex items-center justify-between rounded-md bg-bg-sunken px-2.5 py-1.5 text-xs text-fg-muted">
+              {k.keyHint}
+              <DeleteButton title="Remove this key" onDelete={() => removeKey.mutate(k.id)} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={onSubmit} className="flex gap-1.5">
+        <Input
+          type="password"
+          placeholder="Additional API key"
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          className="h-8 flex-1 text-xs"
+        />
+        <Button type="submit" variant="secondary" size="sm" disabled={addKey.isPending || !newKey.trim()}>
+          <Plus size={13} /> Add key
+        </Button>
+      </form>
+      {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
+    </div>
+  );
+}
+
 function ConfiguredProviderRow({ provider }: { provider: ProviderConfig }) {
   const queryClient = useQueryClient();
   const [models, setModels] = useState<ModelInfo[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showKeys, setShowKeys] = useState(false);
 
   const scan = useMutation({
     mutationFn: () => api.post<{ models: ModelInfo[] }>(`/providers/${provider.id}/scan`),
@@ -112,6 +183,7 @@ function ConfiguredProviderRow({ provider }: { provider: ProviderConfig }) {
               {provider.provider} · {provider.keyHint}
             </p>
           </div>
+          {provider.keyCount > 1 && <Badge tone="neutral">{provider.keyCount} keys</Badge>}
         </div>
         {confirmingDelete ? (
           <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -128,6 +200,9 @@ function ConfiguredProviderRow({ provider }: { provider: ProviderConfig }) {
             <Button variant="secondary" size="sm" onClick={() => scan.mutate()} disabled={scan.isPending}>
               {scan.isPending ? "Scanning…" : "Scan models"}
             </Button>
+            <IconButton title="Manage keys" onClick={() => setShowKeys((v) => !v)}>
+              <KeyRound size={14} />
+            </IconButton>
             <IconButton title="Delete provider" onClick={() => setConfirmingDelete(true)}>
               <Trash2 size={14} />
             </IconButton>
@@ -135,6 +210,7 @@ function ConfiguredProviderRow({ provider }: { provider: ProviderConfig }) {
         )}
       </div>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+      {showKeys && <KeyPool providerId={provider.id} />}
       {models && (
         <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-border pt-2.5">
           {models.length === 0 && <span className="text-xs text-fg-subtle">No models returned.</span>}

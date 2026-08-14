@@ -31,6 +31,13 @@ export interface ProviderConfig {
   baseUrl?: string;
   defaultModel?: string;
   keyHint: string;
+  keyCount: number;
+  createdAt: string;
+}
+
+export interface ProviderKey {
+  id: string;
+  keyHint: string;
   createdAt: string;
 }
 
@@ -89,6 +96,34 @@ export interface Agent {
   mode: "manual" | "plan" | "auto";
   status: "idle" | "running" | "error";
   createdAt: string;
+  homeProjectName?: string;
+}
+
+export interface AgentMemoryNote {
+  id: string;
+  agentId: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface HertzTask {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  status: "open" | "in_progress" | "done";
+  createdAt: string;
+  updatedAt: string;
+  assignees: TaskAssignee[];
+}
+
+export interface TaskAssignee {
+  id: string;
+  taskId: string;
+  agentId: string;
+  sessionId: string | null;
+  agentName: string;
+  agentRole: AgentRole;
 }
 
 export interface HertzSession {

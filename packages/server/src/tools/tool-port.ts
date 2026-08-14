@@ -4,7 +4,8 @@ import { ALL_TOOLS, runTool, toProviderToolDefinitions } from "@kuclab-hertz/too
 import type { AgentLoopManager, ToolPort } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { agents } from "../db/schema.js";
-import { createOrgTools } from "./org-tools.js";
+import { createOrgTools, type OrgToolDef } from "./org-tools.js";
+import { createMemoryTools } from "./memory-tools.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 
 export interface ToolPortDeps {
@@ -20,25 +21,33 @@ function toJsonSchema(schema: import("zod").ZodTypeAny): Record<string, unknown>
   return json;
 }
 
-/** Only manager-role agents get the org-management tools (hire_employee, list_employees, assign_task). */
+function toDefs(tools: OrgToolDef[]) {
+  return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: toJsonSchema(t.inputSchema) }));
+}
+
+/**
+ * Every agent gets the base fs/shell/web/todo tools plus memory (remember/
+ * list_memory/forget). Only manager-role agents additionally get the
+ * org-management tools (hire_employee, list_employees, assign_task).
+ */
 export function createToolPort(deps: ToolPortDeps): ToolPort {
   const orgTools = createOrgTools(deps);
-  const orgToolsByName = new Map(orgTools.map((t) => [t.name, t]));
-  const orgToolDefs = orgTools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    inputSchema: toJsonSchema(t.inputSchema),
-  }));
+  const memoryTools = createMemoryTools(deps.db);
+  const allByName = new Map([...orgTools, ...memoryTools].map((t) => [t.name, t]));
+
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
+  const memoryDefs = toDefs(memoryTools);
+  const orgDefs = toDefs(orgTools);
 
   return {
     async listDefinitions(agentId) {
       const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
-      return rows[0]?.role === "manager" ? [...baseDefs, ...orgToolDefs] : baseDefs;
+      const defs = [...baseDefs, ...memoryDefs];
+      return rows[0]?.role === "manager" ? [...defs, ...orgDefs] : defs;
     },
     run(name, input, ctx) {
-      const orgTool = orgToolsByName.get(name);
-      if (orgTool) return orgTool.execute(input, ctx);
+      const tool = allByName.get(name);
+      if (tool) return tool.execute(input, ctx);
       return runTool(name, input, ctx);
     },
   };

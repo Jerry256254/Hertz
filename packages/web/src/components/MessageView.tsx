@@ -3,6 +3,7 @@ import {
   FilePlus,
   Globe,
   ListChecks,
+  Minimize2,
   Search,
   Terminal,
   TriangleAlert,
@@ -55,6 +56,21 @@ function ToolActivity({
 }
 
 export function MessageView({ message }: { message: PersistedMessage }) {
+  if (message.purpose === "summarization") {
+    const text = message.content.filter((b) => b.type === "text").map((b) => (b.type === "text" ? b.text : "")).join("\n");
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-2">
+        <details className="group rounded-lg border border-border bg-bg-sunken px-3 py-2 text-xs">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-fg-muted marker:hidden">
+            <Minimize2 size={13} className="flex-shrink-0" />
+            <span>Chat compacted — earlier history summarized to save context</span>
+          </summary>
+          <div className="mt-2 whitespace-pre-wrap text-fg-muted">{text}</div>
+        </details>
+      </div>
+    );
+  }
+
   if (message.role === "user") {
     const textBlocks = message.content.filter((b) => b.type === "text");
     const imageBlocks = message.content.filter((b) => b.type === "image");

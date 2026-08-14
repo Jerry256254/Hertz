@@ -1,6 +1,6 @@
 {
   "allowedCommands": [
-    "ls", "cat", "grep", "rg", "find", "git",
+    "ls", "cat", "grep", "rg", "find", "git", "gh",
     "npm", "pnpm", "node", "python3", "pip",
     "mkdir", "mv", "cp", "rm", "echo", "pwd",
     "wc", "head", "tail", "diff", "tree"

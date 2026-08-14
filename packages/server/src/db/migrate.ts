@@ -46,6 +46,14 @@ CREATE TABLE IF NOT EXISTS provider_configs (
 );
 CREATE INDEX IF NOT EXISTS idx_provider_configs_user ON provider_configs(user_id);
 
+CREATE TABLE IF NOT EXISTS provider_config_keys (
+  id TEXT PRIMARY KEY,
+  provider_config_id TEXT NOT NULL REFERENCES provider_configs(id) ON DELETE CASCADE,
+  encrypted_key TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_provider_config_keys_config ON provider_config_keys(provider_config_id);
+
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -59,6 +67,23 @@ CREATE TABLE IF NOT EXISTS agents (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
+
+CREATE TABLE IF NOT EXISTS agent_projects (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_projects_agent ON agent_projects(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_projects_project ON agent_projects(project_id);
+
+CREATE TABLE IF NOT EXISTS agent_memory (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  note TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_agent ON agent_memory(agent_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
@@ -146,6 +171,25 @@ CREATE TABLE IF NOT EXISTS meeting_messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_meeting_messages_meeting ON meeting_messages(meeting_id);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+
+CREATE TABLE IF NOT EXISTS task_assignees (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
 
 CREATE TABLE IF NOT EXISTS session_tokens (
   id TEXT PRIMARY KEY,

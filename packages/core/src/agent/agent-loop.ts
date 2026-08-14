@@ -52,10 +52,15 @@ function computeCost(usage: UsageInfo, pricing?: ModelPricing): number {
 }
 
 function toChatMessages(history: PersistedMessage[]): ChatMessage[] {
-  return history
+  const cutoff = history.findLastIndex((m) => m.purpose === "summarization");
+  const relevant = cutoff === -1 ? history : history.slice(cutoff);
+  return relevant
     .filter((m): m is PersistedMessage & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
     .map((m) => ({ role: m.role, content: m.content }));
 }
+
+const COMPACT_SYSTEM_PROMPT =
+  "Summarize this conversation into a dense briefing so the agent can resume with full working context but far fewer tokens. Capture concretely: what the user wants, key decisions made and why, files/paths touched and their current state, what's already done, and what's left to do. This replaces the raw history entirely — write it as a briefing for yourself, not commentary about the conversation.";
 
 interface PendingToolUse {
   id: string;
@@ -135,6 +140,68 @@ export class AgentLoopManager {
         reject(err as Error);
       }
     });
+  }
+
+  /**
+   * Replaces everything before this point in the session with a single dense
+   * summary message (marked `purpose: 'summarization'`), so future turns' history
+   * is cheap again. Nothing is deleted from the DB — toChatMessages() just starts
+   * reading from the most recent summarization marker instead of the beginning.
+   */
+  async compact(config: {
+    sessionId: string;
+    userId: string;
+    providerConfigId: string;
+    model: string;
+  }): Promise<PersistedMessage> {
+    if (this.running.has(config.sessionId)) {
+      throw new Error(`Session ${config.sessionId} is running — wait for it to finish first`);
+    }
+    const { persistence, providers } = this.deps;
+    const history = await persistence.listMessages(config.sessionId);
+    const chatMessages = toChatMessages(history);
+    if (chatMessages.length === 0) {
+      throw new Error("Nothing to compact yet");
+    }
+
+    const adapter = await providers.getAdapter(config.providerConfigId);
+    const res = await adapter.chat({
+      model: config.model,
+      system: COMPACT_SYSTEM_PROMPT,
+      messages: chatMessages,
+      maxTokens: 2048,
+    });
+    const summaryText =
+      res.content
+        .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+        .map((b) => b.text)
+        .join("\n")
+        .trim() || "(summary came back empty)";
+
+    const cost = computeCost(res.usage, adapter.pricing(config.model));
+    const saved = await persistence.appendMessage({
+      sessionId: config.sessionId,
+      role: "user",
+      content: [{ type: "text", text: `[Conversation summary — earlier messages compacted to save context]\n\n${summaryText}` }],
+      tokensIn: res.usage.inputTokens,
+      tokensOut: res.usage.outputTokens,
+      cachedTokensIn: res.usage.cachedInputTokens ?? 0,
+      cost,
+      purpose: "summarization",
+    });
+    await persistence.recordUsage({
+      sessionId: config.sessionId,
+      userId: config.userId,
+      provider: adapter.id,
+      model: config.model,
+      purpose: "summarization",
+      tokensIn: res.usage.inputTokens,
+      tokensOut: res.usage.outputTokens,
+      cachedTokensIn: res.usage.cachedInputTokens ?? 0,
+      cost,
+    });
+    this.emit(config.sessionId, { type: "message_saved", message: saved });
+    return saved;
   }
 
   /** Enqueues a user turn and runs the agent loop to completion (or a tool-free reply) in the background. */

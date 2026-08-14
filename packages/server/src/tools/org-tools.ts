@@ -7,6 +7,7 @@ import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { agents, projectRoots, sessions, users } from "../db/schema.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
+import { buildSystemPrompt } from "../agents/system-prompt.js";
 
 export const AGENT_ROLES = [
   "manager",
@@ -21,7 +22,7 @@ export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export function defaultSystemPromptFor(role: AgentRole, isManager = false): string {
   const base =
-    "You are a KucLab Hertz agent working directly on the user's project files, not a chat assistant. Use the available tools to read, write, and edit real files, run allowlisted shell commands, fetch web pages, and search the codebase. Prefer ranged reads over whole-file reads. Be direct and make real changes rather than only describing them.\n\nYou have real internet access via web_fetch (a specific-URL fetcher, not a search engine — for search, fetch https://html.duckduckgo.com/html/?q=<query>).";
+    "You are a KucLab Hertz agent working directly on the user's project files, not a chat assistant. Use the available tools to read, write, and edit real files, run allowlisted shell commands (including gh, the GitHub CLI), fetch web pages, and search the codebase. Prefer ranged reads over whole-file reads. Be direct and make real changes rather than only describing them.\n\nYou have real internet access via web_fetch (a specific-URL fetcher, not a search engine — for search, fetch https://html.duckduckgo.com/html/?q=<query>).\n\nYou have your own persistent memory (remember/list_memory/forget) that carries across every chat, project, and meeting you're in — the user can see it too. Use it for things worth recalling later: decisions, preferences, context that would otherwise be re-explained every time.";
   const roleLine: Record<AgentRole, string> = {
     manager:
       "You are the project's manager: the user's direct report and the admin of this project's team, subordinate only to the user. Hire employees with hire_employee, check on the team with list_employees, and delegate work with assign_task — then report back to the user with the outcome, not just a plan.",
@@ -107,7 +108,7 @@ async function runDelegatedTask(
         rootId: mainRoot.rootId,
         model: employee.model,
         providerConfigId: employee.providerConfigId,
-        systemPrompt: employee.systemPrompt ?? "",
+        systemPrompt: await buildSystemPrompt(db, employee),
       },
       content,
     );

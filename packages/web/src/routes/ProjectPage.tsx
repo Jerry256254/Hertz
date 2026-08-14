@@ -1,14 +1,29 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, FolderGit2, MessageSquarePlus, Plus, Search, Video } from "lucide-react";
+import { BrainCircuit, Bot, Check, FolderGit2, ListTodo, MessageSquarePlus, Plus, Search, UserPlus, Video } from "lucide-react";
 import { api } from "../lib/api";
-import type { Agent, AgentRole, Meeting, ModelInfo, Project, ProviderConfig } from "../lib/types";
+import type { Agent, AgentRole, HertzTask, Meeting, ModelInfo, Project, ProviderConfig } from "../lib/types";
 import { AGENT_ROLES, ROLE_LABEL } from "../lib/types";
 import { FileExplorer } from "../components/FileExplorer";
-import { Avatar, Badge, Button, Card, EmptyState, Input, Label } from "../components/ui";
+import { Avatar, Badge, Button, Card, EmptyState, IconButton, Input, Label } from "../components/ui";
 import { NewMeetingDialog } from "../components/NewMeetingDialog";
+import { NewTaskDialog } from "../components/NewTaskDialog";
 import { DeleteButton } from "../components/DeleteButton";
+import { AgentMemoryDialog } from "../components/AgentMemoryDialog";
+import { AttachEmployeeDialog } from "../components/AttachEmployeeDialog";
+
+const TASK_STATUS_TONE: Record<HertzTask["status"], "neutral" | "accent" | "success"> = {
+  open: "neutral",
+  in_progress: "accent",
+  done: "success",
+};
+
+const TASK_STATUS_LABEL: Record<HertzTask["status"], string> = {
+  open: "Open",
+  in_progress: "In progress",
+  done: "Done",
+};
 
 function ModelPicker({
   providerConfigId,
@@ -180,6 +195,9 @@ export function ProjectPage() {
   const [showAgentForm, setShowAgentForm] = useState(false);
   const [showManagerForm, setShowManagerForm] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showAttachDialog, setShowAttachDialog] = useState(false);
+  const [memoryAgent, setMemoryAgent] = useState<{ id: string; name: string } | undefined>(undefined);
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
@@ -196,8 +214,13 @@ export function ProjectPage() {
     queryFn: () => api.get<{ meetings: Meeting[] }>(`/projects/${projectId}/meetings`),
   });
 
+  const { data: tasksData } = useQuery({
+    queryKey: ["tasks", projectId],
+    queryFn: () => api.get<{ tasks: HertzTask[] }>(`/projects/${projectId}/tasks`),
+  });
+
   const newChat = useMutation({
-    mutationFn: (agentId: string) => api.post<{ id: string }>(`/agents/${agentId}/sessions`),
+    mutationFn: (agentId: string) => api.post<{ id: string }>(`/agents/${agentId}/sessions`, { projectId }),
     onSuccess: (res) => navigate(`/projects/${projectId}/sessions/${res.id}`),
   });
 
@@ -206,15 +229,32 @@ export function ProjectPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agents", projectId] }),
   });
 
+  const detachAgent = useMutation({
+    mutationFn: (agentId: string) => api.delete(`/projects/${projectId}/agents/${agentId}/attach`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agents", projectId] }),
+  });
+
   const deleteMeeting = useMutation({
     mutationFn: (meetingId: string) => api.delete(`/meetings/${meetingId}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["meetings", projectId] }),
+  });
+
+  const cycleTaskStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: HertzTask["status"] }) => api.patch(`/tasks/${id}`, { status }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
+  });
+
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => api.delete(`/tasks/${id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
   });
 
   const agents = agentsData?.agents ?? [];
   const manager = agents.find((a) => a.role === "manager");
   const employees = agents.filter((a) => a.role !== "manager");
   const meetings = meetingsData?.meetings ?? [];
+  const tasks = tasksData?.tasks ?? [];
+  const NEXT_TASK_STATUS: Record<HertzTask["status"], HertzTask["status"]> = { open: "in_progress", in_progress: "done", done: "open" };
 
   return (
     <div className="grid h-full grid-cols-[1fr_320px]">
@@ -261,6 +301,9 @@ export function ProjectPage() {
                 <Badge tone="accent">Manager</Badge>
               </div>
               <div className="flex flex-shrink-0 items-center gap-2">
+                <IconButton title="Memory" onClick={() => setMemoryAgent({ id: manager.id, name: manager.name })}>
+                  <BrainCircuit size={15} />
+                </IconButton>
                 <Button variant="primary" size="sm" onClick={() => newChat.mutate(manager.id)} disabled={newChat.isPending}>
                   <MessageSquarePlus size={13} /> Chat
                 </Button>
@@ -272,12 +315,20 @@ export function ProjectPage() {
 
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Team</h2>
-          <button
-            onClick={() => setShowAgentForm((v) => !v)}
-            className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
-          >
-            <Plus size={13} /> New agent
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowAttachDialog(true)}
+              className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
+            >
+              <UserPlus size={13} /> Add existing
+            </button>
+            <button
+              onClick={() => setShowAgentForm((v) => !v)}
+              className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
+            >
+              <Plus size={13} /> New agent
+            </button>
+          </div>
         </div>
 
         {employees.length === 0 && !showAgentForm && (
@@ -287,27 +338,37 @@ export function ProjectPage() {
         )}
 
         <ul className="space-y-2">
-          {employees.map((a) => (
-            <li key={a.id}>
-              <Card className="flex items-center justify-between p-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <Avatar label={a.name} />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-fg">{a.name}</p>
-                    <p className="mono truncate text-xs text-fg-subtle">{a.model}</p>
+          {employees.map((a) => {
+            const isAttached = a.projectId !== projectId;
+            return (
+              <li key={a.id}>
+                <Card className="flex items-center justify-between p-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar label={a.name} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-fg">{a.name}</p>
+                      <p className="mono truncate text-xs text-fg-subtle">{a.model}</p>
+                    </div>
+                    <Badge tone="neutral">{ROLE_LABEL[a.role]}</Badge>
+                    {isAttached && <Badge tone="neutral">attached</Badge>}
+                    {a.status === "running" && <Badge tone="accent">running</Badge>}
                   </div>
-                  <Badge tone="neutral">{ROLE_LABEL[a.role]}</Badge>
-                  {a.status === "running" && <Badge tone="accent">running</Badge>}
-                </div>
-                <div className="flex flex-shrink-0 items-center gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => newChat.mutate(a.id)} disabled={newChat.isPending}>
-                    <MessageSquarePlus size={13} /> New chat
-                  </Button>
-                  <DeleteButton title="Remove employee" onDelete={() => deleteAgent.mutate(a.id)} />
-                </div>
-              </Card>
-            </li>
-          ))}
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <IconButton title="Memory" onClick={() => setMemoryAgent({ id: a.id, name: a.name })}>
+                      <BrainCircuit size={15} />
+                    </IconButton>
+                    <Button variant="secondary" size="sm" onClick={() => newChat.mutate(a.id)} disabled={newChat.isPending}>
+                      <MessageSquarePlus size={13} /> New chat
+                    </Button>
+                    <DeleteButton
+                      title={isAttached ? "Remove from this project" : "Delete employee"}
+                      onDelete={() => (isAttached ? detachAgent.mutate(a.id) : deleteAgent.mutate(a.id))}
+                    />
+                  </div>
+                </Card>
+              </li>
+            );
+          })}
         </ul>
 
         {showAgentForm && (
@@ -351,6 +412,63 @@ export function ProjectPage() {
           </ul>
         )}
 
+        <div className="mb-3 mt-8 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Tasks</h2>
+          <button
+            onClick={() => setShowTaskDialog(true)}
+            disabled={employees.length < 1}
+            className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg disabled:opacity-40"
+          >
+            <Plus size={13} /> New task
+          </button>
+        </div>
+        {tasks.length === 0 ? (
+          <p className="text-sm text-fg-subtle">
+            Create a task and pick exactly which employees should work on it — everyone else stays untouched.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {tasks.map((t) => (
+              <li key={t.id}>
+                <Card className="p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <ListTodo size={14} className="mt-0.5 flex-shrink-0 text-accent" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-fg">{t.title}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-fg-subtle">{t.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <button onClick={() => cycleTaskStatus.mutate({ id: t.id, status: NEXT_TASK_STATUS[t.status] })}>
+                        <Badge tone={TASK_STATUS_TONE[t.status]}>{TASK_STATUS_LABEL[t.status]}</Badge>
+                      </button>
+                      <DeleteButton title="Delete task" onDelete={() => deleteTask.mutate(t.id)} />
+                    </div>
+                  </div>
+                  {t.assignees.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5 pl-6">
+                      {t.assignees.map((a) => (
+                        <button
+                          key={a.id}
+                          disabled={!a.sessionId}
+                          onClick={() => a.sessionId && navigate(`/projects/${projectId}/sessions/${a.sessionId}`)}
+                          className="flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-50"
+                        >
+                          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-bg-sunken text-[9px] font-semibold text-fg-muted">
+                            {a.agentName.slice(0, 1).toUpperCase()}
+                          </span>
+                          {a.agentName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+
         <NewMeetingDialog
           open={showMeetingDialog}
           onOpenChange={setShowMeetingDialog}
@@ -358,6 +476,21 @@ export function ProjectPage() {
           agents={agents}
           onCreated={(meetingId) => navigate(`/projects/${projectId}/meetings/${meetingId}`)}
         />
+        <NewTaskDialog open={showTaskDialog} onOpenChange={setShowTaskDialog} projectId={projectId!} agents={agents} />
+        <AttachEmployeeDialog
+          open={showAttachDialog}
+          onOpenChange={setShowAttachDialog}
+          projectId={projectId!}
+          currentTeamIds={new Set(agents.map((a) => a.id))}
+        />
+        {memoryAgent && (
+          <AgentMemoryDialog
+            open={!!memoryAgent}
+            onOpenChange={(open) => !open && setMemoryAgent(undefined)}
+            agentId={memoryAgent.id}
+            agentName={memoryAgent.name}
+          />
+        )}
       </div>
       {projectId && <FileExplorer projectId={projectId} />}
     </div>

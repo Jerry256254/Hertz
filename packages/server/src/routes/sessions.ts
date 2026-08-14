@@ -1,18 +1,21 @@
 import type { FastifyInstance } from "fastify";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
 import type { AppContext } from "../context.js";
-import { agents, projectRoots, projects, sessions } from "../db/schema.js";
+import { agentProjects, agents, projectRoots, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
+import { buildSystemPrompt } from "../agents/system-prompt.js";
 
 const DEFAULT_TITLE = "New chat";
 
 const createSessionSchema = z.object({
   title: z.string().optional(),
+  /** Which project this chat is about. Defaults to the agent's home project — required when the agent has been attached to more than one. */
+  projectId: z.string().optional(),
 });
 
 const renameSessionSchema = z.object({
@@ -45,12 +48,24 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const agent = agentRows[0];
     if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
+    const projectId = parsed.data.projectId ?? agent.projectId;
+    if (projectId !== agent.projectId) {
+      const attached = await ctx.db
+        .select({ id: agentProjects.id })
+        .from(agentProjects)
+        .where(and(eq(agentProjects.agentId, agentId), eq(agentProjects.projectId, projectId)))
+        .limit(1);
+      if (attached.length === 0) {
+        return reply.code(400).send({ error: "This agent isn't on that project's team" });
+      }
+    }
+
     const id = newId();
     const now = new Date();
     await ctx.db.insert(sessions).values({
       id,
       agentId,
-      projectId: agent.projectId,
+      projectId,
       title: parsed.data.title ?? DEFAULT_TITLE,
       status: "active",
       createdAt: now,
@@ -131,6 +146,33 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     return reply.code(204).send();
   });
 
+  instance.post("/api/sessions/:id/compact", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (ctx.agentLoop.isRunning(id)) {
+      return reply.code(409).send({ error: "Session is already running" });
+    }
+
+    const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
+    const session = sessionRows[0];
+    if (!session) return reply.code(404).send({ error: "Session not found" });
+
+    const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1);
+    const agent = agentRows[0];
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+    try {
+      const summary = await ctx.agentLoop.compact({
+        sessionId: id,
+        userId: request.user!.id,
+        providerConfigId: agent.providerConfigId,
+        model: agent.model,
+      });
+      return { message: summary };
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+  });
+
   instance.post("/api/sessions/:id/messages", async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = sendMessageSchema.safeParse(request.body);
@@ -181,7 +223,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         rootId: mainRoot.rootId,
         model: agent.model,
         providerConfigId: agent.providerConfigId,
-        systemPrompt: agent.systemPrompt ?? "",
+        systemPrompt: await buildSystemPrompt(ctx.db, agent),
       },
       content,
     );

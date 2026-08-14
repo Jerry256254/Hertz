@@ -5,6 +5,7 @@ import type { ProviderPort } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { agents, meetingMessages, meetingParticipants, meetings, usageRecords } from "../db/schema.js";
+import { buildSystemPrompt } from "../agents/system-prompt.js";
 
 export interface MeetingChatMessage {
   id: string;
@@ -126,7 +127,8 @@ export class MeetingOrchestrator {
       const transcript = await this.buildTranscript(meetingId);
       const adapter = await providers.getAdapter(agent.providerConfigId);
 
-      const system = `${agent.systemPrompt ?? ""}\n\nYou are in a live meeting with the user and teammates. Respond as yourself (${agent.name}, ${agent.role}) in your own voice — concise, no stage directions, no re-introducing yourself. If you have nothing to add, say so briefly.`;
+      const basePrompt = await buildSystemPrompt(db, agent);
+      const system = `${basePrompt}\n\nYou are in a live meeting with the user and teammates. Respond as yourself (${agent.name}, ${agent.role}) in your own voice — concise, no stage directions, no re-introducing yourself. If you have nothing to add, say so briefly.`;
 
       const response = await adapter.chat({
         model: agent.model,

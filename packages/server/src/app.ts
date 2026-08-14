@@ -15,6 +15,7 @@ import { registerFsBrowseRoutes } from "./routes/fs-browse.js";
 import { registerUsageRoutes } from "./routes/usage.js";
 import { registerSetupRoutes } from "./routes/setup.js";
 import { registerMeetingRoutes } from "./routes/meetings.js";
+import { registerTaskRoutes } from "./routes/tasks.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
 import { registerMeetingWebsocket } from "./ws/meeting-hub.js";
 
@@ -44,6 +45,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerFsBrowseRoutes(app, ctx);
   registerUsageRoutes(app, ctx);
   registerMeetingRoutes(app, ctx);
+  registerTaskRoutes(app, ctx);
   registerSessionWebsocket(app, ctx);
   registerMeetingWebsocket(app, ctx);
 
