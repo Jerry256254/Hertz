@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, ChevronUp, File, Folder } from "lucide-react";
 import { api } from "../lib/api";
 import type { FileEntry } from "../lib/types";
+
+const CodeViewer = lazy(() => import("./CodeViewer").then((m) => ({ default: m.CodeViewer })));
 
 export function FileExplorer({ projectId }: { projectId: string }) {
   const [currentPath, setCurrentPath] = useState(".");
@@ -46,20 +49,37 @@ export function FileExplorer({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full flex-col border-l border-border">
       <div className="flex h-8 flex-shrink-0 items-center gap-2 border-b border-border px-2">
-        <button onClick={goUp} disabled={currentPath === "."} className="text-xs text-fg-muted hover:text-fg disabled:opacity-30">
-          ↑ up
+        <button
+          onClick={goUp}
+          disabled={currentPath === "."}
+          className="flex items-center text-fg-muted hover:text-fg disabled:opacity-30"
+        >
+          <ChevronUp size={13} />
         </button>
-        <span className="truncate font-mono text-xs text-fg-muted">{currentPath}</span>
-        {isFetching && <span className="text-xs text-fg-muted">·</span>}
+        <span className="mono truncate text-xs text-fg-muted">{currentPath === "." ? "/" : currentPath}</span>
+        {isFetching && <span className="h-1 w-1 flex-shrink-0 rounded-full bg-fg-subtle" />}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {previewPath ? (
-          <div className="p-2">
-            <button onClick={() => setPreviewPath(undefined)} className="mb-2 text-xs text-fg-muted hover:text-fg">
-              ← back
+          <div className="flex h-full flex-col">
+            <button
+              onClick={() => setPreviewPath(undefined)}
+              className="flex flex-shrink-0 items-center gap-1 px-2 py-1.5 text-xs text-fg-muted hover:text-fg"
+            >
+              <ArrowLeft size={12} /> back
             </button>
-            <pre className="mono overflow-auto whitespace-pre-wrap break-all text-xs">{preview?.content}</pre>
-            {preview?.truncated && <p className="mt-2 text-xs text-warning">Truncated preview.</p>}
+            <div className="min-h-0 flex-1 overflow-auto">
+              {preview && (
+                <Suspense fallback={<p className="p-2 text-xs text-fg-subtle">Loading…</p>}>
+                  <CodeViewer path={previewPath} content={preview.content} />
+                </Suspense>
+              )}
+            </div>
+            {preview?.truncated && (
+              <p className="flex-shrink-0 border-t border-border px-2 py-1.5 text-xs text-warning">
+                Truncated preview.
+              </p>
+            )}
           </div>
         ) : (
           <ul>
@@ -67,9 +87,13 @@ export function FileExplorer({ projectId }: { projectId: string }) {
               <li key={entry.name}>
                 <button
                   onClick={() => open(entry)}
-                  className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs hover:bg-bg-raised"
+                  className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs hover:bg-bg-hover"
                 >
-                  <span className="text-fg-muted">{entry.type === "directory" ? "▸" : " "}</span>
+                  {entry.type === "directory" ? (
+                    <Folder size={12} className="flex-shrink-0 text-fg-subtle" />
+                  ) : (
+                    <File size={12} className="flex-shrink-0 text-fg-subtle" />
+                  )}
                   <span className="mono truncate">{entry.name}</span>
                 </button>
               </li>

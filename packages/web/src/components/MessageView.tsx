@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { PersistedMessage } from "../lib/types";
 import { Avatar, Badge } from "./ui";
+import { Markdown } from "./Markdown";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
   read_file: Search,
@@ -111,11 +112,7 @@ export function MessageView({ message }: { message: PersistedMessage }) {
       <div className="min-w-0 flex-1 space-y-2">
         {message.content.map((block, i) => {
           if (block.type === "text") {
-            return (
-              <p key={i} className="whitespace-pre-wrap text-[15px] leading-relaxed text-fg">
-                {block.text}
-              </p>
-            );
+            return <Markdown key={i}>{block.text}</Markdown>;
           }
           if (block.type === "tool_use") {
             return <ToolActivity key={i} name={block.name} input={block.input} />;

@@ -1,15 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderGit2, Plus, TriangleAlert } from "lucide-react";
+import { FolderGit2, FolderOpen, Plus, TriangleAlert } from "lucide-react";
 import { api } from "../lib/api";
 import type { Project, ProviderConfig } from "../lib/types";
 import { Button, Card, EmptyState, Input, Label } from "../components/ui";
+import { DirectoryPicker } from "../components/DirectoryPicker";
 
 function NewProjectForm({ onCreated }: { onCreated: (id: string) => void }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [rootPath, setRootPath] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
   const createProject = useMutation({
@@ -34,17 +36,33 @@ function NewProjectForm({ onCreated }: { onCreated: (id: string) => void }) {
         <Input placeholder="my-app" required value={name} onChange={(e) => setName(e.target.value)} />
       </div>
       <div>
-        <Label>Root directory (absolute path on this server)</Label>
-        <Input
-          placeholder="/home/you/projects/my-app"
-          required
-          value={rootPath}
-          onChange={(e) => setRootPath(e.target.value)}
-          className="mono"
+        <Label>Root directory</Label>
+        {rootPath ? (
+          <div className="flex items-center gap-2 rounded-md border border-border bg-bg-raised px-3 py-1.5">
+            <FolderOpen size={14} className="flex-shrink-0 text-accent" />
+            <span className="mono min-w-0 flex-1 truncate text-sm text-fg">{rootPath}</span>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="flex-shrink-0 text-xs text-fg-muted hover:text-fg"
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <Button type="button" variant="secondary" onClick={() => setPickerOpen(true)}>
+            <FolderOpen size={14} /> Choose a directory…
+          </Button>
+        )}
+        <DirectoryPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={setRootPath}
+          initialPath={rootPath || undefined}
         />
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
-      <Button type="submit" variant="primary" disabled={createProject.isPending}>
+      <Button type="submit" variant="primary" disabled={createProject.isPending || !rootPath}>
         {createProject.isPending ? "Creating…" : "Create project"}
       </Button>
     </form>

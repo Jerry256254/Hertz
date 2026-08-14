@@ -8,7 +8,8 @@ export interface ProviderPort {
 }
 
 export interface ToolPort {
-  listDefinitions(): ToolDefinition[];
+  /** Some tools (e.g. hire_employee) are only offered to agents in specific roles — hence per-agent, not static. */
+  listDefinitions(agentId: string): Promise<ToolDefinition[]>;
   run(name: string, input: unknown, ctx: ToolContext): Promise<ToolResult>;
 }
 

@@ -107,6 +107,36 @@ export class AgentLoopManager {
     this.getEmitter(sessionId).emit("event", event);
   }
 
+  /**
+   * Like start(), but resolves once the loop finishes with the final assistant
+   * message — used for agent-to-agent delegation (a manager's `assign_task` tool
+   * awaiting an employee's session to completion) rather than a human watching a
+   * live WS stream. Still goes through the same background loop and DB-backed
+   * history as any other session; there is no separate "synchronous" code path.
+   */
+  runAndWait(config: AgentLoopConfig, userMessage: ContentBlock[]): Promise<PersistedMessage | undefined> {
+    return new Promise((resolve, reject) => {
+      const unsubscribe = this.subscribe(config.sessionId, (event) => {
+        if (event.type === "error") {
+          unsubscribe();
+          reject(new Error(event.message));
+        } else if (event.type === "done") {
+          unsubscribe();
+          this.deps.persistence
+            .listMessages(config.sessionId)
+            .then((messages) => resolve(messages[messages.length - 1]))
+            .catch(reject);
+        }
+      });
+      try {
+        this.start(config, userMessage);
+      } catch (err) {
+        unsubscribe();
+        reject(err as Error);
+      }
+    });
+  }
+
   /** Enqueues a user turn and runs the agent loop to completion (or a tool-free reply) in the background. */
   start(config: AgentLoopConfig, userMessage: ContentBlock[]): void {
     if (this.running.has(config.sessionId)) {
@@ -144,7 +174,7 @@ export class AgentLoopManager {
     this.emit(config.sessionId, { type: "message_saved", message: savedUserMsg });
 
     const adapter = await providers.getAdapter(config.providerConfigId);
-    const toolDefs = tools.listDefinitions();
+    const toolDefs = await tools.listDefinitions(config.agentId);
     const maxTurns = config.maxTurns ?? 25;
 
     for (let turn = 0; turn < maxTurns; turn++) {
@@ -238,6 +268,7 @@ export class AgentLoopManager {
             actorType: "agent",
             sessionId: config.sessionId,
             projectId: config.projectId,
+            userId: config.userId,
           } satisfies ActorContext,
           rootId: config.rootId,
           pathGuard: sandbox.pathGuard,

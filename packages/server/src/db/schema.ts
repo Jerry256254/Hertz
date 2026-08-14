@@ -37,8 +37,11 @@ export const agents = sqliteTable("agents", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  /** 'generalist' in M1; architect/implementer/reviewer/tester roles land with M4 orchestration. */
-  role: text("role").notNull().default("generalist"),
+  role: text("role", {
+    enum: ["manager", "architect", "implementer", "reviewer", "tester", "researcher", "generalist"],
+  })
+    .notNull()
+    .default("generalist"),
   providerConfigId: text("provider_config_id")
     .notNull()
     .references(() => providerConfigs.id, { onDelete: "cascade" }),
@@ -137,6 +140,45 @@ export const auditLog = sqliteTable("audit_log", {
   result: text("result", { enum: ["allowed", "denied", "error"] }).notNull(),
   detail: text("detail"),
   at: integer("at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * A meeting is a shared, multi-agent conversation the user convenes explicitly —
+ * distinct from a Session (one agent, one thread). Each participant takes a
+ * conversational turn in sequence when the user posts; the whole transcript is
+ * visible to the user for oversight, per the product requirement that the human
+ * can see agent-to-agent communication, not just delegate blindly to it.
+ */
+export const meetings = sqliteTable("meetings", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  status: text("status", { enum: ["active", "ended"] }).notNull().default("active"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const meetingParticipants = sqliteTable("meeting_participants", {
+  id: text("id").primaryKey(),
+  meetingId: text("meeting_id")
+    .notNull()
+    .references(() => meetings.id, { onDelete: "cascade" }),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+});
+
+export const meetingMessages = sqliteTable("meeting_messages", {
+  id: text("id").primaryKey(),
+  meetingId: text("meeting_id")
+    .notNull()
+    .references(() => meetings.id, { onDelete: "cascade" }),
+  /** Null = the human user spoke; otherwise the id of the agent whose turn produced this message. */
+  senderAgentId: text("sender_agent_id"),
+  content: text("content").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
 export const sessionTokens = sqliteTable("session_tokens", {

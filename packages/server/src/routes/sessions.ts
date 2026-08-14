@@ -9,8 +9,14 @@ import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
 
+const DEFAULT_TITLE = "New chat";
+
 const createSessionSchema = z.object({
   title: z.string().optional(),
+});
+
+const renameSessionSchema = z.object({
+  title: z.string().min(1).max(200),
 });
 
 const sendMessageSchema = z.object({
@@ -20,6 +26,11 @@ const sendMessageSchema = z.object({
     .optional()
     .default([]),
 });
+
+function deriveTitle(text: string): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length > 60 ? `${oneLine.slice(0, 60)}…` : oneLine;
+}
 
 export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
@@ -40,7 +51,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       id,
       agentId,
       projectId: agent.projectId,
-      title: parsed.data.title ?? "New session",
+      title: parsed.data.title ?? DEFAULT_TITLE,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -93,6 +104,21 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     };
   });
 
+  instance.patch("/api/sessions/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = renameSessionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+
+    const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (!sessionRows[0]) return reply.code(404).send({ error: "Session not found" });
+
+    await ctx.db
+      .update(sessions)
+      .set({ title: parsed.data.title, updatedAt: new Date() })
+      .where(eq(sessions.id, id));
+    return { ok: true };
+  });
+
   instance.post("/api/sessions/:id/messages", async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = sendMessageSchema.safeParse(request.body);
@@ -120,6 +146,13 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (!mainRoot) return reply.code(400).send({ error: "Project has no roots configured" });
 
     ctx.sandboxRegistry.register(id, { [mainRoot.rootId]: mainRoot.absolutePath });
+
+    if (session.title === DEFAULT_TITLE && parsed.data.text) {
+      await ctx.db
+        .update(sessions)
+        .set({ title: deriveTitle(parsed.data.text) })
+        .where(eq(sessions.id, id));
+    }
 
     const content: ContentBlock[] = [];
     if (parsed.data.text) content.push({ type: "text", text: parsed.data.text });

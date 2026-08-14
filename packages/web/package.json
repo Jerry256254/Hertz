@@ -17,11 +17,20 @@
     "@tanstack/react-virtual": "^3.11.0",
     "lucide-react": "^0.468.0",
     "@uiw/react-codemirror": "^4.23.6",
+    "@uiw/codemirror-theme-github": "^4.23.6",
     "@codemirror/lang-javascript": "^6.2.2",
     "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/view": "^6.36.0",
+    "@codemirror/state": "^6.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.0.0"
+    "react-router-dom": "^7.0.0",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

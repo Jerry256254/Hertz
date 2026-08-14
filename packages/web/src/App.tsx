@@ -5,6 +5,7 @@ import { LoginPage } from "./routes/LoginPage";
 import { DashboardPage } from "./routes/DashboardPage";
 import { ProjectPage } from "./routes/ProjectPage";
 import { SessionPage } from "./routes/SessionPage";
+import { MeetingPage } from "./routes/MeetingPage";
 import { ProvidersPage } from "./routes/ProvidersPage";
 import { AppLayout } from "./components/AppLayout";
 
@@ -38,6 +39,7 @@ export function App() {
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />
+        <Route path="/projects/:projectId/meetings/:meetingId" element={<MeetingPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>

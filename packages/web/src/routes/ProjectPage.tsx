@@ -1,11 +1,13 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, FolderGit2, MessageSquarePlus, Plus, Search } from "lucide-react";
+import { Bot, Check, FolderGit2, MessageSquarePlus, Plus, Search, Video } from "lucide-react";
 import { api } from "../lib/api";
-import type { Agent, ModelInfo, Project, ProviderConfig } from "../lib/types";
+import type { Agent, AgentRole, Meeting, ModelInfo, Project, ProviderConfig } from "../lib/types";
+import { AGENT_ROLES, ROLE_LABEL } from "../lib/types";
 import { FileExplorer } from "../components/FileExplorer";
 import { Avatar, Badge, Button, Card, EmptyState, Input, Label } from "../components/ui";
+import { NewMeetingDialog } from "../components/NewMeetingDialog";
 
 function ModelPicker({
   providerConfigId,
@@ -78,18 +80,34 @@ function ModelPicker({
   );
 }
 
-function NewAgentForm({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
+function NewAgentForm({
+  projectId,
+  fixedRole,
+  onCreated,
+}: {
+  projectId: string;
+  fixedRole?: "manager";
+  onCreated: () => void;
+}) {
   const queryClient = useQueryClient();
   const { data: providers } = useQuery({
     queryKey: ["providers"],
     queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
   });
-  const [name, setName] = useState("agent-1");
+  const [name, setName] = useState(fixedRole === "manager" ? "Manager" : "agent-1");
+  const [role, setRole] = useState<AgentRole>(fixedRole === "manager" ? "manager" : "implementer");
   const [providerConfigId, setProviderConfigId] = useState("");
   const [model, setModel] = useState("");
 
   const createAgent = useMutation({
-    mutationFn: () => api.post<{ id: string }>("/agents", { projectId, name, providerConfigId, model }),
+    mutationFn: () =>
+      api.post<{ id: string }>("/agents", {
+        projectId,
+        name,
+        role: fixedRole ?? role,
+        providerConfigId,
+        model,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agents", projectId] });
       onCreated();
@@ -108,6 +126,22 @@ function NewAgentForm({ projectId, onCreated }: { projectId: string; onCreated: 
         <Label>Name</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} />
       </div>
+      {!fixedRole && (
+        <div>
+          <Label>Role</Label>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as AgentRole)}
+            className="h-9 w-full rounded-md border border-border bg-bg-raised px-3 text-sm text-fg outline-none focus:border-accent"
+          >
+            {AGENT_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABEL[r]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div>
         <Label>Provider</Label>
         <select
@@ -132,7 +166,7 @@ function NewAgentForm({ projectId, onCreated }: { projectId: string; onCreated: 
         <ModelPicker providerConfigId={providerConfigId} value={model} onChange={setModel} />
       </div>
       <Button type="submit" variant="primary" disabled={createAgent.isPending || !model}>
-        {createAgent.isPending ? "Creating…" : "Create agent"}
+        {createAgent.isPending ? "Creating…" : fixedRole === "manager" ? "Set up manager" : "Create agent"}
       </Button>
     </form>
   );
@@ -142,6 +176,8 @@ export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [showAgentForm, setShowAgentForm] = useState(false);
+  const [showManagerForm, setShowManagerForm] = useState(false);
+  const [showMeetingDialog, setShowMeetingDialog] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
@@ -153,12 +189,20 @@ export function ProjectPage() {
     queryFn: () => api.get<{ agents: Agent[] }>(`/projects/${projectId}/agents`),
   });
 
+  const { data: meetingsData } = useQuery({
+    queryKey: ["meetings", projectId],
+    queryFn: () => api.get<{ meetings: Meeting[] }>(`/projects/${projectId}/meetings`),
+  });
+
   const newChat = useMutation({
     mutationFn: (agentId: string) => api.post<{ id: string }>(`/agents/${agentId}/sessions`),
     onSuccess: (res) => navigate(`/projects/${projectId}/sessions/${res.id}`),
   });
 
   const agents = agentsData?.agents ?? [];
+  const manager = agents.find((a) => a.role === "manager");
+  const employees = agents.filter((a) => a.role !== "manager");
+  const meetings = meetingsData?.meetings ?? [];
 
   return (
     <div className="grid h-full grid-cols-[1fr_320px]">
@@ -171,8 +215,48 @@ export function ProjectPage() {
           </div>
         </div>
 
+        {!manager && !showManagerForm && (
+          <Card className="mb-6">
+            <EmptyState
+              icon={<Bot size={26} strokeWidth={1.5} />}
+              title="This project has no manager yet"
+              description="The manager runs point on this project for you — hires and briefs employees, delegates work, and reports back. Set one up to get a real team, not just a single chat."
+              action={
+                <Button variant="primary" onClick={() => setShowManagerForm(true)}>
+                  <Plus size={14} /> Set up your manager
+                </Button>
+              }
+            />
+          </Card>
+        )}
+        {!manager && showManagerForm && (
+          <Card className="mb-6 p-4">
+            <h2 className="mb-3 text-sm font-semibold text-fg">Set up your manager</h2>
+            <NewAgentForm projectId={projectId!} fixedRole="manager" onCreated={() => setShowManagerForm(false)} />
+          </Card>
+        )}
+
+        {manager && (
+          <div className="mb-6">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Manager</h2>
+            <Card className="flex items-center justify-between p-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar label={manager.name} tone="accent" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-fg">{manager.name}</p>
+                  <p className="mono truncate text-xs text-fg-subtle">{manager.model}</p>
+                </div>
+                <Badge tone="accent">Manager</Badge>
+              </div>
+              <Button variant="primary" size="sm" onClick={() => newChat.mutate(manager.id)} disabled={newChat.isPending}>
+                <MessageSquarePlus size={13} /> Chat
+              </Button>
+            </Card>
+          </div>
+        )}
+
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Agents</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Team</h2>
           <button
             onClick={() => setShowAgentForm((v) => !v)}
             className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
@@ -181,32 +265,24 @@ export function ProjectPage() {
           </button>
         </div>
 
-        {agents.length === 0 && !showAgentForm && (
-          <Card>
-            <EmptyState
-              icon={<Bot size={26} strokeWidth={1.5} />}
-              title="No agents yet"
-              description="An agent pairs a model with this project. Create one to start chatting."
-              action={
-                <Button variant="primary" onClick={() => setShowAgentForm(true)}>
-                  <Plus size={14} /> New agent
-                </Button>
-              }
-            />
-          </Card>
+        {employees.length === 0 && !showAgentForm && (
+          <p className="mb-3 text-sm text-fg-subtle">
+            {manager ? "No employees yet — ask the manager to hire_employee, or add one yourself." : "No employees yet."}
+          </p>
         )}
 
         <ul className="space-y-2">
-          {agents.map((a) => (
+          {employees.map((a) => (
             <li key={a.id}>
               <Card className="flex items-center justify-between p-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <Avatar label={a.name} tone="accent" />
+                  <Avatar label={a.name} />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-fg">{a.name}</p>
                     <p className="mono truncate text-xs text-fg-subtle">{a.model}</p>
                   </div>
-                  <Badge tone={a.status === "running" ? "accent" : "neutral"}>{a.status}</Badge>
+                  <Badge tone="neutral">{ROLE_LABEL[a.role]}</Badge>
+                  {a.status === "running" && <Badge tone="accent">running</Badge>}
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => newChat.mutate(a.id)} disabled={newChat.isPending}>
                   <MessageSquarePlus size={13} /> New chat
@@ -222,6 +298,45 @@ export function ProjectPage() {
             <NewAgentForm projectId={projectId!} onCreated={() => setShowAgentForm(false)} />
           </Card>
         )}
+
+        <div className="mb-3 mt-8 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Meetings</h2>
+          <button
+            onClick={() => setShowMeetingDialog(true)}
+            disabled={employees.length < 1}
+            className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg disabled:opacity-40"
+          >
+            <Plus size={13} /> Convene meeting
+          </button>
+        </div>
+        {meetings.length === 0 ? (
+          <p className="text-sm text-fg-subtle">
+            Convene specific employees into a shared conversation — like pulling them into a call.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {meetings.map((m) => (
+              <li key={m.id}>
+                <button
+                  onClick={() => navigate(`/projects/${projectId}/meetings/${m.id}`)}
+                  className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-bg-raised p-3 text-left hover:bg-bg-hover"
+                >
+                  <Video size={14} className="text-accent" />
+                  <span className="min-w-0 flex-1 truncate text-sm text-fg">{m.title}</span>
+                  <Badge tone={m.status === "active" ? "accent" : "neutral"}>{m.status}</Badge>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <NewMeetingDialog
+          open={showMeetingDialog}
+          onOpenChange={setShowMeetingDialog}
+          projectId={projectId!}
+          agents={agents}
+          onCreated={(meetingId) => navigate(`/projects/${projectId}/meetings/${meetingId}`)}
+        />
       </div>
       {projectId && <FileExplorer projectId={projectId} />}
     </div>

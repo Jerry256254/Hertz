@@ -51,12 +51,40 @@ export interface ModelInfo {
   contextWindow?: number;
 }
 
+export type AgentRole =
+  | "manager"
+  | "architect"
+  | "implementer"
+  | "reviewer"
+  | "tester"
+  | "researcher"
+  | "generalist";
+
+export const AGENT_ROLES: AgentRole[] = [
+  "architect",
+  "implementer",
+  "reviewer",
+  "tester",
+  "researcher",
+  "generalist",
+];
+
+export const ROLE_LABEL: Record<AgentRole, string> = {
+  manager: "Manager",
+  architect: "Architect",
+  implementer: "Implementer",
+  reviewer: "Reviewer",
+  tester: "Tester",
+  researcher: "Researcher",
+  generalist: "Generalist",
+};
+
 export interface Agent {
   id: string;
   projectId: string;
   providerConfigId: string;
   name: string;
-  role: string;
+  role: AgentRole;
   model: string;
   mode: "manual" | "plan" | "auto";
   status: "idle" | "running" | "error";
@@ -72,6 +100,29 @@ export interface HertzSession {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Meeting {
+  id: string;
+  projectId: string;
+  title: string;
+  status: "active" | "ended";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MeetingMessage {
+  id: string;
+  meetingId: string;
+  senderAgentId: string | null;
+  content: ContentBlock[];
+  createdAt: string;
+}
+
+export type MeetingEvent =
+  | { type: "message"; message: MeetingMessage }
+  | { type: "turn_started"; agentId: string; agentName: string }
+  | { type: "error"; message: string }
+  | { type: "done" };
 
 export interface PersistedMessage {
   id: string;

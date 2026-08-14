@@ -29,4 +29,6 @@ export interface ActorContext {
   actorType: AuditActorType;
   sessionId?: string;
   projectId?: string;
+  /** The human user whose request chain this action traces back to, even when actorType is 'agent' (e.g. a manager delegating to an employee). */
+  userId?: string;
 }

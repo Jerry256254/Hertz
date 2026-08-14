@@ -1,20 +1,20 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { agents } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
+import { AGENT_ROLES, defaultSystemPromptFor } from "../tools/org-tools.js";
 
 const createSchema = z.object({
   projectId: z.string().min(1),
   name: z.string().min(1),
   model: z.string().min(1),
   providerConfigId: z.string().min(1),
+  role: z.enum(AGENT_ROLES).default("generalist"),
   systemPrompt: z.string().optional(),
 });
-
-const DEFAULT_SYSTEM_PROMPT = `You are a KucLab Hertz agent: a colleague working directly on the user's project files, not a chat assistant. Use the available tools to read, write, and edit real files, run allowlisted shell commands, and search the codebase. Prefer ranged reads over whole-file reads. Be direct and make real changes rather than only describing them.`;
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
@@ -24,14 +24,26 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const parsed = createSchema.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
 
+      if (parsed.data.role === "manager") {
+        const existing = await ctx.db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(and(eq(agents.projectId, parsed.data.projectId), eq(agents.role, "manager")))
+          .limit(1);
+        if (existing.length > 0) {
+          return reply.code(400).send({ error: "This project already has a manager" });
+        }
+      }
+
       const id = newId();
       await ctx.db.insert(agents).values({
         id,
         projectId: parsed.data.projectId,
         providerConfigId: parsed.data.providerConfigId,
         name: parsed.data.name,
+        role: parsed.data.role,
         model: parsed.data.model,
-        systemPrompt: parsed.data.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+        systemPrompt: parsed.data.systemPrompt ?? defaultSystemPromptFor(parsed.data.role),
         mode: "manual",
         status: "idle",
         createdAt: new Date(),
