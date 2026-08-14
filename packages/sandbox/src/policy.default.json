@@ -1,0 +1,15 @@
+{
+  "allowedCommands": [
+    "ls", "cat", "grep", "rg", "find", "git",
+    "npm", "pnpm", "node", "python3", "pip",
+    "mkdir", "mv", "cp", "rm", "echo", "pwd",
+    "wc", "head", "tail", "diff", "tree"
+  ],
+  "deniedCommands": [
+    "curl", "wget", "ssh", "scp", "nc", "sudo", "doas",
+    "chmod", "chown", "dd", "shutdown", "reboot", "kill", "killall"
+  ],
+  "timeoutMs": 30000,
+  "maxOutputBytes": 200000,
+  "allowedEnv": ["PATH", "HOME", "LANG", "LC_ALL"]
+}

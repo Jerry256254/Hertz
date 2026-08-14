@@ -1,0 +1,34 @@
+{
+  "name": "@kuclab-hertz/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@kuclab-hertz/core": "workspace:*",
+    "@kuclab-hertz/providers": "workspace:*",
+    "@kuclab-hertz/sandbox": "workspace:*",
+    "@kuclab-hertz/standard": "workspace:*",
+    "@kuclab-hertz/tools": "workspace:*",
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/rate-limit": "^10.2.0",
+    "@fastify/static": "^8.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@libsql/client": "^0.14.0",
+    "argon2": "^0.41.0",
+    "drizzle-orm": "^0.38.0",
+    "fastify": "^5.2.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5.7.0"
+  }
+}

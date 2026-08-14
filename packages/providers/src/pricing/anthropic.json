@@ -1,0 +1,8 @@
+{
+  "claude-opus-4": { "inputPerMillion": 15, "outputPerMillion": 75, "cachedInputPerMillion": 1.5, "currency": "USD" },
+  "claude-sonnet-4": { "inputPerMillion": 3, "outputPerMillion": 15, "cachedInputPerMillion": 0.3, "currency": "USD" },
+  "claude-sonnet-5": { "inputPerMillion": 3, "outputPerMillion": 15, "cachedInputPerMillion": 0.3, "currency": "USD" },
+  "claude-haiku-4": { "inputPerMillion": 0.8, "outputPerMillion": 4, "cachedInputPerMillion": 0.08, "currency": "USD" },
+  "claude-3-5-sonnet": { "inputPerMillion": 3, "outputPerMillion": 15, "cachedInputPerMillion": 0.3, "currency": "USD" },
+  "claude-3-5-haiku": { "inputPerMillion": 0.8, "outputPerMillion": 4, "cachedInputPerMillion": 0.08, "currency": "USD" }
+}

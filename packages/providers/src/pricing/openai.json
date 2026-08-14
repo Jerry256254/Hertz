@@ -1,0 +1,8 @@
+{
+  "gpt-4o": { "inputPerMillion": 2.5, "outputPerMillion": 10, "cachedInputPerMillion": 1.25, "currency": "USD" },
+  "gpt-4o-mini": { "inputPerMillion": 0.15, "outputPerMillion": 0.6, "cachedInputPerMillion": 0.075, "currency": "USD" },
+  "gpt-4.1": { "inputPerMillion": 2, "outputPerMillion": 8, "cachedInputPerMillion": 0.5, "currency": "USD" },
+  "gpt-4.1-mini": { "inputPerMillion": 0.4, "outputPerMillion": 1.6, "cachedInputPerMillion": 0.1, "currency": "USD" },
+  "o3": { "inputPerMillion": 10, "outputPerMillion": 40, "cachedInputPerMillion": 2.5, "currency": "USD" },
+  "o4-mini": { "inputPerMillion": 1.1, "outputPerMillion": 4.4, "cachedInputPerMillion": 0.275, "currency": "USD" }
+}

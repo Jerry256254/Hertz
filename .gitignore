@@ -1,0 +1,20 @@
+# --- Base (keep in every repo regardless of stack) ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+.claude/
+
+# --- Node / pnpm / TypeScript ---
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# --- Runtime data (created by the setup wizard, never committed) ---
+.kuclab-hertz/

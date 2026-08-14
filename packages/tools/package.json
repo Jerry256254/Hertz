@@ -1,0 +1,23 @@
+{
+  "name": "@kuclab-hertz/tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@kuclab-hertz/sandbox": "workspace:*",
+    "fast-glob": "^3.3.2",
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

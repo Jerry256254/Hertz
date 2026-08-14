@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KucLab project config",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "enforceStandard": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether agents should apply the KucLab repo standard to this project."
+    },
+    "license": { "type": "string", "default": "MIT" },
+    "copyrightHolder": { "type": "string", "default": "KucLab" },
+    "commitLanguage": { "type": "string", "enum": ["en", "cs"], "default": "en" },
+    "category": { "type": "string" }
+  },
+  "additionalProperties": false
+}
