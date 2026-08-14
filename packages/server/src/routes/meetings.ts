@@ -89,5 +89,17 @@ export function registerMeetingRoutes(app: FastifyInstance, ctx: AppContext): vo
       ctx.meetingOrchestrator.startRound(id);
       return reply.code(202).send({ ok: true });
     });
+
+    instance.delete("/api/meetings/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      if (ctx.meetingOrchestrator.isRunning(id)) {
+        return reply.code(409).send({ error: "Can't delete a meeting while a round is in progress" });
+      }
+      const rows = await ctx.db.select({ id: meetings.id }).from(meetings).where(eq(meetings.id, id)).limit(1);
+      if (!rows[0]) return reply.code(404).send({ error: "Meeting not found" });
+
+      await ctx.db.delete(meetings).where(eq(meetings.id, id));
+      return reply.code(204).send();
+    });
   });
 }

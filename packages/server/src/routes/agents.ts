@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { agents } from "../db/schema.js";
+import { agents, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { AGENT_ROLES, defaultSystemPromptFor } from "../tools/org-tools.js";
@@ -63,6 +63,21 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const row = rows[0];
       if (!row) return reply.code(404).send({ error: "Agent not found" });
       return row;
+    });
+
+    instance.delete("/api/agents/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const rows = await ctx.db.select({ id: agents.id }).from(agents).where(eq(agents.id, id)).limit(1);
+      if (!rows[0]) return reply.code(404).send({ error: "Agent not found" });
+
+      const sessionRows = await ctx.db.select({ id: sessions.id }).from(sessions).where(eq(sessions.agentId, id));
+      if (sessionRows.some((s) => ctx.agentLoop.isRunning(s.id))) {
+        return reply.code(409).send({ error: "Can't delete an agent while one of its sessions is running" });
+      }
+
+      // Deletes its sessions/messages and meeting_participants rows via ON DELETE CASCADE.
+      await ctx.db.delete(agents).where(eq(agents.id, id));
+      return reply.code(204).send();
     });
   });
 }

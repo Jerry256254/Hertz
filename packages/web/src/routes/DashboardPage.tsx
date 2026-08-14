@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import type { Project, ProviderConfig } from "../lib/types";
 import { Button, Card, EmptyState, Input, Label } from "../components/ui";
 import { DirectoryPicker } from "../components/DirectoryPicker";
+import { DeleteButton } from "../components/DeleteButton";
 
 function NewProjectForm({ onCreated }: { onCreated: (id: string) => void }) {
   const queryClient = useQueryClient();
@@ -83,6 +84,12 @@ export function DashboardPage() {
     queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
   });
 
+  const queryClient = useQueryClient();
+  const deleteProject = useMutation({
+    mutationFn: (id: string) => api.delete(`/projects/${id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["projects"] }),
+  });
+
   const projects = data?.projects ?? [];
   const noProviders = providersData && providersData.providers.length === 0;
 
@@ -119,17 +126,22 @@ export function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {projects.map((p) => (
-            <button
+            <div
               key={p.id}
               onClick={() => navigate(`/projects/${p.id}`)}
-              className="rounded-lg border border-border bg-bg-raised p-4 text-left transition-colors hover:border-border-strong hover:bg-bg-hover"
+              className="group cursor-pointer rounded-lg border border-border bg-bg-raised p-4 text-left transition-colors hover:border-border-strong hover:bg-bg-hover"
             >
-              <div className="mb-1.5 flex items-center gap-2">
-                <FolderGit2 size={15} className="text-accent" />
-                <span className="text-sm font-medium text-fg">{p.name}</span>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <FolderGit2 size={15} className="flex-shrink-0 text-accent" />
+                  <span className="truncate text-sm font-medium text-fg">{p.name}</span>
+                </div>
+                <span className="hidden group-hover:block">
+                  <DeleteButton title="Delete project" onDelete={() => deleteProject.mutate(p.id)} />
+                </span>
               </div>
               <p className="mono truncate text-xs text-fg-subtle">{p.roots[0]?.absolutePath ?? "(no root)"}</p>
-            </button>
+            </div>
           ))}
           <button
             onClick={() => setShowForm(true)}

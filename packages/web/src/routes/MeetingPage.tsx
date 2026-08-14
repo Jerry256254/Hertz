@@ -138,7 +138,7 @@ export function MeetingPage() {
       <div className="flex-shrink-0 px-4 pb-4">
         <form
           onSubmit={onSubmit}
-          className="mx-auto max-w-3xl rounded-2xl border border-border bg-bg-raised p-2 shadow-sm focus-within:border-border-strong"
+          className="mx-auto max-w-3xl rounded-lg border border-border bg-bg-raised p-2 shadow-sm focus-within:border-border-strong"
         >
           <textarea
             ref={textareaRef}

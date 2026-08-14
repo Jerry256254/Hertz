@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight,
   Cog,
@@ -14,6 +14,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { HertzSession, Project } from "../lib/types";
 import { Avatar, IconButton } from "./ui";
+import { DeleteButton } from "./DeleteButton";
 
 interface SidebarSession extends HertzSession {
   agentName: string;
@@ -22,6 +23,7 @@ interface SidebarSession extends HertzSession {
 
 export function Sidebar() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user, logout } = useAuth();
   const params = useParams<{ projectId?: string; sessionId?: string }>();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -35,6 +37,14 @@ export function Sidebar() {
     queryKey: ["sessions", "all"],
     queryFn: () => api.get<{ sessions: SidebarSession[] }>("/sessions"),
     refetchInterval: 6000,
+  });
+
+  const deleteSession = useMutation({
+    mutationFn: (sessionId: string) => api.delete(`/sessions/${sessionId}`),
+    onSuccess: (_data, sessionId) => {
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
+      if (params.sessionId === sessionId) navigate(`/projects/${params.projectId}`);
+    },
   });
 
   const sessionsByProject = useMemo(() => {
@@ -114,12 +124,15 @@ export function Sidebar() {
                     {sessions.map((session) => {
                       const isActive = params.sessionId === session.id;
                       return (
-                        <li key={session.id}>
+                        <li
+                          key={session.id}
+                          className={`group/session flex items-center gap-1 rounded-md pr-1.5 text-[13px] ${
+                            isActive ? "bg-accent-wash text-accent" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
+                          }`}
+                        >
                           <Link
                             to={`/projects/${project.id}/sessions/${session.id}`}
-                            className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] ${
-                              isActive ? "bg-accent-wash text-accent" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
-                            }`}
+                            className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5"
                           >
                             {session.status === "active" ? (
                               <Loader2 size={12} className="flex-shrink-0 animate-spin text-accent" />
@@ -128,6 +141,9 @@ export function Sidebar() {
                             )}
                             <span className="truncate">{session.title}</span>
                           </Link>
+                          <span className="hidden flex-shrink-0 group-hover/session:block">
+                            <DeleteButton title="Delete chat" onDelete={() => deleteSession.mutate(session.id)} />
+                          </span>
                         </li>
                       );
                     })}

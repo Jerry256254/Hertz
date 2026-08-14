@@ -119,6 +119,18 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     return { ok: true };
   });
 
+  instance.delete("/api/sessions/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (ctx.agentLoop.isRunning(id)) {
+      return reply.code(409).send({ error: "Can't delete a session while it's running" });
+    }
+    const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (!sessionRows[0]) return reply.code(404).send({ error: "Session not found" });
+
+    await ctx.db.delete(sessions).where(eq(sessions.id, id));
+    return reply.code(204).send();
+  });
+
   instance.post("/api/sessions/:id/messages", async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = sendMessageSchema.safeParse(request.body);

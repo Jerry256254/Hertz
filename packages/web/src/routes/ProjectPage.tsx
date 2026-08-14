@@ -8,6 +8,7 @@ import { AGENT_ROLES, ROLE_LABEL } from "../lib/types";
 import { FileExplorer } from "../components/FileExplorer";
 import { Avatar, Badge, Button, Card, EmptyState, Input, Label } from "../components/ui";
 import { NewMeetingDialog } from "../components/NewMeetingDialog";
+import { DeleteButton } from "../components/DeleteButton";
 
 function ModelPicker({
   providerConfigId,
@@ -175,6 +176,7 @@ function NewAgentForm({
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [showAgentForm, setShowAgentForm] = useState(false);
   const [showManagerForm, setShowManagerForm] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
@@ -197,6 +199,16 @@ export function ProjectPage() {
   const newChat = useMutation({
     mutationFn: (agentId: string) => api.post<{ id: string }>(`/agents/${agentId}/sessions`),
     onSuccess: (res) => navigate(`/projects/${projectId}/sessions/${res.id}`),
+  });
+
+  const deleteAgent = useMutation({
+    mutationFn: (agentId: string) => api.delete(`/agents/${agentId}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agents", projectId] }),
+  });
+
+  const deleteMeeting = useMutation({
+    mutationFn: (meetingId: string) => api.delete(`/meetings/${meetingId}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["meetings", projectId] }),
   });
 
   const agents = agentsData?.agents ?? [];
@@ -248,9 +260,12 @@ export function ProjectPage() {
                 </div>
                 <Badge tone="accent">Manager</Badge>
               </div>
-              <Button variant="primary" size="sm" onClick={() => newChat.mutate(manager.id)} disabled={newChat.isPending}>
-                <MessageSquarePlus size={13} /> Chat
-              </Button>
+              <div className="flex flex-shrink-0 items-center gap-2">
+                <Button variant="primary" size="sm" onClick={() => newChat.mutate(manager.id)} disabled={newChat.isPending}>
+                  <MessageSquarePlus size={13} /> Chat
+                </Button>
+                <DeleteButton title="Remove manager" onDelete={() => deleteAgent.mutate(manager.id)} />
+              </div>
             </Card>
           </div>
         )}
@@ -284,9 +299,12 @@ export function ProjectPage() {
                   <Badge tone="neutral">{ROLE_LABEL[a.role]}</Badge>
                   {a.status === "running" && <Badge tone="accent">running</Badge>}
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => newChat.mutate(a.id)} disabled={newChat.isPending}>
-                  <MessageSquarePlus size={13} /> New chat
-                </Button>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => newChat.mutate(a.id)} disabled={newChat.isPending}>
+                    <MessageSquarePlus size={13} /> New chat
+                  </Button>
+                  <DeleteButton title="Remove employee" onDelete={() => deleteAgent.mutate(a.id)} />
+                </div>
               </Card>
             </li>
           ))}
@@ -317,14 +335,17 @@ export function ProjectPage() {
           <ul className="space-y-2">
             {meetings.map((m) => (
               <li key={m.id}>
-                <button
+                <div
                   onClick={() => navigate(`/projects/${projectId}/meetings/${m.id}`)}
-                  className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-bg-raised p-3 text-left hover:bg-bg-hover"
+                  className="group flex cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-bg-raised p-3 hover:bg-bg-hover"
                 >
-                  <Video size={14} className="text-accent" />
+                  <Video size={14} className="flex-shrink-0 text-accent" />
                   <span className="min-w-0 flex-1 truncate text-sm text-fg">{m.title}</span>
                   <Badge tone={m.status === "active" ? "accent" : "neutral"}>{m.status}</Badge>
-                </button>
+                  <span className="hidden group-hover:block">
+                    <DeleteButton title="Delete meeting" onDelete={() => deleteMeeting.mutate(m.id)} />
+                  </span>
+                </div>
               </li>
             ))}
           </ul>

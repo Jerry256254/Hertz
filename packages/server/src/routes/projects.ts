@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { projectRoots, projects } from "../db/schema.js";
+import { projectRoots, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 
@@ -60,6 +60,24 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: AppContext): vo
       if (!project) return reply.code(404).send({ error: "Project not found" });
       const roots = await ctx.db.select().from(projectRoots).where(eq(projectRoots.projectId, id));
       return { ...project, roots };
+    });
+
+    instance.delete("/api/projects/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const rows = await ctx.db.select({ id: projects.id }).from(projects).where(eq(projects.id, id)).limit(1);
+      if (!rows[0]) return reply.code(404).send({ error: "Project not found" });
+
+      const sessionRows = await ctx.db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(eq(sessions.projectId, id));
+      if (sessionRows.some((s) => ctx.agentLoop.isRunning(s.id))) {
+        return reply.code(409).send({ error: "Can't delete a project while one of its sessions is running" });
+      }
+
+      // Deletes projectRoots/agents/sessions/messages/meetings via ON DELETE CASCADE.
+      await ctx.db.delete(projects).where(eq(projects.id, id));
+      return reply.code(204).send();
     });
   });
 }

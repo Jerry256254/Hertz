@@ -242,7 +242,7 @@ export function SessionPage() {
               e.preventDefault();
               void onFiles(e.dataTransfer.files);
             }}
-            className="mx-auto max-w-3xl rounded-2xl border border-border bg-bg-raised p-2 shadow-sm focus-within:border-border-strong"
+            className="mx-auto max-w-3xl rounded-lg border border-border bg-bg-raised p-2 shadow-sm focus-within:border-border-strong"
           >
             {images.length > 0 && (
               <div className="mb-1 flex flex-wrap gap-2 px-1 pt-1">
