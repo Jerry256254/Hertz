@@ -1,28 +1,22 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FolderGit2, Plus, TriangleAlert } from "lucide-react";
 import { api } from "../lib/api";
-import type { Project } from "../lib/types";
+import type { Project, ProviderConfig } from "../lib/types";
+import { Button, Card, EmptyState, Input, Label } from "../components/ui";
 
-export function DashboardPage() {
-  const navigate = useNavigate();
+function NewProjectForm({ onCreated }: { onCreated: (id: string) => void }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [rootPath, setRootPath] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api.get<{ projects: Project[] }>("/projects"),
-  });
-
   const createProject = useMutation({
     mutationFn: () => api.post<{ id: string }>("/projects", { name, rootPath }),
     onSuccess: (res) => {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      setName("");
-      setRootPath("");
-      navigate(`/projects/${res.id}`);
+      onCreated(res.id);
     },
     onError: (err) => setError((err as Error).message),
   });
@@ -34,59 +28,111 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <h1 className="mb-4 text-sm font-semibold text-fg-muted">Projects</h1>
+    <form onSubmit={onSubmit} className="space-y-3">
+      <div>
+        <Label>Name</Label>
+        <Input placeholder="my-app" required value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <div>
+        <Label>Root directory (absolute path on this server)</Label>
+        <Input
+          placeholder="/home/you/projects/my-app"
+          required
+          value={rootPath}
+          onChange={(e) => setRootPath(e.target.value)}
+          className="mono"
+        />
+      </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+      <Button type="submit" variant="primary" disabled={createProject.isPending}>
+        {createProject.isPending ? "Creating…" : "Create project"}
+      </Button>
+    </form>
+  );
+}
 
-      {isLoading ? (
-        <p className="text-sm text-fg-muted">Loading…</p>
-      ) : (
-        <ul className="mb-6 divide-y divide-border rounded border border-border">
-          {data?.projects.map((p) => (
-            <li key={p.id}>
-              <button
-                onClick={() => navigate(`/projects/${p.id}`)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-bg-raised"
-              >
-                <span className="text-sm">{p.name}</span>
-                <span className="font-mono text-xs text-fg-muted">
-                  {p.roots[0]?.absolutePath ?? "(no root)"}
-                </span>
-              </button>
-            </li>
-          ))}
-          {data?.projects.length === 0 && (
-            <li className="px-3 py-2 text-sm text-fg-muted">No projects yet.</li>
-          )}
-        </ul>
+export function DashboardPage() {
+  const navigate = useNavigate();
+  const [showForm, setShowForm] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.get<{ projects: Project[] }>("/projects"),
+  });
+
+  const { data: providersData } = useQuery({
+    queryKey: ["providers"],
+    queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
+  });
+
+  const projects = data?.projects ?? [];
+  const noProviders = providersData && providersData.providers.length === 0;
+
+  if (isLoading) return null;
+
+  return (
+    <div className="mx-auto max-w-4xl px-6 py-10">
+      <h1 className="mb-1 text-xl font-semibold text-fg">Projects</h1>
+      <p className="mb-6 text-sm text-fg-muted">Each project is a directory on this machine an agent can work in.</p>
+
+      {noProviders && (
+        <button
+          onClick={() => navigate("/providers")}
+          className="mb-6 flex w-full items-center gap-2.5 rounded-lg border border-border bg-warning-wash px-4 py-3 text-left text-sm text-warning transition-opacity hover:opacity-90"
+        >
+          <TriangleAlert size={16} className="flex-shrink-0" />
+          Add a model provider before starting a chat — click to set one up.
+        </button>
       )}
 
-      <form onSubmit={onSubmit} className="rounded border border-border bg-bg-raised p-4">
-        <h2 className="mb-3 text-xs font-semibold text-fg-muted">New project</h2>
-        <div className="mb-2 flex gap-2">
-          <input
-            placeholder="Name"
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="flex-1 rounded border border-border bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent"
+      {projects.length === 0 && !showForm ? (
+        <Card>
+          <EmptyState
+            icon={<FolderGit2 size={28} strokeWidth={1.5} />}
+            title="No projects yet"
+            description="Create one to point an agent at a real directory on this machine."
+            action={
+              <Button variant="primary" onClick={() => setShowForm(true)}>
+                <Plus size={14} /> New project
+              </Button>
+            }
           />
-          <input
-            placeholder="Root directory (absolute path on the server)"
-            required
-            value={rootPath}
-            onChange={(e) => setRootPath(e.target.value)}
-            className="flex-[2] rounded border border-border bg-bg px-2 py-1.5 font-mono text-sm outline-none focus:border-accent"
-          />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => navigate(`/projects/${p.id}`)}
+              className="rounded-lg border border-border bg-bg-raised p-4 text-left transition-colors hover:border-border-strong hover:bg-bg-hover"
+            >
+              <div className="mb-1.5 flex items-center gap-2">
+                <FolderGit2 size={15} className="text-accent" />
+                <span className="text-sm font-medium text-fg">{p.name}</span>
+              </div>
+              <p className="mono truncate text-xs text-fg-subtle">{p.roots[0]?.absolutePath ?? "(no root)"}</p>
+            </button>
+          ))}
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-4 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+          >
+            <Plus size={14} /> New project
+          </button>
         </div>
-        {error && <p className="mb-2 text-xs text-danger">{error}</p>}
-        <button
-          type="submit"
-          disabled={createProject.isPending}
-          className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg disabled:opacity-50"
-        >
-          {createProject.isPending ? "Creating…" : "Create project"}
-        </button>
-      </form>
+      )}
+
+      {showForm && projects.length > 0 && (
+        <Card className="mt-4 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-fg">New project</h2>
+          <NewProjectForm onCreated={(id) => navigate(`/projects/${id}`)} />
+        </Card>
+      )}
+      {showForm && projects.length === 0 && (
+        <Card className="mt-4 p-4">
+          <NewProjectForm onCreated={(id) => navigate(`/projects/${id}`)} />
+        </Card>
+      )}
     </div>
   );
 }

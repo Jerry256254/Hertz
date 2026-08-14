@@ -1,7 +1,6 @@
 import prompts from "prompts";
 import kleur from "kleur";
-import { SUPPORTED_PROVIDERS, createProviderAdapter, type SupportedProvider } from "@kuclab-hertz/providers";
-import { createUser, addProviderConfig, type AppContext } from "@kuclab-hertz/server";
+import type { AppContext } from "@kuclab-hertz/server";
 import { saveConfig, type HertzConfig } from "../config.js";
 
 function onCancel(): never {
@@ -9,87 +8,15 @@ function onCancel(): never {
   process.exit(1);
 }
 
-async function collectOneProvider(): Promise<{
-  provider: SupportedProvider;
-  label: string;
-  apiKey: string;
-  baseUrl?: string;
-  defaultModel?: string;
-}> {
-  const { provider } = await prompts(
-    {
-      type: "select",
-      name: "provider",
-      message: "Provider",
-      choices: SUPPORTED_PROVIDERS.map((p) => ({ title: p, value: p })),
-    },
-    { onCancel },
-  );
-
-  const { label, apiKey, baseUrl } = await prompts(
-    [
-      { type: "text", name: "label", message: "Label for this provider", initial: provider },
-      { type: "password", name: "apiKey", message: "API key" },
-      {
-        type: provider === "openai-compatible" ? "text" : null,
-        name: "baseUrl",
-        message: "Base URL (e.g. http://localhost:11434/v1)",
-      },
-    ],
-    { onCancel },
-  );
-
-  console.log(kleur.dim("Scanning available models..."));
-  let defaultModel: string | undefined;
-  try {
-    const adapter = createProviderAdapter(provider, { apiKey, baseUrl });
-    const models = await adapter.listModels();
-    if (models.length > 0) {
-      const { model } = await prompts(
-        {
-          type: "select",
-          name: "model",
-          message: `Default model for ${label}`,
-          choices: models.map((m) => ({ title: m.displayName, value: m.id })),
-        },
-        { onCancel },
-      );
-      defaultModel = model;
-      console.log(kleur.green(`✓ Found ${models.length} model(s).`));
-    } else {
-      console.log(kleur.yellow("No models returned — you can pick one later in the WebUI."));
-    }
-  } catch (err) {
-    console.log(kleur.yellow(`Could not scan models yet (${(err as Error).message}) — you can retry from the WebUI.`));
-  }
-
-  return { provider, label, apiKey, baseUrl, defaultModel };
-}
-
-export async function runSetupWizard(ctx: AppContext): Promise<void> {
-  console.log(kleur.bold("\nKucLab Hertz — first-time setup\n"));
-
-  const { email, password } = await prompts(
-    [
-      { type: "text", name: "email", message: "Admin email" },
-      { type: "password", name: "password", message: "Admin password (min 8 characters)" },
-    ],
-    { onCancel },
-  );
-  if (!email || !password || password.length < 8) {
-    console.log(kleur.red("Email and an 8+ character password are required."));
-    process.exit(1);
-  }
-
-  const providers = [];
-  for (;;) {
-    providers.push(await collectOneProvider());
-    const { again } = await prompts(
-      { type: "confirm", name: "again", message: "Add another provider?", initial: false },
-      { onCancel },
-    );
-    if (!again) break;
-  }
+/**
+ * The only thing that has to happen at the terminal: choosing what interface the
+ * server binds to, since that decides what can even reach it before a browser is
+ * in the picture. Admin account creation and provider setup happen in the WebUI's
+ * first-run flow (see routes/setup.ts + web/src/routes/SetupPage.tsx) — bootstrap
+ * config a human fills in once via a form beats a sequence of terminal prompts.
+ */
+export async function runNetworkSetup(ctx: AppContext): Promise<HertzConfig> {
+  console.log(kleur.bold("\nKucLab Hertz — network setup\n"));
 
   const { bindChoice } = await prompts(
     {
@@ -120,10 +47,8 @@ export async function runSetupWizard(ctx: AppContext): Promise<void> {
   const config: HertzConfig = { host: bindChoice, port: port ?? 4173 };
   await saveConfig(ctx.paths, config);
 
-  const userId = await createUser(ctx, email, password, "admin");
-  for (const p of providers) {
-    await addProviderConfig(ctx, userId, p);
-  }
+  console.log(kleur.green(`\n✓ Network setup complete. Starting server on http://${config.host}:${config.port} ...`));
+  console.log(kleur.dim("  Create your admin account and add a provider from the WebUI once it's open.\n"));
 
-  console.log(kleur.green(`\n✓ Setup complete. Starting server on http://${config.host}:${config.port} ...\n`));
+  return config;
 }

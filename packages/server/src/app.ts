@@ -12,6 +12,7 @@ import { registerAgentRoutes } from "./routes/agents.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerFileRoutes } from "./routes/files.js";
 import { registerUsageRoutes } from "./routes/usage.js";
+import { registerSetupRoutes } from "./routes/setup.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
 
 export interface BuildAppOptions {
@@ -30,6 +31,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
 
   app.get("/api/health", async () => ({ ok: true }));
 
+  registerSetupRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
   registerProviderRoutes(app, ctx);
   registerProjectRoutes(app, ctx);

@@ -34,6 +34,17 @@ export interface ProviderConfig {
   createdAt: string;
 }
 
+export type PresetCategory = "frontier" | "aggregator" | "local";
+
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  kind: ProviderConfig["provider"];
+  category: PresetCategory;
+  baseUrl?: string;
+  hint: string;
+}
+
 export interface ModelInfo {
   id: string;
   displayName: string;

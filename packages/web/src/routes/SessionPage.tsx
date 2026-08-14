@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUp, Paperclip, TriangleAlert, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { Budget, HertzSession, PersistedMessage } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
 import { MessageView } from "../components/MessageView";
+import { IconButton } from "../components/ui";
 
 interface SessionDetail {
   session: HertzSession;
@@ -29,7 +31,9 @@ export function SessionPage() {
   const [images, setImages] = useState<Array<{ mimeType: string; data: string }>>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+  const [runError, setRunError] = useState<string | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data } = useQuery({
     queryKey: ["session", sessionId],
@@ -48,28 +52,52 @@ export function SessionPage() {
       } else if (event.type === "message_saved") {
         setStreamingText("");
         void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
       } else if (event.type === "status") {
         setIsRunning(event.status === "running");
+      } else if (event.type === "error") {
+        setRunError(event.message);
       } else if (event.type === "done") {
         setIsRunning(false);
         void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
       }
     });
     return unsubscribe;
   }, [sessionId, queryClient]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [data?.messages.length, streamingText]);
 
-  async function onSend(e: FormEvent) {
-    e.preventDefault();
-    if (!text && images.length === 0) return;
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [text]);
+
+  async function send() {
+    if ((!text && images.length === 0) || isRunning) return;
     setIsRunning(true);
-    await api.post(`/sessions/${sessionId}/messages`, { text, images });
+    setRunError(undefined);
+    const payload = { text, images };
     setText("");
     setImages([]);
+    await api.post(`/sessions/${sessionId}/messages`, payload);
     void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+  }
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    void send();
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
   }
 
   async function onFiles(files: FileList | null) {
@@ -86,86 +114,120 @@ export function SessionPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-8 flex-shrink-0 items-center justify-between border-b border-border px-4">
-        <span className="text-xs text-fg-muted">{data?.session.title}</span>
-        {budget && (
+      <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border px-6">
+        <span className="truncate text-sm font-medium text-fg">{data?.session.title}</span>
+        {budget && budget.used > 0 && (
           <div className="flex items-center gap-2">
-            <div className="h-1.5 w-32 overflow-hidden rounded bg-bg-sunken">
+            <div className="h-1.5 w-28 overflow-hidden rounded-full bg-bg-sunken">
               <div
-                className="h-full bg-accent"
+                className="h-full rounded-full bg-accent transition-[width] duration-300"
                 style={{ width: `${Math.min(100, budget.percent)}%` }}
               />
             </div>
-            <span className="font-mono text-xs text-fg-muted">{budget.used.toLocaleString()} tok</span>
+            <span className="mono text-xs text-fg-subtle">{budget.used.toLocaleString()} tok</span>
           </div>
         )}
-      </div>
+      </header>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-6">
         {data?.messages.map((m) => (
           <MessageView key={m.id} message={m} />
         ))}
         {streamingText && (
-          <div className="border-b border-border px-4 py-3">
-            <div className="mb-1 text-xs font-semibold text-fg-muted">agent</div>
-            <p className="whitespace-pre-wrap text-sm">{streamingText}</p>
+          <div className="mx-auto flex w-full max-w-3xl gap-3 px-4 py-3">
+            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-fg">
+              H
+            </span>
+            <p className="min-w-0 flex-1 whitespace-pre-wrap text-[15px] leading-relaxed text-fg">{streamingText}</p>
           </div>
         )}
         {isRunning && !streamingText && (
-          <div className="px-4 py-3 text-xs text-fg-muted">thinking…</div>
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
+            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-fg">
+              H
+            </span>
+            <span className="flex gap-1">
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-fg-subtle [animation-delay:0s]" />
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-fg-subtle [animation-delay:0.15s]" />
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-fg-subtle [animation-delay:0.3s]" />
+            </span>
+          </div>
+        )}
+        {runError && (
+          <div className="mx-auto flex w-full max-w-3xl items-start gap-2.5 px-4 py-3">
+            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-danger-wash">
+              <TriangleAlert size={14} className="text-danger" />
+            </span>
+            <div className="rounded-lg bg-danger-wash px-3 py-2 text-sm text-danger">
+              <p className="font-medium">The run failed</p>
+              <p className="mt-0.5">{runError}</p>
+            </div>
+          </div>
         )}
       </div>
 
-      <form
-        onSubmit={onSend}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          void onFiles(e.dataTransfer.files);
-        }}
-        className="flex-shrink-0 border-t border-border p-3"
-      >
-        {images.length > 0 && (
-          <div className="mb-2 flex gap-2">
-            {images.map((img, i) => (
-              <img
-                key={i}
-                src={`data:${img.mimeType};base64,${img.data}`}
-                className="h-12 w-12 rounded border border-border object-cover"
-              />
-            ))}
-          </div>
-        )}
-        <div className="flex items-end gap-2">
+      <div className="flex-shrink-0 px-4 pb-4">
+        <form
+          onSubmit={onSubmit}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            void onFiles(e.dataTransfer.files);
+          }}
+          className="mx-auto max-w-3xl rounded-2xl border border-border bg-bg-raised p-2 shadow-sm focus-within:border-border-strong"
+        >
+          {images.length > 0 && (
+            <div className="mb-1 flex flex-wrap gap-2 px-1 pt-1">
+              {images.map((img, i) => (
+                <div key={i} className="group relative">
+                  <img
+                    src={`data:${img.mimeType};base64,${img.data}`}
+                    className="h-14 w-14 rounded-md border border-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-bg-sunken text-fg-muted opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <textarea
+            ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
             onPaste={(e) => void onFiles(e.clipboardData.files)}
-            placeholder={isRunning ? "Agent is working…" : "Message the agent — drop or paste images"}
+            placeholder={isRunning ? "Agent is working…" : "Message the agent — drop or paste images, Enter to send"}
             disabled={isRunning}
-            rows={2}
-            className="flex-1 resize-none rounded border border-border bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent disabled:opacity-50"
+            rows={1}
+            className="max-h-[200px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle outline-none disabled:opacity-60"
           />
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={(e) => void onFiles(e.target.files)}
-            className="hidden"
-            id="file-input"
-          />
-          <label htmlFor="file-input" className="cursor-pointer rounded border border-border px-2 py-1.5 text-xs text-fg-muted hover:text-fg">
-            + image
-          </label>
-          <button
-            type="submit"
-            disabled={isRunning}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg disabled:opacity-50"
-          >
-            Send
-          </button>
-        </div>
-      </form>
+          <div className="flex items-center justify-between px-1 pt-1">
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => void onFiles(e.target.files)}
+              className="hidden"
+              id="file-input"
+            />
+            <IconButton type="button" onClick={() => document.getElementById("file-input")?.click()}>
+              <Paperclip size={15} />
+            </IconButton>
+            <button
+              type="submit"
+              disabled={isRunning || (!text && images.length === 0)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-accent-fg transition-opacity disabled:opacity-30"
+            >
+              <ArrowUp size={16} />
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import kleur from "kleur";
-import { createAppContext, hasAnyUser } from "@kuclab-hertz/server";
-import { loadConfig, DEFAULT_CONFIG } from "./config.js";
-import { runSetupWizard } from "./commands/setup.js";
+import { createAppContext } from "@kuclab-hertz/server";
+import { loadConfig } from "./config.js";
+import { runNetworkSetup } from "./commands/setup.js";
 import { startServer } from "./commands/start.js";
 
 function checkNodeVersion(): void {
@@ -20,22 +20,19 @@ async function main(): Promise<void> {
   const ctx = await createAppContext(process.env.HERTZ_DATA_DIR);
 
   if (command === "setup") {
-    await runSetupWizard(ctx);
+    await runNetworkSetup(ctx);
     return;
   }
 
-  const needsSetup = !(await hasAnyUser(ctx));
-
-  if (command === "start" && needsSetup) {
-    console.error(kleur.red("No admin user found. Run `kuclab-hertz setup` first."));
-    process.exit(1);
+  let config = await loadConfig(ctx.paths);
+  if (!config) {
+    if (command === "start") {
+      console.error(kleur.red("No network config found. Run `kuclab-hertz setup` first."));
+      process.exit(1);
+    }
+    config = await runNetworkSetup(ctx);
   }
 
-  if (needsSetup) {
-    await runSetupWizard(ctx);
-  }
-
-  const config = (await loadConfig(ctx.paths)) ?? DEFAULT_CONFIG;
   await startServer(ctx, config);
 }
 

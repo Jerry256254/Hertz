@@ -20,7 +20,6 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@kuclab-hertz/providers": "workspace:*",
     "@kuclab-hertz/server": "workspace:*",
     "prompts": "^2.4.2",
     "kleur": "^4.1.5"

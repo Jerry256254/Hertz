@@ -1,24 +1,82 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, FolderGit2, MessageSquarePlus, Plus } from "lucide-react";
 import { api } from "../lib/api";
-import type { Agent, HertzSession, Project, ProviderConfig } from "../lib/types";
+import type { Agent, Project, ProviderConfig } from "../lib/types";
 import { FileExplorer } from "../components/FileExplorer";
+import { Avatar, Badge, Button, Card, EmptyState, Input, Label } from "../components/ui";
+
+function NewAgentForm({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
+  const queryClient = useQueryClient();
+  const { data: providers } = useQuery({
+    queryKey: ["providers"],
+    queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
+  });
+  const [name, setName] = useState("agent-1");
+  const [providerConfigId, setProviderConfigId] = useState("");
+  const [model, setModel] = useState("");
+
+  const createAgent = useMutation({
+    mutationFn: () => api.post<{ id: string }>("/agents", { projectId, name, providerConfigId, model }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["agents", projectId] });
+      onCreated();
+    },
+  });
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    createAgent.mutate();
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-3">
+      <div>
+        <Label>Name</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <div>
+        <Label>Provider</Label>
+        <select
+          value={providerConfigId}
+          onChange={(e) => setProviderConfigId(e.target.value)}
+          required
+          className="h-9 w-full rounded-md border border-border bg-bg-raised px-3 text-sm text-fg outline-none focus:border-accent"
+        >
+          <option value="">Select a provider…</option>
+          {providers?.providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <Label>Model id</Label>
+        <Input
+          placeholder="see Providers → scan models"
+          required
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="mono"
+        />
+      </div>
+      <Button type="submit" variant="primary" disabled={createAgent.isPending}>
+        {createAgent.isPending ? "Creating…" : "Create agent"}
+      </Button>
+    </form>
+  );
+}
 
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
+  const [showAgentForm, setShowAgentForm] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => api.get<Project>(`/projects/${projectId}`),
-  });
-
-  const { data: providers } = useQuery({
-    queryKey: ["providers"],
-    queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
   });
 
   const { data: agentsData } = useQuery({
@@ -26,122 +84,75 @@ export function ProjectPage() {
     queryFn: () => api.get<{ agents: Agent[] }>(`/projects/${projectId}/agents`),
   });
 
-  const { data: sessionsData } = useQuery({
-    queryKey: ["sessions", projectId],
-    queryFn: () => api.get<{ sessions: HertzSession[] }>(`/projects/${projectId}/sessions`),
-    refetchInterval: 5000,
-  });
-
-  const [agentName, setAgentName] = useState("agent-1");
-  const [providerConfigId, setProviderConfigId] = useState("");
-  const [model, setModel] = useState("");
-
-  const createAgent = useMutation({
-    mutationFn: () =>
-      api.post<{ id: string }>("/agents", {
-        projectId,
-        name: agentName,
-        providerConfigId,
-        model,
-      }),
-    onSuccess: (res) => {
-      void queryClient.invalidateQueries({ queryKey: ["agents", projectId] });
-      setSelectedAgentId(res.id);
-    },
-  });
-
-  const createSession = useMutation({
+  const newChat = useMutation({
     mutationFn: (agentId: string) => api.post<{ id: string }>(`/agents/${agentId}/sessions`),
     onSuccess: (res) => navigate(`/projects/${projectId}/sessions/${res.id}`),
   });
 
-  function onCreateAgent(e: FormEvent) {
-    e.preventDefault();
-    createAgent.mutate();
-  }
-
   const agents = agentsData?.agents ?? [];
-  const sessions = sessionsData?.sessions ?? [];
 
   return (
     <div className="grid h-full grid-cols-[1fr_320px]">
-      <div className="overflow-auto p-6">
-        <h1 className="mb-1 text-sm font-semibold">{project?.name}</h1>
-        <p className="mb-4 font-mono text-xs text-fg-muted">{project?.roots[0]?.absolutePath}</p>
-
-        <h2 className="mb-2 text-xs font-semibold text-fg-muted">Agents</h2>
-        <ul className="mb-4 divide-y divide-border rounded border border-border">
-          {agents.map((a) => (
-            <li key={a.id} className="flex items-center justify-between px-3 py-2">
-              <div>
-                <span className="text-sm">{a.name}</span>
-                <span className="ml-2 font-mono text-xs text-fg-muted">{a.model}</span>
-              </div>
-              <button
-                onClick={() => createSession.mutate(a.id)}
-                disabled={createSession.isPending}
-                className="rounded border border-border px-2 py-1 text-xs hover:bg-bg-raised"
-              >
-                New session
-              </button>
-            </li>
-          ))}
-          {agents.length === 0 && <li className="px-3 py-2 text-sm text-fg-muted">No agents yet.</li>}
-        </ul>
-
-        <form onSubmit={onCreateAgent} className="mb-6 rounded border border-border bg-bg-raised p-4">
-          <h3 className="mb-3 text-xs font-semibold text-fg-muted">New agent</h3>
-          <div className="mb-2 flex gap-2">
-            <input
-              value={agentName}
-              onChange={(e) => setAgentName(e.target.value)}
-              className="flex-1 rounded border border-border bg-bg px-2 py-1.5 text-sm"
-            />
-            <select
-              value={providerConfigId}
-              onChange={(e) => setProviderConfigId(e.target.value)}
-              required
-              className="rounded border border-border bg-bg px-2 py-1.5 text-sm"
-            >
-              <option value="">Provider…</option>
-              {providers?.providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            <input
-              placeholder="model id (see Providers → Scan)"
-              required
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="flex-1 rounded border border-border bg-bg px-2 py-1.5 font-mono text-sm"
-            />
+      <div className="overflow-auto px-6 py-6">
+        <div className="mb-6 flex items-center gap-2">
+          <FolderGit2 size={18} className="text-accent" />
+          <div>
+            <h1 className="text-base font-semibold leading-tight text-fg">{project?.name}</h1>
+            <p className="mono text-xs leading-tight text-fg-subtle">{project?.roots[0]?.absolutePath}</p>
           </div>
-          <button
-            type="submit"
-            disabled={createAgent.isPending}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg disabled:opacity-50"
-          >
-            {createAgent.isPending ? "Creating…" : "Create agent"}
-          </button>
-        </form>
+        </div>
 
-        <h2 className="mb-2 text-xs font-semibold text-fg-muted">Sessions</h2>
-        <ul className="divide-y divide-border rounded border border-border">
-          {sessions.map((s) => (
-            <li key={s.id}>
-              <button
-                onClick={() => navigate(`/projects/${projectId}/sessions/${s.id}`)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-bg-raised"
-              >
-                <span className="text-sm">{s.title}</span>
-                <span className="text-xs text-fg-muted">{s.status}</span>
-              </button>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Agents</h2>
+          <button
+            onClick={() => setShowAgentForm((v) => !v)}
+            className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
+          >
+            <Plus size={13} /> New agent
+          </button>
+        </div>
+
+        {agents.length === 0 && !showAgentForm && (
+          <Card>
+            <EmptyState
+              icon={<Bot size={26} strokeWidth={1.5} />}
+              title="No agents yet"
+              description="An agent pairs a model with this project. Create one to start chatting."
+              action={
+                <Button variant="primary" onClick={() => setShowAgentForm(true)}>
+                  <Plus size={14} /> New agent
+                </Button>
+              }
+            />
+          </Card>
+        )}
+
+        <ul className="space-y-2">
+          {agents.map((a) => (
+            <li key={a.id}>
+              <Card className="flex items-center justify-between p-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar label={a.name} tone="accent" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-fg">{a.name}</p>
+                    <p className="mono truncate text-xs text-fg-subtle">{a.model}</p>
+                  </div>
+                  <Badge tone={a.status === "running" ? "accent" : "neutral"}>{a.status}</Badge>
+                </div>
+                <Button variant="secondary" size="sm" onClick={() => newChat.mutate(a.id)} disabled={newChat.isPending}>
+                  <MessageSquarePlus size={13} /> New chat
+                </Button>
+              </Card>
             </li>
           ))}
-          {sessions.length === 0 && <li className="px-3 py-2 text-sm text-fg-muted">No sessions yet.</li>}
         </ul>
+
+        {showAgentForm && (
+          <Card className="mt-3 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-fg">New agent</h3>
+            <NewAgentForm projectId={projectId!} onCreated={() => setShowAgentForm(false)} />
+          </Card>
+        )}
       </div>
       {projectId && <FileExplorer projectId={projectId} />}
     </div>

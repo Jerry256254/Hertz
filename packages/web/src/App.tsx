@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./lib/auth";
+import { SetupPage } from "./routes/SetupPage";
 import { LoginPage } from "./routes/LoginPage";
 import { DashboardPage } from "./routes/DashboardPage";
 import { ProjectPage } from "./routes/ProjectPage";
@@ -8,10 +9,18 @@ import { ProvidersPage } from "./routes/ProvidersPage";
 import { AppLayout } from "./components/AppLayout";
 
 export function App() {
-  const { user, loading } = useAuth();
+  const { user, loading, needsSetup } = useAuth();
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center text-fg-muted">Loading…</div>;
+    return <div className="flex h-full items-center justify-center text-sm text-fg-muted">Loading…</div>;
+  }
+
+  if (needsSetup) {
+    return (
+      <Routes>
+        <Route path="*" element={<SetupPage />} />
+      </Routes>
+    );
   }
 
   if (!user) {

@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
 import type { AppContext } from "../context.js";
-import { agents, projectRoots, sessions } from "../db/schema.js";
+import { agents, projectRoots, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
@@ -46,6 +46,27 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       updatedAt: now,
     });
     return reply.code(201).send({ id });
+  });
+
+  instance.get("/api/sessions", async () => {
+    const rows = await ctx.db
+      .select({
+        id: sessions.id,
+        agentId: sessions.agentId,
+        projectId: sessions.projectId,
+        title: sessions.title,
+        status: sessions.status,
+        createdAt: sessions.createdAt,
+        updatedAt: sessions.updatedAt,
+        agentName: agents.name,
+        projectName: projects.name,
+      })
+      .from(sessions)
+      .innerJoin(agents, eq(sessions.agentId, agents.id))
+      .innerJoin(projects, eq(sessions.projectId, projects.id))
+      .orderBy(desc(sessions.updatedAt))
+      .limit(200);
+    return { sessions: rows };
   });
 
   instance.get("/api/projects/:projectId/sessions", async (request) => {
