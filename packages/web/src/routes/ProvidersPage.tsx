@@ -1,9 +1,9 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, KeyRound, Search } from "lucide-react";
+import { Check, KeyRound, Search, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import type { ModelInfo, PresetCategory, ProviderConfig, ProviderPreset } from "../lib/types";
-import { Avatar, Badge, Button, Card, Input, Label } from "../components/ui";
+import { Avatar, Badge, Button, Card, IconButton, Input, Label } from "../components/ui";
 
 const CATEGORY_LABEL: Record<PresetCategory, string> = {
   frontier: "Frontier labs",
@@ -84,12 +84,20 @@ function AddProviderForm({ preset, onDone }: { preset: ProviderPreset; onDone: (
 }
 
 function ConfiguredProviderRow({ provider }: { provider: ProviderConfig }) {
+  const queryClient = useQueryClient();
   const [models, setModels] = useState<ModelInfo[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const scan = useMutation({
     mutationFn: () => api.post<{ models: ModelInfo[] }>(`/providers/${provider.id}/scan`),
     onSuccess: (res) => setModels(res.models),
+    onError: (err) => setError((err as Error).message),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.delete(`/providers/${provider.id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["providers"] }),
     onError: (err) => setError((err as Error).message),
   });
 
@@ -105,9 +113,26 @@ function ConfiguredProviderRow({ provider }: { provider: ProviderConfig }) {
             </p>
           </div>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => scan.mutate()} disabled={scan.isPending}>
-          {scan.isPending ? "Scanning…" : "Scan models"}
-        </Button>
+        {confirmingDelete ? (
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            <span className="text-xs text-fg-muted">Delete this provider?</span>
+            <Button variant="danger" size="sm" onClick={() => remove.mutate()} disabled={remove.isPending}>
+              {remove.isPending ? "Deleting…" : "Delete"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            <Button variant="secondary" size="sm" onClick={() => scan.mutate()} disabled={scan.isPending}>
+              {scan.isPending ? "Scanning…" : "Scan models"}
+            </Button>
+            <IconButton title="Delete provider" onClick={() => setConfirmingDelete(true)}>
+              <Trash2 size={14} />
+            </IconButton>
+          </div>
+        )}
       </div>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
       {models && (

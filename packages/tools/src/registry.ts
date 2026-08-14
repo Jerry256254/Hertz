@@ -42,11 +42,24 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
   }
 }
 
-/** JSON-schema tool definitions in the shape provider adapters expect. */
+/**
+ * JSON-schema tool definitions in the shape provider adapters expect.
+ *
+ * Deliberately NOT using target:"openApi3" here: that target renders
+ * exclusiveMinimum/exclusiveMaximum as booleans (the old OpenAPI 3.0 /
+ * JSON-Schema-draft-4 style), which strict OpenAI-compatible tool-schema
+ * validators reject outright ("True is not of type 'number'"). The default
+ * target (JSON Schema draft-7) renders them as numbers, which is what every
+ * provider's function-calling schema actually expects.
+ */
 export function toProviderToolDefinitions(tools: ToolDef[] = ALL_TOOLS) {
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    inputSchema: zodToJsonSchema(t.inputSchema, { target: "openApi3" }) as Record<string, unknown>,
-  }));
+  return tools.map((t) => {
+    const schema = zodToJsonSchema(t.inputSchema) as Record<string, unknown>;
+    delete schema.$schema;
+    return {
+      name: t.name,
+      description: t.description,
+      inputSchema: schema,
+    };
+  });
 }
