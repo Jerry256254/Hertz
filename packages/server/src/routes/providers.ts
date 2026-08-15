@@ -9,16 +9,19 @@ import { requireAuth } from "../auth/plugin.js";
 import { addProviderConfig } from "../bootstrap.js";
 import { newId } from "../db/client.js";
 
+// .trim() before .min(1): a copy-pasted key with a trailing space/newline (very common) silently
+// corrupts the "Authorization: Bearer <key>" header downstream and looks exactly like a bad key —
+// this was reported as a provider-specific "fix NVIDIA" bug but is a generic paste-hygiene issue.
 const createSchema = z.object({
   provider: z.enum(SUPPORTED_PROVIDERS),
-  label: z.string().min(1),
-  apiKey: z.string().min(1),
-  baseUrl: z.string().url().optional(),
-  defaultModel: z.string().optional(),
+  label: z.string().trim().min(1),
+  apiKey: z.string().trim().min(1),
+  baseUrl: z.string().trim().url().optional(),
+  defaultModel: z.string().trim().optional(),
 });
 
 const addKeySchema = z.object({
-  apiKey: z.string().min(1),
+  apiKey: z.string().trim().min(1),
 });
 
 export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): void {

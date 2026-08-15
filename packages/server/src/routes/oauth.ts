@@ -23,8 +23,8 @@ const mcpGoogleServerPath = require.resolve("@kuclab-hertz/mcp-google/dist/serve
 
 const upsertAppSchema = z.object({
   service: z.enum(["google", "slack"]),
-  clientId: z.string().min(1),
-  clientSecret: z.string().min(1),
+  clientId: z.string().trim().min(1),
+  clientSecret: z.string().trim().min(1),
 });
 
 interface OAuthTarget {
