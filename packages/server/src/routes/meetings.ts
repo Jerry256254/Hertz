@@ -32,6 +32,9 @@ export function registerMeetingRoutes(app: FastifyInstance, ctx: AppContext): vo
       if (participantRows.some((a) => a.projectId !== projectId)) {
         return reply.code(400).send({ error: "All participants must belong to this project" });
       }
+      if (participantRows.some((a) => a.approvalStatus !== "approved")) {
+        return reply.code(400).send({ error: "All participants must be approved first" });
+      }
 
       const id = newId();
       const now = new Date();

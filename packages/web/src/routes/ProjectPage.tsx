@@ -266,7 +266,15 @@ export function ProjectPage() {
 
   const agents = agentsData?.agents ?? [];
   const manager = agents.find((a) => a.role === "manager");
-  const employees = agents.filter((a) => a.role !== "manager");
+  const employees = agents.filter((a) => a.role !== "manager" && a.approvalStatus === "approved");
+  const pendingHires = agents.filter((a) => a.role !== "manager" && a.approvalStatus === "pending");
+
+  const decideHire = useMutation({
+    mutationFn: ({ id, approvalStatus }: { id: string; approvalStatus: "approved" | "rejected" }) =>
+      api.patch(`/agents/${id}/approval`, { approvalStatus }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agents", projectId] }),
+  });
+
   const meetings = meetingsData?.meetings ?? [];
   const tasks = tasksData?.tasks ?? [];
   const routines = routinesData?.routines ?? [];
@@ -339,6 +347,51 @@ export function ProjectPage() {
                 <DeleteButton title="Remove manager" onDelete={() => deleteAgent.mutate(manager.id)} />
               </div>
             </Card>
+          </div>
+        )}
+
+        {pendingHires.length > 0 && (
+          <div className="mb-6">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+              Pending approval · {pendingHires.length}
+            </h2>
+            <ul className="space-y-2">
+              {pendingHires.map((a) => (
+                <li key={a.id}>
+                  <Card className="p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Avatar label={a.name} color={agentColor(a.id)} />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-fg">
+                            {a.name} <span className="font-normal text-fg-subtle">· {ROLE_LABEL[a.role]}</span>
+                          </p>
+                          {a.jobDescription && <p className="mt-0.5 text-xs text-fg-muted">{a.jobDescription}</p>}
+                        </div>
+                      </div>
+                      <div className="flex flex-shrink-0 items-center gap-1.5">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => decideHire.mutate({ id: a.id, approvalStatus: "approved" })}
+                          disabled={decideHire.isPending}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => decideHire.mutate({ id: a.id, approvalStatus: "rejected" })}
+                          disabled={decideHire.isPending}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS agents (
   mode TEXT NOT NULL DEFAULT 'manual',
   status TEXT NOT NULL DEFAULT 'idle',
   last_status TEXT,
+  job_description TEXT,
+  approval_status TEXT NOT NULL DEFAULT 'approved',
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
@@ -231,6 +233,24 @@ CREATE TABLE IF NOT EXISTS employee_messages (
 CREATE INDEX IF NOT EXISTS idx_employee_messages_project ON employee_messages(project_id);
 CREATE INDEX IF NOT EXISTS idx_employee_messages_to ON employee_messages(to_agent_id);
 
+CREATE TABLE IF NOT EXISTS employee_shells (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  owner_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_employee_shells_owner ON employee_shells(owner_agent_id);
+
+CREATE TABLE IF NOT EXISTS employee_shell_grants (
+  id TEXT PRIMARY KEY,
+  shell_id TEXT NOT NULL REFERENCES employee_shells(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_employee_shell_grants_shell ON employee_shell_grants(shell_id);
+CREATE INDEX IF NOT EXISTS idx_employee_shell_grants_agent ON employee_shell_grants(agent_id);
+
 CREATE TABLE IF NOT EXISTS session_tokens (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -246,7 +266,11 @@ CREATE TABLE IF NOT EXISTS session_tokens (
  * table that already exists from a previous install — those need an explicit
  * ALTER TABLE, guarded against re-running on a DB that already has the column.
  */
-const COLUMN_MIGRATIONS: string[] = ["ALTER TABLE agents ADD COLUMN last_status TEXT"];
+const COLUMN_MIGRATIONS: string[] = [
+  "ALTER TABLE agents ADD COLUMN last_status TEXT",
+  "ALTER TABLE agents ADD COLUMN job_description TEXT",
+  "ALTER TABLE agents ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'",
+];
 
 export async function runMigrations(client: Client): Promise<void> {
   const statements = BOOTSTRAP_SQL.split(";")

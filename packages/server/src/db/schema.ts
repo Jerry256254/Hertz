@@ -51,6 +51,10 @@ export const agents = sqliteTable("agents", {
   status: text("status", { enum: ["idle", "running", "error"] }).notNull().default("idle"),
   /** One-line, human-facing summary of the outcome of this agent's most recent run — "Done.", "3 intros drafted…" — shown under their name in the sidebar. */
   lastStatus: text("last_status"),
+  /** What this employee is for, written by the manager at hire time — shown to the user and to the agent itself. */
+  jobDescription: text("job_description"),
+  /** New hires (via hire_employee) start "pending" and can't run until the user (CEO) approves them. Directly-created agents (POST /api/agents by the user) start "approved". */
+  approvalStatus: text("approval_status", { enum: ["pending", "approved", "rejected"] }).notNull().default("approved"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -323,6 +327,36 @@ export const employeeMessages = sqliteTable("employee_messages", {
     .notNull()
     .references(() => agents.id, { onDelete: "cascade" }),
   body: text("body").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * A persistent Linux shell belonging to one employee — a real long-lived bash
+ * process, not a one-off spawn per tool call, so `cd`, exported env vars, and
+ * background jobs survive across turns. An employee can have more than one
+ * (named), and can grant another employee access to it (employeeShellGrants)
+ * instead of everyone getting only their own isolated process.
+ */
+export const employeeShells = sqliteTable("employee_shells", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  ownerAgentId: text("owner_agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const employeeShellGrants = sqliteTable("employee_shell_grants", {
+  id: text("id").primaryKey(),
+  shellId: text("shell_id")
+    .notNull()
+    .references(() => employeeShells.id, { onDelete: "cascade" }),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

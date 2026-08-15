@@ -40,7 +40,7 @@ export function defaultSystemPromptFor(role: AgentRole, isManager = false): stri
 const hireSchema = z.object({
   name: z.string().min(1),
   role: z.enum(AGENT_ROLES.filter((r) => r !== "manager") as [AgentRole, ...AgentRole[]]),
-  task: z.string().optional(),
+  jobDescription: z.string().min(1).describe("What this person is for — shown to the user and to the employee themselves"),
 });
 
 const assignTaskSchema = z.object({
@@ -78,6 +78,7 @@ async function runDelegatedTask(
   const employeeRows = await db.select().from(agents).where(eq(agents.id, employeeAgentId)).limit(1);
   const employee = employeeRows[0];
   if (!employee) return "(employee not found)";
+  if (employee.approvalStatus !== "approved") return "(this employee isn't approved yet — the user needs to approve the hire first)";
 
   const rootRows = await db.select().from(projectRoots).where(eq(projectRoots.projectId, projectId));
   const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
@@ -148,7 +149,7 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
   const hireEmployee: OrgToolDef = {
     name: "hire_employee",
     description:
-      "Hire a new employee agent for this project with a specific role, optionally briefing them on a first task right away. Only the manager can do this.",
+      "Request a new employee agent for this project, with a role and a clear job description. The user (CEO) has to approve every hire before the employee can actually do anything — this creates a pending request, not an immediately-usable agent.",
     inputSchema: hireSchema,
     async execute(rawInput, ctx) {
       const input = hireSchema.parse(rawInput);
@@ -162,18 +163,17 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
         role: input.role,
         model: manager.model,
         systemPrompt: defaultSystemPromptFor(input.role),
+        jobDescription: input.jobDescription,
+        approvalStatus: "pending",
         mode: "manual",
         status: "idle",
         createdAt: new Date(),
       });
       await ensureEmployeeDirs(paths, manager.projectId, id);
 
-      let briefing = "";
-      if (input.task) {
-        const outcome = await runDelegatedTask(deps, manager.projectId, id, input.task, ctx.actor.userId);
-        briefing = `\n\nTheir response to the first task:\n${outcome}`;
-      }
-      return { summary: `Hired ${input.name} (${input.role}), agent id ${id}.${briefing}` };
+      return {
+        summary: `Requested to hire ${input.name} (${input.role}) — "${input.jobDescription}". Waiting on the user to approve before they can start work.`,
+      };
     },
   };
 
@@ -186,7 +186,10 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
       const rows = await db.select().from(agents).where(eq(agents.projectId, manager.projectId));
       const lines = rows
         .filter((a) => a.id !== manager.id)
-        .map((a) => `${a.name} — ${a.role} (${a.status}) [id: ${a.id}]`);
+        .map((a) => {
+          const approval = a.approvalStatus !== "approved" ? `, ${a.approvalStatus}` : "";
+          return `${a.name} — ${a.role} (${a.status}${approval}) [id: ${a.id}]`;
+        });
       return { summary: lines.length > 0 ? lines.join("\n") : "(no employees hired yet — use hire_employee)" };
     },
   };
@@ -203,6 +206,9 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
       const employee = employeeRows[0];
       if (!employee || employee.projectId !== manager.projectId) {
         return { summary: `No employee with id ${input.employeeAgentId} on this project's team.`, isError: true };
+      }
+      if (employee.approvalStatus !== "approved") {
+        return { summary: `${employee.name} isn't approved yet — the user still needs to approve this hire.`, isError: true };
       }
       const outcome = await runDelegatedTask(deps, manager.projectId, employee.id, input.task, ctx.actor.userId);
       return { summary: `${employee.name} (${employee.role}) responded:\n${outcome}` };

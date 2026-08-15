@@ -96,6 +96,8 @@ export interface Agent {
   mode: "manual" | "plan" | "auto";
   status: "idle" | "running" | "error";
   lastStatus?: string | null;
+  jobDescription?: string | null;
+  approvalStatus: "pending" | "approved" | "rejected";
   createdAt: string;
   homeProjectName?: string;
 }

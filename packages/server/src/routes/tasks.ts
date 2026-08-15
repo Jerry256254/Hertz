@@ -37,6 +37,9 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: AppContext): void 
         const rows = await ctx.db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
         const agent = rows[0];
         if (!agent) return reply.code(400).send({ error: `Unknown agent: ${agentId}` });
+        if (agent.approvalStatus !== "approved") {
+          return reply.code(400).send({ error: `${agent.name} is still awaiting approval` });
+        }
         if (agent.projectId !== projectId) {
           const attached = await ctx.db
             .select({ id: agentProjects.id })

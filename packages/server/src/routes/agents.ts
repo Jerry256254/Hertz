@@ -14,7 +14,10 @@ const createSchema = z.object({
   providerConfigId: z.string().min(1),
   role: z.enum(AGENT_ROLES).default("generalist"),
   systemPrompt: z.string().optional(),
+  jobDescription: z.string().optional(),
 });
+
+const approvalSchema = z.object({ approvalStatus: z.enum(["approved", "rejected"]) });
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
@@ -44,11 +47,29 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         role: parsed.data.role,
         model: parsed.data.model,
         systemPrompt: parsed.data.systemPrompt ?? defaultSystemPromptFor(parsed.data.role),
+        jobDescription: parsed.data.jobDescription,
         mode: "manual",
         status: "idle",
         createdAt: new Date(),
       });
       return reply.code(201).send({ id });
+    });
+
+    // The user (CEO) approving or rejecting a manager's hire_employee request.
+    instance.patch("/api/agents/:id/approval", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = approvalSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+
+      const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+      const agent = rows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (agent.approvalStatus !== "pending") {
+        return reply.code(400).send({ error: "This hire has already been decided" });
+      }
+
+      await ctx.db.update(agents).set({ approvalStatus: parsed.data.approvalStatus }).where(eq(agents.id, id));
+      return { ok: true };
     });
 
     // All agents company-wide (across every project) — used by the cross-project

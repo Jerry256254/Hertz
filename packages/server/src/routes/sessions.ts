@@ -48,6 +48,9 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
     const agent = agentRows[0];
     if (!agent) return reply.code(404).send({ error: "Agent not found" });
+    if (agent.approvalStatus !== "approved") {
+      return reply.code(400).send({ error: `${agent.name} is still awaiting approval` });
+    }
 
     const projectId = parsed.data.projectId ?? agent.projectId;
     if (projectId !== agent.projectId) {
