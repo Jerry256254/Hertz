@@ -34,9 +34,19 @@ function toDefs(tools: OrgToolDef[]) {
 }
 
 /**
+ * Managers keep read-only tools (for reviewing what employees produced) but
+ * lose direct write access — otherwise it's too easy for a manager to just do
+ * the work itself instead of hiring/briefing employees for it, which defeats
+ * the entire point of the org structure. This is enforced here, not just in
+ * the system prompt, so it holds even if a model ignores its instructions.
+ */
+const MANAGER_RESTRICTED_TOOLS = new Set(["write_file", "edit_file", "shell_exec"]);
+
+/**
  * Every agent gets the base fs/shell/web/todo tools plus memory (remember/
- * list_memory/forget). Only manager-role agents additionally get the
- * org-management tools (hire_employee, list_employees, assign_task).
+ * list_memory/forget). Manager-role agents additionally get the org-
+ * management tools (hire_employee, list_employees, assign_task) but lose
+ * MANAGER_RESTRICTED_TOOLS — see above.
  */
 export function createToolPort(deps: ToolPortDeps): ToolPort {
   const orgTools = createOrgTools(deps);
@@ -51,17 +61,29 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const shellDefs = toDefs(shellTools);
   const orgDefs = toDefs(orgTools);
 
+  async function isManager(agentId: string): Promise<boolean> {
+    const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
+    return rows[0]?.role === "manager";
+  }
+
   return {
     async listDefinitions(agentId) {
-      const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
+      const managerRole = await isManager(agentId);
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      const defs = [...baseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...mcpDefs];
-      return rows[0]?.role === "manager" ? [...defs, ...orgDefs] : defs;
+      const filteredBaseDefs = managerRole ? baseDefs.filter((d) => !MANAGER_RESTRICTED_TOOLS.has(d.name)) : baseDefs;
+      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...mcpDefs];
+      return managerRole ? [...defs, ...orgDefs] : defs;
     },
-    run(name, input, ctx) {
+    async run(name, input, ctx) {
       if (deps.mcpRegistry.isMcpTool(name)) return deps.mcpRegistry.run(name, input);
       const tool = allByName.get(name);
       if (tool) return tool.execute(input, ctx);
+      if (MANAGER_RESTRICTED_TOOLS.has(name) && ctx.actor.actorType === "agent" && (await isManager(ctx.actor.actorId))) {
+        return {
+          summary: "As the manager you don't have direct write access — hire the right role with hire_employee if you don't have them yet, then delegate this with assign_task.",
+          isError: true,
+        };
+      }
       return runTool(name, input, ctx);
     },
   };
