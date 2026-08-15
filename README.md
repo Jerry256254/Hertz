@@ -13,7 +13,10 @@ Self-hosted agentní vývojová platforma — jeden příkaz nastartuje server s
 - **Persistentní paměť zaměstnanců** — každý agent si sám spravuje vlastní paměť (remember/list_memory/forget) i vlastní složku na disku (notes/materials/data) mimo sdílený project root, obojí vidí i uživatel.
 - **Zaměstnanci komunikují mezi sebou** — přímé zprávy (message_employee) i skupinové schůzky (meetings), transparentně viditelné uživateli, ne jen jednosměrné delegování.
 - **Úkoly a routines** — úkol lze zadat jen vybrané podmnožině týmu; routines re-briefují stejného agenta na plán (jednou/denně/týdně/vlastní cron), scheduler je DB-backed a přežije restart serveru.
-- **MCP integrace** — připojení externích MCP serverů (stdio i sse) globálně nebo per zaměstnanec, jejich nástroje se sloučí do agentova toolsetu automaticky.
+- **MCP integrace** — katalog dlaždic (GitHub, Slack, Postgres, Google Drive…) s jedním "Connect", globálně nebo per zaměstnanec ve vlastním nastavení; jejich nástroje se sloučí do agentova toolsetu automaticky.
+- **Schvalování nových najmutí** — manažer smí požádat o nového zaměstnance (hire_employee) i s popisem práce, ale skutečně funkční se stane až po schválení uživatelem (CEO) — jako u reálné firmy.
+- **Vlastní Linux shell pro každého zaměstnance** — reálný persistentní bash proces (ne jednorázový spawn), víc pojmenovaných shellů, sdílení přístupu mezi kolegy, transkript viditelný uživateli.
+- **Detail zaměstnance** — jedna stránka na CEO dohled: popis práce, paměť, osobní prostor na disku, MCP nastavení, shelly.
 - **`/compact`** — jedním příkazem v chatu se historie session shrne do jedné souhrnné zprávy, další tahy čtou jen ji.
 - **Vlastní API klíč, výběr providera, pool klíčů** — Anthropic, OpenAI, Google, nebo libovolný OpenAI-compatible endpoint (Ollama, OpenRouter, vLLM, LM Studio…), s automatickým skenem modelů a rotací mezi více klíči při rate limitu.
 - **Sessions běží nezávisle na prohlížeči** — zavřete tab, agent pokračuje, po návratu vidíte celý průběh.
@@ -23,7 +26,7 @@ Self-hosted agentní vývojová platforma — jeden příkaz nastartuje server s
 
 ## Design
 
-Hustá informační vrstva, klidná typografie, tmavý i světlý režim, klávesnice na prvním místě — cíl je profesionální nástroj pro každodenní práci, ne "AI startup" landing page.
+Material You (M3) — tonální paleta odvozená z jednoho seed odstínu, zaoblené plochy, jemné vrstvení, tmavý i světlý režim. Hustá informační vrstva a klávesnice na prvním místě zůstávají — cíl je profesionální nástroj pro každodenní práci, ne "AI startup" landing page.
 
 ## Sestavení ze zdrojového kódu
 

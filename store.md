@@ -2,8 +2,8 @@
 schema_version: 1
 app_name: KucLab Hertz CLI
 package_id: kuclab-hertz
-version_name: "0.2.0"
-version_code: 2
+version_name: "0.3.0"
+version_code: 3
 last_updated: 2026-08-15
 license: MIT
 category: Developer Tools
@@ -37,6 +37,14 @@ screenshots:
   - store/screenshots/01_login.png
   - store/screenshots/02_session.png
 changelog:
+  - version: "0.3.0"
+    date: 2026-08-15
+    notes:
+      - "Nová najmutí manažerem čekají na schválení uživatele (CEO) — hire_employee vytvoří žádost s popisem práce, ne rovnou funkčního zaměstnance"
+      - "Persistentní, sdílitelný Linux shell pro každého zaměstnance (víc pojmenovaných shellů, ne jen jednorázový shell_exec)"
+      - "MCP Integrace přepracované na katalog dlaždic (GitHub, Slack, Postgres, Google Drive…) s jedním Connect, scoped i per zaměstnanec"
+      - "Nová stránka detailu zaměstnance: popis práce, paměť, osobní prostor na disku, MCP, shelly — jedno místo pro CEO dohled"
+      - "Kompletní redesign na Material You (M3) — tonální paleta, zaoblené plochy, nahrazuje předchozí černobílou identitu"
   - version: "0.2.0"
     date: 2026-08-15
     notes:
