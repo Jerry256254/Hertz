@@ -201,6 +201,16 @@ export type AgentLoopEvent =
   | { type: "error"; message: string }
   | { type: "done" };
 
+export interface EmployeeMessage {
+  id: string;
+  fromAgentId: string;
+  toAgentId: string;
+  fromName: string;
+  toName: string;
+  body: string;
+  createdAt: string;
+}
+
 export interface McpServer {
   id: string;
   agentId: string | null;

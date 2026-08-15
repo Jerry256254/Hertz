@@ -3,8 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuit, Bot, Check, FolderGit2, ListTodo, MessageSquarePlus, Plus, Search, UserPlus, Video } from "lucide-react";
 import { api } from "../lib/api";
-import type { Agent, AgentRole, HertzTask, Meeting, ModelInfo, Project, ProviderConfig } from "../lib/types";
+import type { Agent, AgentRole, EmployeeMessage, HertzTask, Meeting, ModelInfo, Project, ProviderConfig } from "../lib/types";
 import { AGENT_ROLES, ROLE_LABEL } from "../lib/types";
+import { agentColor } from "../lib/agent-color";
 import { FileExplorer } from "../components/FileExplorer";
 import { Avatar, Badge, Button, Card, EmptyState, IconButton, Input, Label } from "../components/ui";
 import { NewMeetingDialog } from "../components/NewMeetingDialog";
@@ -219,6 +220,12 @@ export function ProjectPage() {
     queryFn: () => api.get<{ tasks: HertzTask[] }>(`/projects/${projectId}/tasks`),
   });
 
+  const { data: teamMessagesData } = useQuery({
+    queryKey: ["employee-messages", projectId],
+    queryFn: () => api.get<{ messages: EmployeeMessage[] }>(`/projects/${projectId}/employee-messages`),
+    refetchInterval: 10000,
+  });
+
   const newChat = useMutation({
     mutationFn: (agentId: string) => api.post<{ id: string }>(`/agents/${agentId}/sessions`, { projectId }),
     onSuccess: (res) => navigate(`/projects/${projectId}/sessions/${res.id}`),
@@ -254,6 +261,7 @@ export function ProjectPage() {
   const employees = agents.filter((a) => a.role !== "manager");
   const meetings = meetingsData?.meetings ?? [];
   const tasks = tasksData?.tasks ?? [];
+  const teamMessages = teamMessagesData?.messages ?? [];
   const NEXT_TASK_STATUS: Record<HertzTask["status"], HertzTask["status"]> = { open: "in_progress", in_progress: "done", done: "open" };
 
   return (
@@ -467,6 +475,29 @@ export function ProjectPage() {
               </li>
             ))}
           </ul>
+        )}
+
+        {teamMessages.length > 0 && (
+          <>
+            <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Team messages</h2>
+            <Card className="max-h-64 space-y-2.5 overflow-y-auto p-3">
+              {teamMessages.map((m) => (
+                <div key={m.id} className="flex items-start gap-2 text-sm">
+                  <span
+                    className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                    style={{ backgroundColor: agentColor(m.fromAgentId) }}
+                  />
+                  <p className="min-w-0 flex-1 leading-snug">
+                    <span className="font-medium text-fg" style={{ color: agentColor(m.fromAgentId) }}>
+                      {m.fromName}
+                    </span>{" "}
+                    <span className="text-fg-subtle">→ {m.toName}:</span>{" "}
+                    <span className="text-fg-muted">{m.body}</span>
+                  </p>
+                </div>
+              ))}
+            </Card>
+          </>
         )}
 
         <NewMeetingDialog

@@ -94,10 +94,22 @@ export function Badge({ children, tone = "neutral", className = "" }: { children
   );
 }
 
-export function Avatar({ label, tone = "neutral" }: { label: string; tone?: "accent" | "neutral" }) {
+export function Avatar({
+  label,
+  tone = "neutral",
+  color,
+}: {
+  label: string;
+  tone?: "accent" | "neutral";
+  /** Deterministic per-agent color (see lib/agent-color.ts) — overrides `tone` when given, for telling colleagues apart in a shared feed. */
+  color?: string;
+}) {
   const bg = tone === "accent" ? "bg-accent text-accent-fg" : "bg-bg-sunken text-fg-muted";
   return (
-    <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold ${bg}`}>
+    <span
+      className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold ${color ? "" : bg}`}
+      style={color ? { backgroundColor: color, color: "#fff" } : undefined}
+    >
       {label.slice(0, 1).toUpperCase()}
     </span>
   );

@@ -6,6 +6,7 @@ import type { Database } from "../db/client.js";
 import { agents } from "../db/schema.js";
 import { createOrgTools, type OrgToolDef } from "./org-tools.js";
 import { createMemoryTools } from "./memory-tools.js";
+import { createMessagingTools } from "./messaging-tools.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
 import { McpRegistry } from "../mcp/mcp-registry.js";
@@ -37,17 +38,19 @@ function toDefs(tools: OrgToolDef[]) {
 export function createToolPort(deps: ToolPortDeps): ToolPort {
   const orgTools = createOrgTools(deps);
   const memoryTools = createMemoryTools(deps.db, deps.paths);
-  const allByName = new Map([...orgTools, ...memoryTools].map((t) => [t.name, t]));
+  const messagingTools = createMessagingTools(deps.db);
+  const allByName = new Map([...orgTools, ...memoryTools, ...messagingTools].map((t) => [t.name, t]));
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
   const memoryDefs = toDefs(memoryTools);
+  const messagingDefs = toDefs(messagingTools);
   const orgDefs = toDefs(orgTools);
 
   return {
     async listDefinitions(agentId) {
       const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      const defs = [...baseDefs, ...memoryDefs, ...mcpDefs];
+      const defs = [...baseDefs, ...memoryDefs, ...messagingDefs, ...mcpDefs];
       return rows[0]?.role === "manager" ? [...defs, ...orgDefs] : defs;
     },
     run(name, input, ctx) {
