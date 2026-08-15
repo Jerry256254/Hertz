@@ -3,14 +3,15 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BrainCircuit, FolderOpen, Plug, TerminalSquare } from "lucide-react";
 import { api } from "../lib/api";
-import type { Agent } from "../lib/types";
+import type { Agent, ProviderConfig } from "../lib/types";
 import { ROLE_LABEL } from "../lib/types";
 import { agentColor } from "../lib/agent-color";
-import { Avatar, Badge, Button, Card } from "../components/ui";
+import { Avatar, Badge, Button, Card, Label } from "../components/ui";
 import { FileExplorer } from "../components/FileExplorer";
 import { ConnectorCatalog } from "../components/ConnectorCatalog";
 import { ShellsPanel } from "../components/ShellsPanel";
 import { AgentMemoryDialog } from "../components/AgentMemoryDialog";
+import { ModelPicker } from "../components/ModelPicker";
 
 type Tab = "overview" | "files" | "mcp" | "shells";
 
@@ -27,12 +28,29 @@ export function EmployeeDetailPage() {
     queryFn: () => api.get<Agent>(`/agents/${agentId}`),
   });
 
+  const { data: providers } = useQuery({
+    queryKey: ["providers"],
+    queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
+  });
+
   const decideHire = useMutation({
     mutationFn: (approvalStatus: "approved" | "rejected") => api.patch(`/agents/${agentId}/approval`, { approvalStatus }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent", agentId] }),
   });
 
+  const decideTermination = useMutation({
+    mutationFn: (decision: "approved" | "rejected") => api.patch(`/agents/${agentId}/termination`, { decision }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent", agentId] }),
+  });
+
+  const [providerConfigId, setProviderConfigId] = useState<string | null>(null);
+  const updateModel = useMutation({
+    mutationFn: (patch: { providerConfigId?: string; model?: string }) => api.patch(`/agents/${agentId}`, patch),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent", agentId] }),
+  });
+
   if (!agent) return null;
+  const effectiveProviderConfigId = providerConfigId ?? agent.providerConfigId;
 
   const tabs: Array<{ id: Tab; label: string; icon: typeof FolderOpen }> = [
     { id: "overview", label: "Overview", icon: BrainCircuit },
@@ -59,6 +77,8 @@ export function EmployeeDetailPage() {
                 <Badge tone={agent.role === "manager" ? "accent" : "neutral"}>{ROLE_LABEL[agent.role]}</Badge>
                 {agent.approvalStatus === "pending" && <Badge tone="warning">pending approval</Badge>}
                 {agent.approvalStatus === "rejected" && <Badge tone="danger">rejected</Badge>}
+                {agent.status === "terminated" && <Badge tone="danger">terminated</Badge>}
+                {agent.pendingTermination && <Badge tone="warning">termination pending</Badge>}
               </div>
               <p className="mono mt-0.5 text-xs text-fg-subtle">{agent.model}</p>
             </div>
@@ -70,6 +90,16 @@ export function EmployeeDetailPage() {
               </Button>
               <Button variant="ghost" size="sm" onClick={() => decideHire.mutate("rejected")} disabled={decideHire.isPending}>
                 Reject
+              </Button>
+            </div>
+          )}
+          {agent.pendingTermination && (
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <Button variant="danger" size="sm" onClick={() => decideTermination.mutate("approved")} disabled={decideTermination.isPending}>
+                Confirm termination
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => decideTermination.mutate("rejected")} disabled={decideTermination.isPending}>
+                Keep
               </Button>
             </div>
           )}
@@ -94,7 +124,7 @@ export function EmployeeDetailPage() {
 
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "overview" && (
-          <div className="mx-auto max-w-2xl px-6 py-6">
+          <div className="mx-auto max-w-2xl space-y-4 px-6 py-6">
             <Card className="flex items-center justify-between p-4">
               <div>
                 <p className="text-sm font-medium text-fg">Persistent memory</p>
@@ -103,6 +133,39 @@ export function EmployeeDetailPage() {
               <Button variant="secondary" onClick={() => setShowMemory(true)}>
                 <BrainCircuit size={14} /> View
               </Button>
+            </Card>
+
+            <Card className="p-4">
+              <p className="text-sm font-medium text-fg">Model</p>
+              <p className="mb-3 text-xs text-fg-subtle">Change which provider and model this employee runs on.</p>
+              <div className="space-y-3">
+                <div>
+                  <Label>Provider</Label>
+                  <select
+                    value={effectiveProviderConfigId}
+                    onChange={(e) => {
+                      setProviderConfigId(e.target.value);
+                      updateModel.mutate({ providerConfigId: e.target.value });
+                    }}
+                    className="h-9 w-full rounded-md border border-border bg-bg-raised px-3 text-sm text-fg outline-none focus:border-accent"
+                  >
+                    {providers?.providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label>Model</Label>
+                  <ModelPicker
+                    providerConfigId={effectiveProviderConfigId}
+                    value={agent.model}
+                    onChange={(model) => updateModel.mutate({ model })}
+                  />
+                </div>
+                {updateModel.isPending && <p className="text-xs text-fg-subtle">Saving…</p>}
+              </div>
             </Card>
           </div>
         )}

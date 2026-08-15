@@ -20,6 +20,7 @@ export interface ProjectRoot {
 export interface Project {
   id: string;
   name: string;
+  autoApprove: boolean;
   createdAt: string;
   roots: ProjectRoot[];
 }
@@ -94,10 +95,11 @@ export interface Agent {
   role: AgentRole;
   model: string;
   mode: "manual" | "plan" | "auto";
-  status: "idle" | "running" | "error";
+  status: "idle" | "running" | "error" | "terminated";
   lastStatus?: string | null;
   jobDescription?: string | null;
   approvalStatus: "pending" | "approved" | "rejected";
+  pendingTermination: boolean;
   createdAt: string;
   homeProjectName?: string;
 }
