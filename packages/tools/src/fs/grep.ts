@@ -9,6 +9,7 @@ const inputSchema = z.object({
   glob: z.string().optional().default("**/*").describe("Restrict search to files matching this glob"),
   caseSensitive: z.boolean().optional().default(true),
   maxMatches: z.number().int().positive().max(200).optional().default(50),
+  root: z.string().optional().describe("Which root to search — omit for the shared project root, or 'self' for your own personal folder"),
 });
 type Input = z.infer<typeof inputSchema>;
 
@@ -23,7 +24,7 @@ export const grepTool: ToolDef<Input> = {
   description: "Search file contents for a regular expression, returning matching lines with file:line, not whole files.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
-    const root = ctx.pathGuard.getRoot(ctx.rootId);
+    const root = ctx.pathGuard.getRoot(input.root ?? ctx.rootId);
     let regex: RegExp;
     try {
       regex = new RegExp(input.pattern, input.caseSensitive ? "" : "i");

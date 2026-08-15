@@ -7,6 +7,7 @@ const inputSchema = z.object({
   oldString: z.string(),
   newString: z.string(),
   replaceAll: z.boolean().optional().default(false),
+  root: z.string().optional().describe("Which root to edit in — omit for the shared project root, or 'self' for your own personal folder"),
 });
 type Input = z.infer<typeof inputSchema>;
 
@@ -28,7 +29,7 @@ export const editFileTool: ToolDef<Input> = {
     "Replace an exact string in a file. oldString must match exactly once unless replaceAll is set.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
-    const abs = ctx.pathGuard.resolve(ctx.actor, ctx.rootId, input.path);
+    const abs = ctx.pathGuard.resolve(ctx.actor, input.root ?? ctx.rootId, input.path);
     const raw = await fs.readFile(abs, "utf8");
     const occurrences = countOccurrences(raw, input.oldString);
 

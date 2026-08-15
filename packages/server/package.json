@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@kuclab-hertz/core": "workspace:*",
+    "@kuclab-hertz/mcp": "workspace:*",
     "@kuclab-hertz/providers": "workspace:*",
     "@kuclab-hertz/sandbox": "workspace:*",
     "@kuclab-hertz/standard": "workspace:*",
@@ -22,6 +23,7 @@
     "@fastify/websocket": "^11.0.0",
     "@libsql/client": "^0.14.0",
     "argon2": "^0.41.0",
+    "cron-parser": "^5.10.0",
     "drizzle-orm": "^0.38.0",
     "fastify": "^5.2.0",
     "zod": "^3.24.0",

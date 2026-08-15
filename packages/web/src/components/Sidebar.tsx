@@ -8,6 +8,7 @@ import {
   Loader2,
   LogOut,
   MessagesSquare,
+  Plug,
   Plus,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -159,6 +160,13 @@ export function Sidebar() {
       </nav>
 
       <div className="flex-shrink-0 border-t border-border p-2">
+        <Link
+          to="/integrations"
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-fg"
+        >
+          <Plug size={14} />
+          Integrations
+        </Link>
         <Link
           to="/providers"
           className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-fg"

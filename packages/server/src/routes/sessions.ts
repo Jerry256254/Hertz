@@ -9,6 +9,7 @@ import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
+import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 
 const DEFAULT_TITLE = "New chat";
 
@@ -199,7 +200,11 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
     if (!mainRoot) return reply.code(400).send({ error: "Project has no roots configured" });
 
-    ctx.sandboxRegistry.register(id, { [mainRoot.rootId]: mainRoot.absolutePath });
+    await ensureEmployeeDirs(ctx.paths, session.projectId, agent.id);
+    ctx.sandboxRegistry.register(id, {
+      [mainRoot.rootId]: mainRoot.absolutePath,
+      self: employeeDir(ctx.paths, session.projectId, agent.id),
+    });
 
     if (session.title === DEFAULT_TITLE && parsed.data.text) {
       await ctx.db

@@ -7,6 +7,7 @@ import { agentProjects, agents, projectRoots, sessions, taskAssignees, tasks } f
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
+import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 
 const createTaskSchema = z.object({
   title: z.string().min(1),
@@ -74,7 +75,11 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: AppContext): void 
         });
         await ctx.db.insert(taskAssignees).values({ id: newId(), taskId, agentId: agent.id, sessionId });
 
-        ctx.sandboxRegistry.register(sessionId, { [mainRoot.rootId]: mainRoot.absolutePath });
+        await ensureEmployeeDirs(ctx.paths, projectId, agent.id);
+        ctx.sandboxRegistry.register(sessionId, {
+          [mainRoot.rootId]: mainRoot.absolutePath,
+          self: employeeDir(ctx.paths, projectId, agent.id),
+        });
         const content: ContentBlock[] = [
           { type: "text", text: `You've been assigned a task by the user.\n\n## ${parsed.data.title}\n\n${parsed.data.description}` },
         ];

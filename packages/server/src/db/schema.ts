@@ -49,6 +49,8 @@ export const agents = sqliteTable("agents", {
   systemPrompt: text("system_prompt"),
   mode: text("mode", { enum: ["manual", "plan", "auto"] }).notNull().default("manual"),
   status: text("status", { enum: ["idle", "running", "error"] }).notNull().default("idle"),
+  /** One-line, human-facing summary of the outcome of this agent's most recent run — "Done.", "3 intros drafted…" — shown under their name in the sidebar. */
+  lastStatus: text("last_status"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -254,6 +256,74 @@ export const taskAssignees = sqliteTable("task_assignees", {
     .references(() => agents.id, { onDelete: "cascade" }),
   /** The session where this assignee's work on the task actually happens. */
   sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+});
+
+/**
+ * An MCP server an agent can call tools on, in addition to the built-in fs/shell/
+ * web/org/memory toolset. Global (agentId null) servers are available to every
+ * agent; scoped ones only to the named agent. Sensitive fields (env vars for
+ * stdio, headers for sse — API keys typically live in both) are encrypted with
+ * the same AES-256-GCM scheme as provider_configs.encrypted_key, never plaintext.
+ */
+export const mcpServers = sqliteTable("mcp_servers", {
+  id: text("id").primaryKey(),
+  /** Null = available to every agent; otherwise scoped to this one agent. */
+  agentId: text("agent_id").references(() => agents.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  transport: text("transport", { enum: ["stdio", "sse"] }).notNull(),
+  /** stdio only. */
+  command: text("command"),
+  argsJson: text("args_json"),
+  /** JSON-serialized {iv, authTag, ciphertext} of a {[key]: value} env map (stdio) or header map (sse). */
+  encryptedEnv: text("encrypted_env"),
+  /** sse only. */
+  url: text("url"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Recurring work: same idea as a Task, but re-briefed on a schedule instead of
+ * once. The scheduler (routines/routine-scheduler.ts) reads nextRunAt from here
+ * rather than keeping timers in memory, so a server restart doesn't drop a run.
+ */
+export const routines = sqliteTable("routines", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  taskTemplate: text("task_template").notNull(),
+  /** "once" | "daily" | "weekly" | a raw 5-field cron expression. */
+  schedule: text("schedule").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  lastRunAt: integer("last_run_at", { mode: "timestamp_ms" }),
+  nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Direct, async messages between employees (or an employee broadcasting to a
+ * few colleagues) — distinct from a Meeting (user-convened, sequential turns)
+ * and from assign_task (manager delegating and blocking on the result). Always
+ * visible to the user for oversight, same principle as meetings.
+ */
+export const employeeMessages = sqliteTable("employee_messages", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  fromAgentId: text("from_agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  toAgentId: text("to_agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
 export const sessionTokens = sqliteTable("session_tokens", {

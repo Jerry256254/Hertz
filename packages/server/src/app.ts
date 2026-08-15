@@ -16,6 +16,7 @@ import { registerUsageRoutes } from "./routes/usage.js";
 import { registerSetupRoutes } from "./routes/setup.js";
 import { registerMeetingRoutes } from "./routes/meetings.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
+import { registerMcpRoutes } from "./routes/mcp.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
 import { registerMeetingWebsocket } from "./ws/meeting-hub.js";
 
@@ -46,6 +47,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerUsageRoutes(app, ctx);
   registerMeetingRoutes(app, ctx);
   registerTaskRoutes(app, ctx);
+  registerMcpRoutes(app, ctx);
   registerSessionWebsocket(app, ctx);
   registerMeetingWebsocket(app, ctx);
 

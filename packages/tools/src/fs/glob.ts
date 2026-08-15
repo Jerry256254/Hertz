@@ -5,15 +5,16 @@ import type { ToolContext, ToolDef, ToolResult } from "../types.js";
 const inputSchema = z.object({
   pattern: z.string().describe("Glob pattern, e.g. 'src/**/*.ts'"),
   maxResults: z.number().int().positive().max(500).optional().default(200),
+  root: z.string().optional().describe("Which root to search — omit for the shared project root, or 'self' for your own personal folder"),
 });
 type Input = z.infer<typeof inputSchema>;
 
 export const globTool: ToolDef<Input> = {
   name: "glob",
-  description: "Find files matching a glob pattern within the project root, sorted by path.",
+  description: "Find files matching a glob pattern within the project root (or your own folder with root: 'self'), sorted by path.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
-    const root = ctx.pathGuard.getRoot(ctx.rootId);
+    const root = ctx.pathGuard.getRoot(input.root ?? ctx.rootId);
     const matches = await fg(input.pattern, {
       cwd: root,
       dot: false,

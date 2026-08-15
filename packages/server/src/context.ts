@@ -11,6 +11,7 @@ import { createToolPort } from "./tools/tool-port.js";
 import { SandboxRegistry } from "./sandbox/sandbox-registry.js";
 import { createDbAuditSink } from "./audit/db-audit-sink.js";
 import { MeetingOrchestrator } from "./meetings/meeting-orchestrator.js";
+import { McpRegistry } from "./mcp/mcp-registry.js";
 import { users } from "./db/schema.js";
 
 export interface AppContext {
@@ -21,6 +22,7 @@ export interface AppContext {
   sandboxRegistry: SandboxRegistry;
   agentLoop: AgentLoopManager;
   meetingOrchestrator: MeetingOrchestrator;
+  mcpRegistry: McpRegistry;
 }
 
 export async function createAppContext(dataDir?: string): Promise<AppContext> {
@@ -36,6 +38,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const sandboxRegistry = new SandboxRegistry(audit, paths);
   const persistence = createPersistenceAdapter(db);
   const providers = createProviderRegistry(db, masterKey);
+  const mcpRegistry = new McpRegistry(db, masterKey);
 
   // ToolPort's org tools (assign_task) need to trigger the agent loop, but the
   // agent loop needs a ToolPort to be constructed — break the cycle with a lazy
@@ -43,7 +46,9 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   let agentLoopRef: AgentLoopManager | undefined;
   const tools = createToolPort({
     db,
+    paths,
     sandboxRegistry,
+    mcpRegistry,
     getAgentLoop: () => {
       if (!agentLoopRef) throw new Error("AgentLoopManager not initialized yet");
       return agentLoopRef;
@@ -67,5 +72,5 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     },
   });
 
-  return { paths, db, masterKey, audit, sandboxRegistry, agentLoop, meetingOrchestrator };
+  return { paths, db, masterKey, audit, sandboxRegistry, agentLoop, meetingOrchestrator, mcpRegistry };
 }

@@ -7,6 +7,7 @@ import { ProjectPage } from "./routes/ProjectPage";
 import { SessionPage } from "./routes/SessionPage";
 import { MeetingPage } from "./routes/MeetingPage";
 import { ProvidersPage } from "./routes/ProvidersPage";
+import { IntegrationsPage } from "./routes/IntegrationsPage";
 import { AppLayout } from "./components/AppLayout";
 
 export function App() {
@@ -37,6 +38,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/providers" element={<ProvidersPage />} />
+        <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />
         <Route path="/projects/:projectId/meetings/:meetingId" element={<MeetingPage />} />

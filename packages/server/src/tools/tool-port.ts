@@ -7,10 +7,14 @@ import { agents } from "../db/schema.js";
 import { createOrgTools, type OrgToolDef } from "./org-tools.js";
 import { createMemoryTools } from "./memory-tools.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
+import type { HertzPaths } from "../paths.js";
+import { McpRegistry } from "../mcp/mcp-registry.js";
 
 export interface ToolPortDeps {
   db: Database;
+  paths: HertzPaths;
   sandboxRegistry: SandboxRegistry;
+  mcpRegistry: McpRegistry;
   /** Lazy: AgentLoopManager depends on ToolPort, so ToolPort can't depend on a concrete instance at construction time. */
   getAgentLoop: () => AgentLoopManager;
 }
@@ -32,7 +36,7 @@ function toDefs(tools: OrgToolDef[]) {
  */
 export function createToolPort(deps: ToolPortDeps): ToolPort {
   const orgTools = createOrgTools(deps);
-  const memoryTools = createMemoryTools(deps.db);
+  const memoryTools = createMemoryTools(deps.db, deps.paths);
   const allByName = new Map([...orgTools, ...memoryTools].map((t) => [t.name, t]));
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
@@ -42,10 +46,12 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   return {
     async listDefinitions(agentId) {
       const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
-      const defs = [...baseDefs, ...memoryDefs];
+      const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
+      const defs = [...baseDefs, ...memoryDefs, ...mcpDefs];
       return rows[0]?.role === "manager" ? [...defs, ...orgDefs] : defs;
     },
     run(name, input, ctx) {
+      if (deps.mcpRegistry.isMcpTool(name)) return deps.mcpRegistry.run(name, input);
       const tool = allByName.get(name);
       if (tool) return tool.execute(input, ctx);
       return runTool(name, input, ctx);

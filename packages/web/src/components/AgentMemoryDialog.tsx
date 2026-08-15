@@ -1,9 +1,9 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BrainCircuit, X } from "lucide-react";
+import { BrainCircuit, Plug, X } from "lucide-react";
 import { api } from "../lib/api";
-import type { AgentMemoryNote } from "../lib/types";
-import { Avatar, EmptyState } from "./ui";
+import type { AgentMemoryNote, McpToolsForAgent } from "../lib/types";
+import { Avatar, Badge, EmptyState } from "./ui";
 import { DeleteButton } from "./DeleteButton";
 
 export function AgentMemoryDialog({
@@ -30,7 +30,14 @@ export function AgentMemoryDialog({
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent-memory", agentId] }),
   });
 
+  const { data: mcpData } = useQuery({
+    queryKey: ["agent-mcp-tools", agentId],
+    queryFn: () => api.get<{ servers: McpToolsForAgent[] }>(`/agents/${agentId}/mcp-tools`),
+    enabled: open,
+  });
+
   const notes = data?.notes ?? [];
+  const mcpServers = mcpData?.servers ?? [];
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -73,6 +80,29 @@ export function AgentMemoryDialog({
               </ul>
             )}
           </div>
+
+          {mcpServers.length > 0 && (
+            <div className="flex-shrink-0 border-t border-border p-3">
+              <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+                <Plug size={12} /> MCP tools available
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {mcpServers.map((s) =>
+                  s.error ? (
+                    <Badge key={s.serverId} tone="danger">
+                      {s.serverName}: unreachable
+                    </Badge>
+                  ) : (
+                    s.tools.map((t) => (
+                      <Badge key={`${s.serverId}-${t}`} tone="neutral" className="mono">
+                        {s.serverName}.{t}
+                      </Badge>
+                    ))
+                  ),
+                )}
+              </div>
+            </div>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

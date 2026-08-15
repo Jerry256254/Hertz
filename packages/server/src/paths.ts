@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import fs from "node:fs/promises";
 
 export interface HertzPaths {
   dataDir: string;
@@ -33,4 +34,26 @@ export function sessionBlobsDir(paths: HertzPaths, sessionId: string): string {
 
 export function projectSandboxPolicyPath(paths: HertzPaths, projectId: string): string {
   return path.join(paths.projectsDir, projectId, "sandbox-policy.json");
+}
+
+/**
+ * An employee's own on-disk space — personal notes, materials, exports from
+ * MCP tools — in addition to (not instead of) the project root they share with
+ * the rest of the team. Registered as sandbox root "self" alongside "main" so
+ * the existing fs tools can address it, keyed by project since the same
+ * employee's folder is per-project (they can be attached to several).
+ */
+export function employeeDir(paths: HertzPaths, projectId: string, agentId: string): string {
+  return path.join(paths.projectsDir, projectId, "employees", agentId);
+}
+
+export function employeeSubdirs(paths: HertzPaths, projectId: string, agentId: string): { notes: string; materials: string; data: string } {
+  const base = employeeDir(paths, projectId, agentId);
+  return { notes: path.join(base, "notes"), materials: path.join(base, "materials"), data: path.join(base, "data") };
+}
+
+/** Idempotent — safe to call at hire time and again on every session start ("first access if missing"). */
+export async function ensureEmployeeDirs(paths: HertzPaths, projectId: string, agentId: string): Promise<void> {
+  const dirs = employeeSubdirs(paths, projectId, agentId);
+  await Promise.all(Object.values(dirs).map((d) => fs.mkdir(d, { recursive: true })));
 }

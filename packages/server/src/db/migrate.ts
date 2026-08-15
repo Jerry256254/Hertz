@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS agents (
   system_prompt TEXT,
   mode TEXT NOT NULL DEFAULT 'manual',
   status TEXT NOT NULL DEFAULT 'idle',
+  last_status TEXT,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
@@ -191,6 +192,45 @@ CREATE TABLE IF NOT EXISTS task_assignees (
 );
 CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
 
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  transport TEXT NOT NULL,
+  command TEXT,
+  args_json TEXT,
+  encrypted_env TEXT,
+  url TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_agent ON mcp_servers(agent_id);
+
+CREATE TABLE IF NOT EXISTS routines (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  task_template TEXT NOT NULL,
+  schedule TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_run_at INTEGER,
+  next_run_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_routines_project ON routines(project_id);
+
+CREATE TABLE IF NOT EXISTS employee_messages (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  from_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  to_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_employee_messages_project ON employee_messages(project_id);
+CREATE INDEX IF NOT EXISTS idx_employee_messages_to ON employee_messages(to_agent_id);
+
 CREATE TABLE IF NOT EXISTS session_tokens (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -201,11 +241,25 @@ CREATE TABLE IF NOT EXISTS session_tokens (
 );
 `;
 
+/**
+ * CREATE TABLE IF NOT EXISTS handles brand-new tables, but not new columns on a
+ * table that already exists from a previous install — those need an explicit
+ * ALTER TABLE, guarded against re-running on a DB that already has the column.
+ */
+const COLUMN_MIGRATIONS: string[] = ["ALTER TABLE agents ADD COLUMN last_status TEXT"];
+
 export async function runMigrations(client: Client): Promise<void> {
   const statements = BOOTSTRAP_SQL.split(";")
     .map((s) => s.trim())
     .filter(Boolean);
   for (const statement of statements) {
     await client.execute(statement);
+  }
+  for (const ddl of COLUMN_MIGRATIONS) {
+    try {
+      await client.execute(ddl);
+    } catch (err) {
+      if (!/duplicate column name/i.test((err as Error).message)) throw err;
+    }
   }
 }

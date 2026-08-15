@@ -201,6 +201,26 @@ export type AgentLoopEvent =
   | { type: "error"; message: string }
   | { type: "done" };
 
+export interface McpServer {
+  id: string;
+  agentId: string | null;
+  name: string;
+  transport: "stdio" | "sse";
+  command: string | null;
+  args: string[];
+  url: string | null;
+  hasSecret: boolean;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface McpToolsForAgent {
+  serverId: string;
+  serverName: string;
+  tools: string[];
+  error?: string;
+}
+
 export interface FileEntry {
   name: string;
   type: "file" | "directory" | "symlink";

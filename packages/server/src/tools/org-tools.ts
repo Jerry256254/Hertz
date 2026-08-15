@@ -8,6 +8,7 @@ import { newId } from "../db/client.js";
 import { agents, projectRoots, sessions, users } from "../db/schema.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
+import { employeeDir, ensureEmployeeDirs, type HertzPaths } from "../paths.js";
 
 export const AGENT_ROLES = [
   "manager",
@@ -22,7 +23,7 @@ export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export function defaultSystemPromptFor(role: AgentRole, isManager = false): string {
   const base =
-    "You are a KucLab Hertz agent working directly on the user's project files, not a chat assistant. Use the available tools to read, write, and edit real files, run allowlisted shell commands (including gh, the GitHub CLI), fetch web pages, and search the codebase. Prefer ranged reads over whole-file reads. Be direct and make real changes rather than only describing them.\n\nYou have real internet access via web_fetch (a specific-URL fetcher, not a search engine — for search, fetch https://html.duckduckgo.com/html/?q=<query>).\n\nYou have your own persistent memory (remember/list_memory/forget) that carries across every chat, project, and meeting you're in — the user can see it too. Use it for things worth recalling later: decisions, preferences, context that would otherwise be re-explained every time.";
+    "You are a KucLab Hertz agent working directly on the user's project files, not a chat assistant. Use the available tools to read, write, and edit real files, run allowlisted shell commands (including gh, the GitHub CLI), fetch web pages, and search the codebase. Prefer ranged reads over whole-file reads. Be direct and make real changes rather than only describing them.\n\nYou have real internet access via web_fetch (a specific-URL fetcher, not a search engine — for search, fetch https://html.duckduckgo.com/html/?q=<query>).\n\nYou have your own persistent memory (remember/list_memory/forget) that carries across every chat, project, and meeting you're in — the user can see it too. Use it for things worth recalling later: decisions, preferences, context that would otherwise be re-explained every time.\n\nYou also have your own personal folder, separate from the shared project — pass root: 'self' to read_file/write_file/edit_file/glob/grep to work in it (subfolders notes/, materials/, data/ already exist). Use it for drafts, exports, and longer working material that doesn't belong in the shared codebase; use save_note for a quick longer write to notes/, and remember for short facts that belong in your prompt every turn. If a task needs input from a colleague, use message_employee instead of guessing or blocking — mention them as @Name in your own reply so the user can follow who you're coordinating with.";
   const roleLine: Record<AgentRole, string> = {
     manager:
       "You are the project's manager: the user's direct report and the admin of this project's team, subordinate only to the user. Hire employees with hire_employee, check on the team with list_employees, and delegate work with assign_task — then report back to the user with the outcome, not just a plan.",
@@ -56,6 +57,7 @@ export interface OrgToolDef {
 
 export interface OrgToolsDeps {
   db: Database;
+  paths: HertzPaths;
   sandboxRegistry: SandboxRegistry;
   getAgentLoop: () => AgentLoopManager;
 }
@@ -72,7 +74,7 @@ async function runDelegatedTask(
   task: string,
   userId: string | undefined,
 ): Promise<string> {
-  const { db, sandboxRegistry } = deps;
+  const { db, sandboxRegistry, paths } = deps;
   const employeeRows = await db.select().from(agents).where(eq(agents.id, employeeAgentId)).limit(1);
   const employee = employeeRows[0];
   if (!employee) return "(employee not found)";
@@ -93,7 +95,11 @@ async function runDelegatedTask(
     updatedAt: now,
   });
 
-  sandboxRegistry.register(sessionId, { [mainRoot.rootId]: mainRoot.absolutePath });
+  await ensureEmployeeDirs(paths, projectId, employee.id);
+  sandboxRegistry.register(sessionId, {
+    [mainRoot.rootId]: mainRoot.absolutePath,
+    self: employeeDir(paths, projectId, employee.id),
+  });
 
   const content: ContentBlock[] = [{ type: "text", text: task }];
   const resolvedUserId = userId ?? (await fallbackUserId(db));
@@ -129,7 +135,7 @@ async function runDelegatedTask(
  * DB access, rather than @kuclab-hertz/tools which is deliberately sandbox-only.
  */
 export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
-  const { db } = deps;
+  const { db, paths } = deps;
 
   async function requireManager(callingAgentId: string) {
     const rows = await db.select().from(agents).where(eq(agents.id, callingAgentId)).limit(1);
@@ -160,6 +166,7 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
         status: "idle",
         createdAt: new Date(),
       });
+      await ensureEmployeeDirs(paths, manager.projectId, id);
 
       let briefing = "";
       if (input.task) {

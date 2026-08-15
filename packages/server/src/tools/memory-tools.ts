@@ -1,12 +1,24 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { asc, and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "../db/client.js";
 import type { Database } from "../db/client.js";
 import { agentMemory } from "../db/schema.js";
 import type { OrgToolDef } from "./org-tools.js";
+import { employeeDir, ensureEmployeeDirs, type HertzPaths } from "../paths.js";
 
 const rememberSchema = z.object({ note: z.string().min(1) });
 const forgetSchema = z.object({ noteId: z.string().min(1) });
+const saveNoteSchema = z.object({
+  filename: z.string().min(1).describe("e.g. 'meeting-summary.md' — saved under your notes/ folder"),
+  content: z.string().min(1),
+});
+
+function safeNoteFilename(filename: string): string {
+  const base = path.basename(filename).trim();
+  return base.length > 0 ? base : "note.md";
+}
 
 /**
  * Given to every agent, not just managers — this is what makes memory persist
@@ -14,7 +26,7 @@ const forgetSchema = z.object({ noteId: z.string().min(1) });
  * re-read into the system prompt on every turn (see agents/system-prompt.ts),
  * not tied to any one session's message history.
  */
-export function createMemoryTools(db: Database): OrgToolDef[] {
+export function createMemoryTools(db: Database, paths: HertzPaths): OrgToolDef[] {
   const remember: OrgToolDef = {
     name: "remember",
     description:
@@ -52,5 +64,21 @@ export function createMemoryTools(db: Database): OrgToolDef[] {
     },
   };
 
-  return [remember, listMemory, forget];
+  const saveNote: OrgToolDef = {
+    name: "save_note",
+    description:
+      "Save a longer piece of material (a draft, a summary, research notes) as a file in your own notes/ folder — unlike remember, this doesn't get injected into your prompt every turn, so it's for things you'll deliberately read back later, not short facts.",
+    inputSchema: saveNoteSchema,
+    async execute(rawInput, ctx) {
+      const input = saveNoteSchema.parse(rawInput);
+      if (!ctx.actor.projectId) return { summary: "No project context to save a note in.", isError: true };
+      await ensureEmployeeDirs(paths, ctx.actor.projectId, ctx.actor.actorId);
+      const dir = path.join(employeeDir(paths, ctx.actor.projectId, ctx.actor.actorId), "notes");
+      const filename = safeNoteFilename(input.filename);
+      await fs.writeFile(path.join(dir, filename), input.content, "utf8");
+      return { summary: `Saved notes/${filename} (${Buffer.byteLength(input.content, "utf8")} bytes)` };
+    },
+  };
+
+  return [remember, listMemory, forget, saveNote];
 }
