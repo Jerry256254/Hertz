@@ -2,8 +2,8 @@
 schema_version: 1
 app_name: KucLab Hertz CLI
 package_id: kuclab-hertz
-version_name: "0.4.0"
-version_code: 4
+version_name: "0.5.0"
+version_code: 5
 last_updated: 2026-08-15
 license: MIT
 category: Developer Tools
@@ -37,6 +37,13 @@ screenshots:
   - store/screenshots/01_login.png
   - store/screenshots/02_session.png
 changelog:
+  - version: "0.5.0"
+    date: 2026-08-15
+    notes:
+      - "Manažer už nemá write_file/edit_file/shell_exec — musí najmout a delegovat práci zaměstnancům, ne ji dělat sám (vynuceno i na úrovni nástrojů, ne jen promptem)"
+      - "Víc uživatelských účtů: admin zakládá účty a nastavuje jim přístup k projektům, každý si mění vlastní heslo"
+      - "Opravena chyba v katalogu MCP konektorů, kdy připojení jednoho npx-based serveru falešně označilo i ostatní jako připojené"
+      - "Mobilní sidebar jde nyní skutečně zavřít, nescrolluje se pod něj a zůstává dosažitelný i dole v dlouhém chatu; panel souborů v chatu je na mobilu plnoobrazovkový s vlastním zavíráním"
   - version: "0.4.0"
     date: 2026-08-15
     notes:
