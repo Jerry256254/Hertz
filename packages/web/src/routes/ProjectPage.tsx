@@ -1,15 +1,16 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BrainCircuit, Bot, Check, FolderGit2, ListTodo, MessageSquarePlus, Plus, Search, UserPlus, Video } from "lucide-react";
+import { BrainCircuit, Bot, Check, Clock, FolderGit2, ListTodo, MessageSquarePlus, Plus, Search, UserPlus, Video } from "lucide-react";
 import { api } from "../lib/api";
-import type { Agent, AgentRole, EmployeeMessage, HertzTask, Meeting, ModelInfo, Project, ProviderConfig } from "../lib/types";
+import type { Agent, AgentRole, EmployeeMessage, HertzTask, Meeting, ModelInfo, Project, ProviderConfig, Routine } from "../lib/types";
 import { AGENT_ROLES, ROLE_LABEL } from "../lib/types";
 import { agentColor } from "../lib/agent-color";
 import { FileExplorer } from "../components/FileExplorer";
 import { Avatar, Badge, Button, Card, EmptyState, IconButton, Input, Label } from "../components/ui";
 import { NewMeetingDialog } from "../components/NewMeetingDialog";
 import { NewTaskDialog } from "../components/NewTaskDialog";
+import { NewRoutineDialog } from "../components/NewRoutineDialog";
 import { DeleteButton } from "../components/DeleteButton";
 import { AgentMemoryDialog } from "../components/AgentMemoryDialog";
 import { AttachEmployeeDialog } from "../components/AttachEmployeeDialog";
@@ -197,6 +198,8 @@ export function ProjectPage() {
   const [showManagerForm, setShowManagerForm] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showRoutineDialog, setShowRoutineDialog] = useState(false);
+  const [routineNotice, setRoutineNotice] = useState<string | undefined>(undefined);
   const [showAttachDialog, setShowAttachDialog] = useState(false);
   const [memoryAgent, setMemoryAgent] = useState<{ id: string; name: string } | undefined>(undefined);
 
@@ -218,6 +221,11 @@ export function ProjectPage() {
   const { data: tasksData } = useQuery({
     queryKey: ["tasks", projectId],
     queryFn: () => api.get<{ tasks: HertzTask[] }>(`/projects/${projectId}/tasks`),
+  });
+
+  const { data: routinesData } = useQuery({
+    queryKey: ["routines", projectId],
+    queryFn: () => api.get<{ routines: Routine[] }>(`/projects/${projectId}/routines`),
   });
 
   const { data: teamMessagesData } = useQuery({
@@ -261,7 +269,18 @@ export function ProjectPage() {
   const employees = agents.filter((a) => a.role !== "manager");
   const meetings = meetingsData?.meetings ?? [];
   const tasks = tasksData?.tasks ?? [];
+  const routines = routinesData?.routines ?? [];
   const teamMessages = teamMessagesData?.messages ?? [];
+
+  const toggleRoutine = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.patch(`/routines/${id}`, { enabled }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["routines", projectId] }),
+  });
+
+  const deleteRoutine = useMutation({
+    mutationFn: (id: string) => api.delete(`/routines/${id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["routines", projectId] }),
+  });
   const NEXT_TASK_STATUS: Record<HertzTask["status"], HertzTask["status"]> = { open: "in_progress", in_progress: "done", done: "open" };
 
   return (
@@ -477,6 +496,55 @@ export function ProjectPage() {
           </ul>
         )}
 
+        <div className="mb-3 mt-8 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Routines</h2>
+          <button
+            onClick={() => setShowRoutineDialog(true)}
+            disabled={employees.length < 1}
+            className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg disabled:opacity-40"
+          >
+            <Plus size={13} /> New routine
+          </button>
+        </div>
+        {routineNotice && (
+          <p className="mb-3 flex items-center gap-1.5 rounded-md border border-border bg-bg-sunken px-3 py-1.5 text-xs text-fg-muted">
+            <Clock size={12} className="text-accent" /> Created routine · {routineNotice}
+          </p>
+        )}
+        {routines.length === 0 ? (
+          <p className="text-sm text-fg-subtle">Same brief, on a schedule — daily, weekly, or a custom cron.</p>
+        ) : (
+          <ul className="space-y-2">
+            {routines.map((r) => (
+              <li key={r.id}>
+                <Card className="flex items-center justify-between p-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <Clock size={14} className="flex-shrink-0 text-accent" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-fg">{r.title}</p>
+                      <p className="mono truncate text-xs text-fg-subtle">
+                        {r.agentName} · {r.schedule}
+                      </p>
+                    </div>
+                    {!r.enabled && <Badge tone="neutral">disabled</Badge>}
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => toggleRoutine.mutate({ id: r.id, enabled: !r.enabled })}
+                      disabled={toggleRoutine.isPending}
+                    >
+                      {r.enabled ? "Pause" : "Resume"}
+                    </Button>
+                    <DeleteButton title="Delete routine" onDelete={() => deleteRoutine.mutate(r.id)} />
+                  </div>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {teamMessages.length > 0 && (
           <>
             <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Team messages</h2>
@@ -508,6 +576,16 @@ export function ProjectPage() {
           onCreated={(meetingId) => navigate(`/projects/${projectId}/meetings/${meetingId}`)}
         />
         <NewTaskDialog open={showTaskDialog} onOpenChange={setShowTaskDialog} projectId={projectId!} agents={agents} />
+        <NewRoutineDialog
+          open={showRoutineDialog}
+          onOpenChange={setShowRoutineDialog}
+          projectId={projectId!}
+          agents={employees}
+          onCreated={(label) => {
+            setRoutineNotice(label);
+            setTimeout(() => setRoutineNotice(undefined), 6000);
+          }}
+        />
         <AttachEmployeeDialog
           open={showAttachDialog}
           onOpenChange={setShowAttachDialog}

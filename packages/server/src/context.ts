@@ -12,6 +12,7 @@ import { SandboxRegistry } from "./sandbox/sandbox-registry.js";
 import { createDbAuditSink } from "./audit/db-audit-sink.js";
 import { MeetingOrchestrator } from "./meetings/meeting-orchestrator.js";
 import { McpRegistry } from "./mcp/mcp-registry.js";
+import { RoutineScheduler } from "./routines/routine-scheduler.js";
 import { users } from "./db/schema.js";
 
 export interface AppContext {
@@ -23,6 +24,7 @@ export interface AppContext {
   agentLoop: AgentLoopManager;
   meetingOrchestrator: MeetingOrchestrator;
   mcpRegistry: McpRegistry;
+  routineScheduler: RoutineScheduler;
 }
 
 export async function createAppContext(dataDir?: string): Promise<AppContext> {
@@ -63,14 +65,21 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   });
   agentLoopRef = agentLoop;
 
-  const meetingOrchestrator = new MeetingOrchestrator({
-    db,
-    providers,
-    userId: async () => {
-      const rows = await db.select({ id: users.id }).from(users).limit(1);
-      return rows[0]?.id ?? "";
-    },
-  });
+  const fallbackUserId = async () => {
+    const rows = await db.select({ id: users.id }).from(users).limit(1);
+    return rows[0]?.id ?? "";
+  };
 
-  return { paths, db, masterKey, audit, sandboxRegistry, agentLoop, meetingOrchestrator, mcpRegistry };
+  const meetingOrchestrator = new MeetingOrchestrator({ db, providers, userId: fallbackUserId });
+
+  const routineScheduler = new RoutineScheduler({
+    db,
+    paths,
+    sandboxRegistry,
+    agentLoop,
+    fallbackUserId,
+  });
+  routineScheduler.start();
+
+  return { paths, db, masterKey, audit, sandboxRegistry, agentLoop, meetingOrchestrator, mcpRegistry, routineScheduler };
 }

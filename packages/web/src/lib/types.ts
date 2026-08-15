@@ -201,6 +201,20 @@ export type AgentLoopEvent =
   | { type: "error"; message: string }
   | { type: "done" };
 
+export interface Routine {
+  id: string;
+  projectId: string;
+  agentId: string;
+  agentName: string;
+  title: string;
+  taskTemplate: string;
+  schedule: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+}
+
 export interface EmployeeMessage {
   id: string;
   fromAgentId: string;
