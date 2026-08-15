@@ -9,11 +9,17 @@ Self-hosted agentní vývojová platforma — jeden příkaz nastartuje server s
 ## Funkce
 
 - **Agentní smyčka** — čtení/zápis/editace souborů, shell, grep/glob, web fetch, todo/plán, vše nad sandboxovaným project rootem.
-- **Vlastní API klíč, výběr providera** — Anthropic, OpenAI, Google, nebo libovolný OpenAI-compatible endpoint (Ollama, OpenRouter, vLLM, LM Studio…), s automatickým skenem dostupných modelů.
+- **Organizace, ne jen chat** — každý projekt má Manager Agenta, který smí najímat zaměstnance s reálnou rolí (architekt/implementer/reviewer/tester/researcher), delegovat úkoly a hlásit výsledky; zaměstnanci mohou pracovat napříč více projekty.
+- **Persistentní paměť zaměstnanců** — každý agent si sám spravuje vlastní paměť (remember/list_memory/forget) i vlastní složku na disku (notes/materials/data) mimo sdílený project root, obojí vidí i uživatel.
+- **Zaměstnanci komunikují mezi sebou** — přímé zprávy (message_employee) i skupinové schůzky (meetings), transparentně viditelné uživateli, ne jen jednosměrné delegování.
+- **Úkoly a routines** — úkol lze zadat jen vybrané podmnožině týmu; routines re-briefují stejného agenta na plán (jednou/denně/týdně/vlastní cron), scheduler je DB-backed a přežije restart serveru.
+- **MCP integrace** — připojení externích MCP serverů (stdio i sse) globálně nebo per zaměstnanec, jejich nástroje se sloučí do agentova toolsetu automaticky.
+- **`/compact`** — jedním příkazem v chatu se historie session shrne do jedné souhrnné zprávy, další tahy čtou jen ji.
+- **Vlastní API klíč, výběr providera, pool klíčů** — Anthropic, OpenAI, Google, nebo libovolný OpenAI-compatible endpoint (Ollama, OpenRouter, vLLM, LM Studio…), s automatickým skenem modelů a rotací mezi více klíči při rate limitu.
 - **Sessions běží nezávisle na prohlížeči** — zavřete tab, agent pokračuje, po návratu vidíte celý průběh.
-- **WebUI pro telefon i desktop** — přihlášení, správa projektů, streamovaný chat, file explorer.
+- **WebUI pro telefon i desktop** — přihlášení, správa projektů, streamovaný chat, file explorer, checklist zobrazení nástrojových kroků.
 - **Token-efficiency jako priorita** — rozsahové čtení souborů, prompt caching, telemetrie tokenů/ceny na každý request.
-- **Bezpečnost** — API klíče šifrované at-rest, shell allowlist, agent nesmí opustit povolené project rooty, audit log.
+- **Bezpečnost** — API klíče i MCP secrets šifrované at-rest, shell allowlist (včetně `gh`), agent nesmí opustit povolené project rooty, audit log na každou akci.
 
 ## Design
 

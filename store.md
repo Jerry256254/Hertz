@@ -2,9 +2,9 @@
 schema_version: 1
 app_name: KucLab Hertz CLI
 package_id: kuclab-hertz
-version_name: "0.1.0"
-version_code: 1
-last_updated: 2026-08-14
+version_name: "0.2.0"
+version_code: 2
+last_updated: 2026-08-15
 license: MIT
 category: Developer Tools
 short_description: >-
@@ -14,6 +14,12 @@ full_description: |-
   (`npx kuclab-hertz`) se nainstaluje, nastaví a spustí lokální server
   s WebUI, ve kterém běží jeden nebo více AI agentů pracujících na reálných
   projektech na disku — i po zavření prohlížeče.
+
+  Každý projekt má Manager Agenta, který najímá zaměstnance s reálnou rolí,
+  deleguje jim úkoly a hlásí výsledky uživateli. Zaměstnanci mají vlastní
+  persistentní paměť i pracovní složku na disku, komunikují mezi sebou
+  přímo i na schůzkách (vždy viditelně pro uživatele), a lze jim připojit
+  externí nástroje přes MCP nebo je nechat pracovat na plánu (routines).
 
   Uživatel používá vlastní API klíč a providera dle výběru (Anthropic,
   OpenAI, Google, nebo libovolný OpenAI-compatible endpoint), s automatickým
@@ -31,6 +37,14 @@ screenshots:
   - store/screenshots/01_login.png
   - store/screenshots/02_session.png
 changelog:
+  - version: "0.2.0"
+    date: 2026-08-15
+    notes:
+      - "MCP support: připojení externích MCP serverů (stdio/sse) globálně nebo per zaměstnanec, nástroje se automaticky sloučí do agentova toolsetu"
+      - "Vlastní pracovní složka pro každého zaměstnance na disku (notes/materials/data), registrovaná jako sandbox root vedle sdíleného project rootu"
+      - "Přímá komunikace mezi zaměstnanci (message_employee) s viditelným feedem pro uživatele, ne jen delegace přes manažera"
+      - "Routines: opakující se úkoly na DB-backed scheduleru (jednou/denně/týdně/vlastní cron), přežije restart serveru"
+      - "Jednořádkový status zaměstnance po každém běhu, barevné avatary napříč UI, sloučený checklist nástrojových kroků místo syrových tool-call/tool-result párů"
   - version: "0.1.0"
     date: 2026-08-14
     notes:
