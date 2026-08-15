@@ -13,6 +13,7 @@
   "dependencies": {
     "@kuclab-hertz/core": "workspace:*",
     "@kuclab-hertz/mcp": "workspace:*",
+    "@kuclab-hertz/mcp-google": "workspace:*",
     "@kuclab-hertz/providers": "workspace:*",
     "@kuclab-hertz/sandbox": "workspace:*",
     "@kuclab-hertz/standard": "workspace:*",

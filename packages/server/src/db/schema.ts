@@ -360,6 +360,21 @@ export const employeeShellGrants = sqliteTable("employee_shell_grants", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/**
+ * One row per third-party service (google, slack) the CEO has registered an
+ * OAuth app for — their own Client ID/Secret from that service's developer
+ * console, since a self-hosted tool has no app of its own to broker through.
+ * Needed both to build the consent-screen URL and, for Google, embedded into
+ * the spawned MCP server's env so its OAuth2Client can auto-refresh.
+ */
+export const oauthApps = sqliteTable("oauth_apps", {
+  id: text("id").primaryKey(),
+  service: text("service", { enum: ["google", "slack"] }).notNull().unique(),
+  clientId: text("client_id").notNull(),
+  encryptedClientSecret: text("encrypted_client_secret").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const sessionTokens = sqliteTable("session_tokens", {
   id: text("id").primaryKey(),
   userId: text("user_id")

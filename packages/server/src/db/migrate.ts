@@ -251,6 +251,14 @@ CREATE TABLE IF NOT EXISTS employee_shell_grants (
 CREATE INDEX IF NOT EXISTS idx_employee_shell_grants_shell ON employee_shell_grants(shell_id);
 CREATE INDEX IF NOT EXISTS idx_employee_shell_grants_agent ON employee_shell_grants(agent_id);
 
+CREATE TABLE IF NOT EXISTS oauth_apps (
+  id TEXT PRIMARY KEY,
+  service TEXT NOT NULL UNIQUE,
+  client_id TEXT NOT NULL,
+  encrypted_client_secret TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS session_tokens (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
