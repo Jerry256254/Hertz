@@ -8,6 +8,7 @@ import { SessionPage } from "./routes/SessionPage";
 import { MeetingPage } from "./routes/MeetingPage";
 import { ProvidersPage } from "./routes/ProvidersPage";
 import { IntegrationsPage } from "./routes/IntegrationsPage";
+import { EmployeeDetailPage } from "./routes/EmployeeDetailPage";
 import { AppLayout } from "./components/AppLayout";
 
 export function App() {
@@ -40,6 +41,7 @@ export function App() {
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
+        <Route path="/projects/:projectId/agents/:agentId" element={<EmployeeDetailPage />} />
         <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />
         <Route path="/projects/:projectId/meetings/:meetingId" element={<MeetingPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -327,7 +327,10 @@ export function ProjectPage() {
           <div className="mb-6">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Manager</h2>
             <Card className="flex items-center justify-between p-3">
-              <div className="flex min-w-0 items-center gap-3">
+              <button
+                onClick={() => navigate(`/projects/${projectId}/agents/${manager.id}`)}
+                className="flex min-w-0 items-center gap-3 text-left hover:opacity-80"
+              >
                 <Avatar label={manager.name} color={agentColor(manager.id)} />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-fg">{manager.name}</p>
@@ -336,7 +339,7 @@ export function ProjectPage() {
                   </p>
                 </div>
                 <Badge tone="accent">Manager</Badge>
-              </div>
+              </button>
               <div className="flex flex-shrink-0 items-center gap-2">
                 <IconButton title="Memory" onClick={() => setMemoryAgent({ id: manager.id, name: manager.name })}>
                   <BrainCircuit size={15} />
@@ -425,7 +428,10 @@ export function ProjectPage() {
             return (
               <li key={a.id}>
                 <Card className="flex items-center justify-between p-3">
-                  <div className="flex min-w-0 items-center gap-3">
+                  <button
+                    onClick={() => navigate(`/projects/${projectId}/agents/${a.id}`)}
+                    className="flex min-w-0 items-center gap-3 text-left hover:opacity-80"
+                  >
                     <Avatar label={a.name} color={agentColor(a.id)} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-fg">{a.name}</p>
@@ -436,7 +442,7 @@ export function ProjectPage() {
                     <Badge tone="neutral">{ROLE_LABEL[a.role]}</Badge>
                     {isAttached && <Badge tone="neutral">attached</Badge>}
                     {a.status === "running" && <Badge tone="accent">running</Badge>}
-                  </div>
+                  </button>
                   <div className="flex flex-shrink-0 items-center gap-2">
                     <IconButton title="Memory" onClick={() => setMemoryAgent({ id: a.id, name: a.name })}>
                       <BrainCircuit size={15} />

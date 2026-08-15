@@ -126,8 +126,10 @@ export class ShellManager {
     return result;
   }
 
+  /** Strips the internal completion-sentinel lines runCommand() injects — they're plumbing, not something the user should see in the transcript. */
   getBuffer(shellId: string): string {
-    return this.live.get(shellId)?.buffer ?? "";
+    const raw = this.live.get(shellId)?.buffer ?? "";
+    return raw.replace(/__HERTZ_DONE_[0-9a-f-]+__\d*\n?/g, "");
   }
 
   isAlive(shellId: string): boolean {

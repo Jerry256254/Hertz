@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronUp, File, Folder } from "lucide-react";
 import { api } from "../lib/api";
@@ -6,24 +6,39 @@ import type { FileEntry } from "../lib/types";
 
 const CodeViewer = lazy(() => import("./CodeViewer").then((m) => ({ default: m.CodeViewer })));
 
-export function FileExplorer({ projectId }: { projectId: string }) {
+export function FileExplorer({
+  projectId,
+  root = "main",
+  agentId,
+}: {
+  projectId: string;
+  /** "self" browses one employee's own folder (notes/materials/data) instead of the shared project root — requires agentId. */
+  root?: "main" | "self";
+  agentId?: string;
+}) {
   const [currentPath, setCurrentPath] = useState(".");
   const [previewPath, setPreviewPath] = useState<string | undefined>(undefined);
+  const scopeParam = `&root=${root}${agentId ? `&agentId=${agentId}` : ""}`;
+
+  useEffect(() => {
+    setCurrentPath(".");
+    setPreviewPath(undefined);
+  }, [root, agentId]);
 
   const { data: listing, isFetching } = useQuery({
-    queryKey: ["files", projectId, currentPath],
+    queryKey: ["files", projectId, root, agentId, currentPath],
     queryFn: () =>
       api.get<{ entries: FileEntry[] }>(
-        `/projects/${projectId}/files?path=${encodeURIComponent(currentPath)}`,
+        `/projects/${projectId}/files?path=${encodeURIComponent(currentPath)}${scopeParam}`,
       ),
     refetchInterval: 4000,
   });
 
   const { data: preview } = useQuery({
-    queryKey: ["file-content", projectId, previewPath],
+    queryKey: ["file-content", projectId, root, agentId, previewPath],
     queryFn: () =>
       api.get<{ content: string; truncated: boolean }>(
-        `/projects/${projectId}/file-content?path=${encodeURIComponent(previewPath!)}`,
+        `/projects/${projectId}/file-content?path=${encodeURIComponent(previewPath!)}${scopeParam}`,
       ),
     enabled: !!previewPath,
   });

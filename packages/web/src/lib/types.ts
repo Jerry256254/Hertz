@@ -228,6 +228,18 @@ export interface EmployeeMessage {
   createdAt: string;
 }
 
+export interface EmployeeShell {
+  id: string;
+  projectId: string;
+  ownerAgentId: string;
+  name: string;
+  owned: boolean;
+  ownerName?: string;
+  sharedWith: string[];
+  alive: boolean;
+  createdAt: string;
+}
+
 export interface McpServer {
   id: string;
   agentId: string | null;
