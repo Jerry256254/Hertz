@@ -13,6 +13,8 @@ export const projects = sqliteTable("projects", {
   name: text("name").notNull(),
   /** Free-form JSON pointer to a kuclab.config.json override for this project, if any. */
   standardProfile: text("standard_profile"),
+  /** When true, the manager's hire_employee and fire_employee requests take effect immediately instead of waiting for the user's approval. */
+  autoApprove: integer("auto_approve", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -48,13 +50,15 @@ export const agents = sqliteTable("agents", {
   model: text("model").notNull(),
   systemPrompt: text("system_prompt"),
   mode: text("mode", { enum: ["manual", "plan", "auto"] }).notNull().default("manual"),
-  status: text("status", { enum: ["idle", "running", "error"] }).notNull().default("idle"),
+  status: text("status", { enum: ["idle", "running", "error", "terminated"] }).notNull().default("idle"),
   /** One-line, human-facing summary of the outcome of this agent's most recent run — "Done.", "3 intros drafted…" — shown under their name in the sidebar. */
   lastStatus: text("last_status"),
   /** What this employee is for, written by the manager at hire time — shown to the user and to the agent itself. */
   jobDescription: text("job_description"),
   /** New hires (via hire_employee) start "pending" and can't run until the user (CEO) approves them. Directly-created agents (POST /api/agents by the user) start "approved". */
   approvalStatus: text("approval_status", { enum: ["pending", "approved", "rejected"] }).notNull().default("approved"),
+  /** Set by the manager's fire_employee when the project isn't on auto-approve — the user (CEO) must approve or reject before status can become "terminated". */
+  pendingTermination: integer("pending_termination", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

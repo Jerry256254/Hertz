@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   standard_profile TEXT,
+  auto_approve INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS agents (
   last_status TEXT,
   job_description TEXT,
   approval_status TEXT NOT NULL DEFAULT 'approved',
+  pending_termination INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
@@ -287,6 +289,8 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agents ADD COLUMN last_status TEXT",
   "ALTER TABLE agents ADD COLUMN job_description TEXT",
   "ALTER TABLE agents ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'",
+  "ALTER TABLE agents ADD COLUMN pending_termination INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE projects ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0",
 ];
 
 export async function runMigrations(client: Client): Promise<void> {
