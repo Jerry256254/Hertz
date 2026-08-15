@@ -2,8 +2,8 @@
 schema_version: 1
 app_name: KucLab Hertz CLI
 package_id: kuclab-hertz
-version_name: "0.3.0"
-version_code: 3
+version_name: "0.4.0"
+version_code: 4
 last_updated: 2026-08-15
 license: MIT
 category: Developer Tools
@@ -37,6 +37,12 @@ screenshots:
   - store/screenshots/01_login.png
   - store/screenshots/02_session.png
 changelog:
+  - version: "0.4.0"
+    date: 2026-08-15
+    notes:
+      - "Gmail, Google Drive a Slack se připojují přes skutečný OAuth 2.0 flow (opravdová přihlašovací obrazovka), ne ruční vkládání tokenů"
+      - "Nový first-party MCP server @kuclab-hertz/mcp-google (Gmail + Drive) místo spoléhání na neověřený balíček třetí strany"
+      - "WebUI plně responzivní pro telefony — sidebar jako výsuvné menu, layout se přizpůsobí úzkým obrazovkám"
   - version: "0.3.0"
     date: 2026-08-15
     notes:
