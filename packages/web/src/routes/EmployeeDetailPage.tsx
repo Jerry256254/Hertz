@@ -43,14 +43,14 @@ export function EmployeeDetailPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex-shrink-0 border-b border-border px-6 py-4">
+      <header className="flex-shrink-0 border-b border-border px-4 py-4 md:px-6">
         <button
           onClick={() => navigate(`/projects/${projectId}`)}
           className="mb-3 flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
         >
           <ArrowLeft size={12} /> Back to project
         </button>
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <Avatar label={agent.name} color={agentColor(agent.id)} />
             <div>
@@ -76,12 +76,12 @@ export function EmployeeDetailPage() {
         </div>
         {agent.jobDescription && <p className="mt-3 max-w-2xl text-sm text-fg-muted">{agent.jobDescription}</p>}
 
-        <div className="mt-4 flex gap-1">
+        <div className="mt-4 flex gap-1 overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 tab === t.id ? "bg-bg-hover text-fg" : "text-fg-muted hover:text-fg"
               }`}
             >

@@ -292,8 +292,8 @@ export function ProjectPage() {
   const NEXT_TASK_STATUS: Record<HertzTask["status"], HertzTask["status"]> = { open: "in_progress", in_progress: "done", done: "open" };
 
   return (
-    <div className="grid h-full grid-cols-[1fr_320px]">
-      <div className="overflow-auto px-6 py-6">
+    <div className="grid h-full grid-cols-1 md:grid-cols-[1fr_320px]">
+      <div className="overflow-auto px-4 py-6 md:px-6">
         <div className="mb-6 flex items-center gap-2">
           <FolderGit2 size={18} className="text-accent" />
           <div>
@@ -664,7 +664,11 @@ export function ProjectPage() {
           />
         )}
       </div>
-      {projectId && <FileExplorer projectId={projectId} />}
+      {projectId && (
+        <div className="hidden md:block">
+          <FileExplorer projectId={projectId} />
+        </div>
+      )}
     </div>
   );
 }
