@@ -40,6 +40,9 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: AppContext): void 
         if (agent.approvalStatus !== "approved") {
           return reply.code(400).send({ error: `${agent.name} is still awaiting approval` });
         }
+        if (agent.status === "terminated") {
+          return reply.code(400).send({ error: `${agent.name} has been terminated` });
+        }
         if (agent.projectId !== projectId) {
           const attached = await ctx.db
             .select({ id: agentProjects.id })

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { ALL_TOOLS, runTool, toProviderToolDefinitions } from "@kuclab-hertz/tools";
-import type { AgentLoopManager, ToolPort } from "@kuclab-hertz/core";
+import type { AgentLoopManager, ProviderPort, ToolPort } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { agents } from "../db/schema.js";
 import { createOrgTools, type OrgToolDef } from "./org-tools.js";
@@ -19,6 +19,7 @@ export interface ToolPortDeps {
   sandboxRegistry: SandboxRegistry;
   mcpRegistry: McpRegistry;
   shellManager: ShellManager;
+  providers: ProviderPort;
   /** Lazy: AgentLoopManager depends on ToolPort, so ToolPort can't depend on a concrete instance at construction time. */
   getAgentLoop: () => AgentLoopManager;
 }

@@ -55,6 +55,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     sandboxRegistry,
     mcpRegistry,
     shellManager,
+    providers,
     getAgentLoop: () => {
       if (!agentLoopRef) throw new Error("AgentLoopManager not initialized yet");
       return agentLoopRef;

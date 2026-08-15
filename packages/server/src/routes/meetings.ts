@@ -35,6 +35,9 @@ export function registerMeetingRoutes(app: FastifyInstance, ctx: AppContext): vo
       if (participantRows.some((a) => a.approvalStatus !== "approved")) {
         return reply.code(400).send({ error: "All participants must be approved first" });
       }
+      if (participantRows.some((a) => a.status === "terminated")) {
+        return reply.code(400).send({ error: "A terminated agent can't join a meeting" });
+      }
 
       const id = newId();
       const now = new Date();

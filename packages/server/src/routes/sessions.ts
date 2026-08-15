@@ -51,6 +51,9 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (agent.approvalStatus !== "approved") {
       return reply.code(400).send({ error: `${agent.name} is still awaiting approval` });
     }
+    if (agent.status === "terminated") {
+      return reply.code(400).send({ error: `${agent.name} has been terminated` });
+    }
 
     const projectId = parsed.data.projectId ?? agent.projectId;
     if (projectId !== agent.projectId) {

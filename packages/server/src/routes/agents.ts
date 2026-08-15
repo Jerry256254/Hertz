@@ -20,6 +20,13 @@ const createSchema = z.object({
 
 const approvalSchema = z.object({ approvalStatus: z.enum(["approved", "rejected"]) });
 
+const updateSchema = z.object({
+  model: z.string().min(1).optional(),
+  providerConfigId: z.string().min(1).optional(),
+});
+
+const terminationDecisionSchema = z.object({ decision: z.enum(["approved", "rejected"]) });
+
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
     instance.addHook("preHandler", requireAuth);
@@ -73,6 +80,43 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       }
 
       await ctx.db.update(agents).set({ approvalStatus: parsed.data.approvalStatus }).where(eq(agents.id, id));
+      return { ok: true };
+    });
+
+    // The user (CEO) changing an agent's model/provider — always allowed, any agent, any time.
+    instance.patch("/api/agents/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = updateSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (Object.keys(parsed.data).length === 0) return reply.code(400).send({ error: "Nothing to update" });
+
+      const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+      const agent = rows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) {
+        return reply.code(403).send({ error: "No access to this project" });
+      }
+
+      await ctx.db.update(agents).set(parsed.data).where(eq(agents.id, id));
+      return { ok: true };
+    });
+
+    // The user (CEO) approving or rejecting a manager's fire_employee request.
+    instance.patch("/api/agents/:id/termination", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = terminationDecisionSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+
+      const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+      const agent = rows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!agent.pendingTermination) return reply.code(400).send({ error: "This agent has no pending termination request" });
+
+      if (parsed.data.decision === "approved") {
+        await ctx.db.update(agents).set({ status: "terminated", pendingTermination: false }).where(eq(agents.id, id));
+      } else {
+        await ctx.db.update(agents).set({ pendingTermination: false }).where(eq(agents.id, id));
+      }
       return { ok: true };
     });
 
