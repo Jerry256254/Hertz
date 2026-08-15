@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plug, Plus } from "lucide-react";
+import { ChevronDown, Plug, Plus } from "lucide-react";
 import { api } from "../lib/api";
 import type { Agent, McpServer } from "../lib/types";
-import { Avatar, Badge, Button, Card, EmptyState, Input, Label, Textarea } from "../components/ui";
+import { Avatar, Badge, Button, Card, Input, Label, Textarea } from "../components/ui";
 import { DeleteButton } from "../components/DeleteButton";
+import { ConnectorCatalog } from "../components/ConnectorCatalog";
 
 function parseLines(text: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -171,10 +172,11 @@ function ServerRow({ server, agentName }: { server: McpServer; agentName: string
 }
 
 export function IntegrationsPage() {
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
   const { data: servers } = useQuery({
-    queryKey: ["mcp-servers"],
+    queryKey: ["mcp-servers", "global"],
     queryFn: () => api.get<{ servers: McpServer[] }>("/mcp-servers"),
   });
 
@@ -185,40 +187,52 @@ export function IntegrationsPage() {
 
   const agents = agentsData?.agents ?? [];
   const agentName = (id: string | null) => agents.find((a) => a.id === id)?.name;
+  const connectedServers = servers?.servers ?? [];
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="mb-1 text-xl font-semibold text-fg">Integrations</h1>
+      <div className="mb-1 flex items-center gap-2">
+        <Plug size={18} className="text-accent" />
+        <h1 className="text-xl font-semibold text-fg">Browse connectors</h1>
+      </div>
       <p className="mb-6 text-sm text-fg-muted">
-        Connect MCP servers so employees can call external tools (CRMs, docs, ticketing, anything speaking MCP) —
-        global servers are available to everyone, or scope one to a single employee.
+        Give employees tools beyond files, shell, and the web. Global connectors are available to everyone — to scope
+        one to a single employee, connect it from that employee's own settings instead.
       </p>
 
-      {showForm ? (
-        <div className="mb-6">
-          <NewServerForm agents={agents} onDone={() => setShowForm(false)} />
+      <ConnectorCatalog />
+
+      {connectedServers.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Connected servers</h2>
+          <div className="space-y-2">
+            {connectedServers.map((s) => (
+              <ServerRow key={s.id} server={s} agentName={agentName(s.agentId)} />
+            ))}
+          </div>
         </div>
-      ) : (
-        <Button variant="primary" className="mb-6" onClick={() => setShowForm(true)}>
-          <Plus size={14} /> Add MCP server
-        </Button>
       )}
 
-      {servers && servers.servers.length > 0 ? (
-        <div className="space-y-2">
-          {servers.servers.map((s) => (
-            <ServerRow key={s.id} server={s} agentName={agentName(s.agentId)} />
-          ))}
-        </div>
-      ) : (
-        !showForm && (
-          <EmptyState
-            icon={<Plug size={26} strokeWidth={1.5} />}
-            title="No integrations yet"
-            description="Add an MCP server to give employees tools beyond files, shell, and the web."
-          />
-        )
-      )}
+      <div className="mt-8">
+        <button
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
+        >
+          <ChevronDown size={13} className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+          Advanced: custom server
+        </button>
+        {showAdvanced && (
+          <div className="mt-3">
+            {showForm ? (
+              <NewServerForm agents={agents} onDone={() => setShowForm(false)} />
+            ) : (
+              <Button variant="secondary" onClick={() => setShowForm(true)}>
+                <Plus size={14} /> Add custom MCP server
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

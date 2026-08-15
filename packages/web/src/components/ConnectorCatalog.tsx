@@ -1,0 +1,191 @@
+import { useState, type FormEvent } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Search, X } from "lucide-react";
+import { api } from "../lib/api";
+import type { McpServer } from "../lib/types";
+import { MCP_CATALOG, MCP_CATEGORY_LABEL, type McpCatalogEntry } from "../lib/mcp-catalog";
+import { Button, Card, Input, Label } from "./ui";
+
+function ConnectDialog({
+  entry,
+  scopeAgentId,
+  onOpenChange,
+  onConnected,
+}: {
+  entry: McpCatalogEntry;
+  scopeAgentId: string | undefined;
+  onOpenChange: (open: boolean) => void;
+  onConnected: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const connect = useMutation({
+    mutationFn: () => {
+      const payload: Record<string, unknown> = {
+        name: entry.name,
+        agentId: scopeAgentId ?? null,
+        transport: entry.transport,
+      };
+      if (entry.transport === "stdio") {
+        payload.command = entry.command;
+        payload.args = entry.args;
+        if (entry.credentials.length > 0) payload.env = values;
+      } else {
+        payload.url = entry.url;
+        if (entry.credentials.length > 0) payload.headers = values;
+      }
+      return api.post("/mcp-servers", payload);
+    },
+    onSuccess: onConnected,
+    onError: (err) => setError((err as Error).message),
+  });
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(undefined);
+    connect.mutate();
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-bg-raised shadow-popover">
+          <div className="flex h-12 items-center justify-between border-b border-border px-4">
+            <Dialog.Title className="text-sm font-semibold text-fg">Connect {entry.name}</Dialog.Title>
+            <Dialog.Close asChild>
+              <button className="text-fg-muted hover:text-fg">
+                <X size={16} />
+              </button>
+            </Dialog.Close>
+          </div>
+          <form onSubmit={onSubmit} className="space-y-3 p-4">
+            <p className="text-xs text-fg-subtle">{entry.description}</p>
+            {entry.credentials.length === 0 ? (
+              <p className="text-xs text-fg-muted">No credentials needed — this server runs locally.</p>
+            ) : (
+              entry.credentials.map((field) => (
+                <div key={field.key}>
+                  <Label>{field.label}</Label>
+                  <Input
+                    type={field.secret ? "password" : "text"}
+                    placeholder={field.placeholder}
+                    value={values[field.key] ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                    required
+                    className="mono"
+                  />
+                  {field.helpText && <p className="mt-1 text-[11px] text-fg-subtle">{field.helpText}</p>}
+                </div>
+              ))
+            )}
+            {error && <p className="text-xs text-danger">{error}</p>}
+            <Button type="submit" variant="primary" className="w-full" disabled={connect.isPending}>
+              {connect.isPending ? "Connecting…" : "Connect"}
+            </Button>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/**
+ * Tile-based connector browser, modeled on Claude's own connector directory —
+ * "Connect" collects whatever credential the real MCP server needs (a token,
+ * a connection string) rather than a fake OAuth popup, since a self-hosted
+ * tool has no registered OAuth app to broker through. Reused both globally
+ * (scopeAgentId undefined) and scoped to one employee's own settings.
+ */
+export function ConnectorCatalog({ scopeAgentId }: { scopeAgentId?: string }) {
+  const queryClient = useQueryClient();
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<"all" | McpCatalogEntry["category"]>("all");
+  const [connecting, setConnecting] = useState<McpCatalogEntry | undefined>(undefined);
+
+  const queryKey = ["mcp-servers", scopeAgentId ?? "global"];
+  const { data } = useQuery({
+    queryKey,
+    queryFn: () => api.get<{ servers: McpServer[] }>(`/mcp-servers${scopeAgentId ? `?agentId=${scopeAgentId}` : ""}`),
+  });
+  const rows = data?.servers ?? [];
+
+  function isConnected(entry: McpCatalogEntry): boolean {
+    return rows.some((s) => {
+      const matches = entry.transport === "stdio" ? s.transport === "stdio" && s.command === entry.command : s.transport === "sse" && s.url === entry.url;
+      return matches && (s.agentId ?? null) === (scopeAgentId ?? null);
+    });
+  }
+
+  const filtered = MCP_CATALOG.filter((e) => {
+    if (category !== "all" && e.category !== category) return false;
+    const q = query.trim().toLowerCase();
+    return !q || e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q);
+  });
+
+  const categories: Array<"all" | McpCatalogEntry["category"]> = ["all", "development", "productivity", "communication", "data"];
+
+  return (
+    <div>
+      <div className="relative mb-3">
+        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" />
+        <Input placeholder="Search connectors…" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
+      </div>
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {categories.map((c) => (
+          <button
+            key={c}
+            onClick={() => setCategory(c)}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              category === c ? "bg-accent text-accent-fg" : "bg-bg-sunken text-fg-muted hover:text-fg"
+            }`}
+          >
+            {c === "all" ? "All" : MCP_CATEGORY_LABEL[c]}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        {filtered.map((entry) => {
+          const connected = isConnected(entry);
+          return (
+            <Card key={entry.id} className="p-3">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-bg-sunken text-sm font-semibold text-fg-muted">
+                    {entry.letter}
+                  </span>
+                  <p className="truncate text-sm font-medium text-fg">{entry.name}</p>
+                </div>
+                {connected ? (
+                  <span className="flex flex-shrink-0 items-center gap-1 text-xs text-success">
+                    <Check size={12} /> Connected
+                  </span>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => setConnecting(entry)} className="flex-shrink-0">
+                    Connect
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs leading-snug text-fg-subtle">{entry.description}</p>
+            </Card>
+          );
+        })}
+      </div>
+
+      {connecting && (
+        <ConnectDialog
+          entry={connecting}
+          scopeAgentId={scopeAgentId}
+          onOpenChange={(open) => !open && setConnecting(undefined)}
+          onConnected={() => {
+            void queryClient.invalidateQueries({ queryKey });
+            setConnecting(undefined);
+          }}
+        />
+      )}
+    </div>
+  );
+}
