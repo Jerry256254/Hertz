@@ -64,7 +64,8 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-github"],
     credentials: [
-      { key: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "GitHub personal access token", secret: true, placeholder: "ghp_…" },
+      { key: "GITHUB_USERNAME", label: "GitHub username", placeholder: "octocat" },
+      { key: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "Personal access token", secret: true, placeholder: "ghp_…" },
     ],
   },
   {

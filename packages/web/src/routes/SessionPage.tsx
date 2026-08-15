@@ -195,7 +195,7 @@ export function SessionPage() {
   }, [data?.messages]);
 
   return (
-    <div className={`grid h-full ${showFiles ? "grid-cols-[1fr_340px]" : "grid-cols-[1fr_0px]"}`}>
+    <div className={`grid h-full grid-cols-1 ${showFiles ? "md:grid-cols-[1fr_340px]" : "md:grid-cols-[1fr_0px]"}`}>
       <div className="flex min-w-0 flex-col">
         <header className="flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border px-6">
           {data && <EditableTitle sessionId={sessionId!} title={data.session.title} />}
@@ -325,7 +325,22 @@ export function SessionPage() {
           </form>
         </div>
       </div>
-      {showFiles && projectId && <FileExplorer projectId={projectId} />}
+      {showFiles && projectId && (
+        // A full-screen overlay on mobile (with its own close button — a fixed 340px side
+        // column on a phone-width screen squeezed the chat header, including this same
+        // toggle button, down to a few unusable pixels) instead of a grid column there.
+        <div className="fixed inset-0 z-20 flex flex-col bg-bg md:static md:z-auto">
+          <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-3 md:hidden">
+            <span className="text-sm font-medium text-fg">Files</span>
+            <IconButton title="Close files" onClick={() => setShowFiles(false)}>
+              <X size={16} />
+            </IconButton>
+          </div>
+          <div className="min-h-0 flex-1">
+            <FileExplorer projectId={projectId} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

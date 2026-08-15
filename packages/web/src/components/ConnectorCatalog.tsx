@@ -145,7 +145,15 @@ export function ConnectorCatalog({ scopeAgentId, projectId }: { scopeAgentId?: s
 
   function isConnected(entry: McpCatalogEntry): boolean {
     return rows.some((s) => {
-      const matches = entry.oauth ? s.name === entry.name : entry.transport === "stdio" ? s.transport === "stdio" && s.command === entry.command : s.transport === "sse" && s.url === entry.url;
+      // Matching on command alone isn't enough — most catalog entries share "npx" as
+      // the command, so args (which actually identify the package, e.g. server-github
+      // vs. server-postgres) must match too, or connecting any one npx-based server
+      // would falsely mark every other npx-based entry as connected too.
+      const matches = entry.oauth
+        ? s.name === entry.name
+        : entry.transport === "stdio"
+          ? s.transport === "stdio" && s.command === entry.command && JSON.stringify(s.args) === JSON.stringify(entry.args)
+          : s.transport === "sse" && s.url === entry.url;
       return matches && (s.agentId ?? null) === (scopeAgentId ?? null);
     });
   }

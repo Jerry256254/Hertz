@@ -10,6 +10,7 @@ import {
   MessagesSquare,
   Plug,
   Plus,
+  X,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -22,7 +23,7 @@ interface SidebarSession extends HertzSession {
   projectName: string;
 }
 
-export function Sidebar() {
+export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user, logout } = useAuth();
@@ -77,6 +78,15 @@ export function Sidebar() {
         </span>
         <span className="text-sm font-semibold tracking-tight text-fg">Hertz</span>
         <span className="text-[10px] font-medium uppercase tracking-wider text-fg-subtle">KucLab</span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="ml-auto flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-bg-hover hover:text-fg md:hidden"
+            aria-label="Close menu"
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       <div className="px-3">

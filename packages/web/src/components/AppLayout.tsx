@@ -10,9 +10,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
   // Close the drawer on every navigation instead of requiring an explicit close tap.
   useEffect(() => setMobileOpen(false), [location.pathname]);
 
+  // Without this, the page behind the drawer/backdrop stays scrollable on touch devices —
+  // scrolling "under" the menu instead of the menu blocking interaction with it.
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen]);
+
   return (
     <div className="flex h-full flex-col md:flex-row">
-      <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
+      {/* Fixed, not just sticky-in-flow: guarantees the menu toggle stays reachable no
+          matter how far down a page's own content (e.g. a long chat) is scrolled. */}
+      <div className="fixed inset-x-0 top-0 z-20 flex h-12 flex-shrink-0 items-center gap-2 border-b border-border bg-bg px-3 md:hidden">
         <button
           onClick={() => setMobileOpen(true)}
           className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-bg-hover hover:text-fg"
@@ -23,6 +34,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-xs font-bold text-accent-fg">H</span>
         <span className="text-sm font-semibold tracking-tight text-fg">Hertz</span>
       </div>
+      <div className="h-12 flex-shrink-0 md:hidden" aria-hidden="true" />
 
       {mobileOpen && (
         <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
@@ -32,10 +44,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <Sidebar />
+        <Sidebar onClose={() => setMobileOpen(false)} />
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1">{children}</div>
+      {/* The one canonical scroll container for every page — some pages (Dashboard,
+          Integrations, Providers) size to natural content height and previously relied
+          on the whole body scrolling, which is exactly what let content scroll "under"
+          the fixed mobile drawer/backdrop instead of being contained by it. */}
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }
