@@ -5,6 +5,7 @@ import type { AppContext } from "../context.js";
 import { agentMemory, agentProjects, agents, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
+import { hasProjectAccess } from "../auth/project-access.js";
 import { AGENT_ROLES, defaultSystemPromptFor } from "../tools/org-tools.js";
 
 const createSchema = z.object({
@@ -26,6 +27,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.post("/api/agents", async (request, reply) => {
       const parsed = createSchema.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!(await hasProjectAccess(ctx.db, request.user!, parsed.data.projectId))) {
+        return reply.code(403).send({ error: "No access to this project" });
+      }
 
       if (parsed.data.role === "manager") {
         const existing = await ctx.db
@@ -84,8 +88,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     });
 
     // Home employees (agents.project_id = X) plus anyone attached via agent_projects.
-    instance.get("/api/projects/:projectId/agents", async (request) => {
+    instance.get("/api/projects/:projectId/agents", async (request, reply) => {
       const { projectId } = request.params as { projectId: string };
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
       const homeRows = await ctx.db.select().from(agents).where(eq(agents.projectId, projectId));
 
       const attachedRows = await ctx.db

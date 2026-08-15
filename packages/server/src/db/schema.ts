@@ -375,6 +375,22 @@ export const oauthApps = sqliteTable("oauth_apps", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/**
+ * Grants a non-admin user access to one project. Admins bypass this entirely
+ * (see every project); a "user"-role account only sees/acts on projects
+ * they've been explicitly added to here.
+ */
+export const projectMembers = sqliteTable("project_members", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const sessionTokens = sqliteTable("session_tokens", {
   id: text("id").primaryKey(),
   userId: text("user_id")

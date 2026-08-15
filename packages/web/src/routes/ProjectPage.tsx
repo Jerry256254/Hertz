@@ -6,6 +6,8 @@ import { api } from "../lib/api";
 import type { Agent, AgentRole, EmployeeMessage, HertzTask, Meeting, ModelInfo, Project, ProviderConfig, Routine } from "../lib/types";
 import { AGENT_ROLES, ROLE_LABEL } from "../lib/types";
 import { agentColor } from "../lib/agent-color";
+import { useAuth } from "../lib/auth";
+import { ProjectAccessSection } from "../components/ProjectAccessSection";
 import { FileExplorer } from "../components/FileExplorer";
 import { Avatar, Badge, Button, Card, EmptyState, IconButton, Input, Label } from "../components/ui";
 import { NewMeetingDialog } from "../components/NewMeetingDialog";
@@ -194,6 +196,7 @@ export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [showAgentForm, setShowAgentForm] = useState(false);
   const [showManagerForm, setShowManagerForm] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
@@ -301,6 +304,8 @@ export function ProjectPage() {
             <p className="mono text-xs leading-tight text-fg-subtle">{project?.roots[0]?.absolutePath}</p>
           </div>
         </div>
+
+        {user?.role === "admin" && projectId && <ProjectAccessSection projectId={projectId} />}
 
         {!manager && !showManagerForm && (
           <Card className="mb-6">

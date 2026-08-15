@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { projectRoots } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
+import { hasProjectAccess } from "../auth/project-access.js";
 import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 
 const listQuerySchema = z.object({
@@ -39,6 +40,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { projectId } = request.params as { projectId: string };
       const parsed = listQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
 
       const built = await buildGuard(projectId, parsed.data.root, parsed.data.agentId);
       if (!built) return reply.code(404).send({ error: "Project has no roots configured" });
@@ -70,6 +72,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { projectId } = request.params as { projectId: string };
       const parsed = listQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
 
       const built = await buildGuard(projectId, parsed.data.root, parsed.data.agentId);
       if (!built) return reply.code(404).send({ error: "Project has no roots configured" });

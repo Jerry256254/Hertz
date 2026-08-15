@@ -21,6 +21,7 @@ import { registerEmployeeMessageRoutes } from "./routes/employee-messages.js";
 import { registerRoutineRoutes } from "./routes/routines.js";
 import { registerShellRoutes } from "./routes/shells.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
+import { registerUserRoutes } from "./routes/users.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
 import { registerMeetingWebsocket } from "./ws/meeting-hub.js";
 
@@ -56,6 +57,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerRoutineRoutes(app, ctx);
   registerShellRoutes(app, ctx);
   registerOAuthRoutes(app, ctx);
+  registerUserRoutes(app, ctx);
   registerSessionWebsocket(app, ctx);
   registerMeetingWebsocket(app, ctx);
 

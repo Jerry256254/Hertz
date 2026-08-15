@@ -10,6 +10,7 @@ import {
   MessagesSquare,
   Plug,
   Plus,
+  Users,
   X,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -184,9 +185,20 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
           <Cog size={14} />
           Providers
         </Link>
+        {user?.role === "admin" && (
+          <Link
+            to="/users"
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-fg"
+          >
+            <Users size={14} />
+            Users
+          </Link>
+        )}
         <div className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5">
-          <Avatar label={user?.email ?? "?"} />
-          <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{user?.email}</span>
+          <Link to="/account" className="flex min-w-0 flex-1 items-center gap-2 hover:opacity-80">
+            <Avatar label={user?.email ?? "?"} />
+            <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{user?.email}</span>
+          </Link>
           <IconButton title="Log out" onClick={() => void logout()}>
             <LogOut size={14} />
           </IconButton>
