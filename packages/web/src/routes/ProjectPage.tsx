@@ -320,10 +320,12 @@ export function ProjectPage() {
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Manager</h2>
             <Card className="flex items-center justify-between p-3">
               <div className="flex min-w-0 items-center gap-3">
-                <Avatar label={manager.name} tone="accent" />
+                <Avatar label={manager.name} color={agentColor(manager.id)} />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-fg">{manager.name}</p>
-                  <p className="mono truncate text-xs text-fg-subtle">{manager.model}</p>
+                  <p className="truncate text-xs text-fg-subtle" title={manager.model}>
+                    {manager.lastStatus ?? <span className="mono">{manager.model}</span>}
+                  </p>
                 </div>
                 <Badge tone="accent">Manager</Badge>
               </div>
@@ -371,10 +373,12 @@ export function ProjectPage() {
               <li key={a.id}>
                 <Card className="flex items-center justify-between p-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <Avatar label={a.name} />
+                    <Avatar label={a.name} color={agentColor(a.id)} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-fg">{a.name}</p>
-                      <p className="mono truncate text-xs text-fg-subtle">{a.model}</p>
+                      <p className="truncate text-xs text-fg-subtle" title={a.model}>
+                        {a.lastStatus ?? <span className="mono">{a.model}</span>}
+                      </p>
                     </div>
                     <Badge tone="neutral">{ROLE_LABEL[a.role]}</Badge>
                     {isAttached && <Badge tone="neutral">attached</Badge>}

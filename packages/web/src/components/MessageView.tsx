@@ -1,61 +1,17 @@
-import {
-  FileEdit,
-  FilePlus,
-  Globe,
-  ListChecks,
-  Minimize2,
-  Search,
-  Terminal,
-  TriangleAlert,
-  type LucideIcon,
-} from "lucide-react";
+import { Minimize2 } from "lucide-react";
 import type { PersistedMessage } from "../lib/types";
 import { Avatar, Badge } from "./ui";
 import { Markdown } from "./Markdown";
+import { ToolStepChecklist, type ToolStep } from "./ToolStepChecklist";
 
-const TOOL_ICONS: Record<string, LucideIcon> = {
-  read_file: Search,
-  glob: Search,
-  grep: Search,
-  write_file: FilePlus,
-  edit_file: FileEdit,
-  shell_exec: Terminal,
-  web_fetch: Globe,
-  todo_write: ListChecks,
-};
-
-function ToolActivity({
-  name,
-  input,
-  result,
+export function MessageView({
+  message,
+  toolResultsById,
 }: {
-  name: string;
-  input?: unknown;
-  result?: { content: string; isError?: boolean };
+  message: PersistedMessage;
+  /** tool_use id -> its result, gathered across the whole session — lets an assistant's tool_use blocks show their outcome inline. */
+  toolResultsById?: Map<string, { content: string; isError?: boolean }>;
 }) {
-  const Icon = TOOL_ICONS[name] ?? Terminal;
-  const argHint = input && typeof input === "object" ? Object.values(input as Record<string, unknown>)[0] : undefined;
-
-  return (
-    <details className="group rounded-md border border-border bg-bg-sunken px-2.5 py-1.5 text-xs open:pb-2.5">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-fg-muted marker:hidden">
-        <Icon size={13} className="flex-shrink-0" />
-        <span className="mono text-fg-muted">{name}</span>
-        {typeof argHint === "string" && (
-          <span className="mono min-w-0 flex-1 truncate text-fg-subtle">{argHint}</span>
-        )}
-        {result?.isError && <TriangleAlert size={12} className="flex-shrink-0 text-danger" />}
-      </summary>
-      {result && (
-        <pre className="mono mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-bg-sunken text-[11px] leading-relaxed text-fg-muted">
-          {result.content}
-        </pre>
-      )}
-    </details>
-  );
-}
-
-export function MessageView({ message }: { message: PersistedMessage }) {
   if (message.purpose === "summarization") {
     const text = message.content.filter((b) => b.type === "text").map((b) => (b.type === "text" ? b.text : "")).join("\n");
     return (
@@ -76,22 +32,11 @@ export function MessageView({ message }: { message: PersistedMessage }) {
     const imageBlocks = message.content.filter((b) => b.type === "image");
     const toolResults = message.content.filter((b) => b.type === "tool_result");
 
-    // Tool-result-only messages are the mechanical continuation of an assistant's
-    // tool call — render as activity rows, not another "you" turn.
+    // Tool-result-only messages are the mechanical continuation of the preceding
+    // assistant turn's tool_use blocks, which already render this same result
+    // inline (via toolResultsById) — nothing left to show here.
     if (textBlocks.length === 0 && imageBlocks.length === 0 && toolResults.length > 0) {
-      return (
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-1.5 px-4 py-1">
-          {toolResults.map((block, i) =>
-            block.type === "tool_result" ? (
-              <ToolActivity
-                key={i}
-                name="result"
-                result={{ content: block.content, isError: block.isError }}
-              />
-            ) : null,
-          )}
-        </div>
-      );
+      return null;
     }
 
     return (
@@ -119,23 +64,25 @@ export function MessageView({ message }: { message: PersistedMessage }) {
     );
   }
 
-  // Assistant turn: flowing text + inline tool-call activity, with an avatar.
-  const toolUses = message.content.filter((b) => b.type === "tool_use");
+  // Assistant turn: flowing text, then one grouped checklist for every tool call in the turn.
+  const textBlocks = message.content.filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text");
+  const toolUses = message.content.filter((b): b is Extract<typeof b, { type: "tool_use" }> => b.type === "tool_use");
+  const steps: ToolStep[] = toolUses.map((block) => ({
+    id: block.id,
+    name: block.name,
+    input: block.input,
+    result: toolResultsById?.get(block.id),
+  }));
 
   return (
     <div className="mx-auto flex w-full max-w-3xl gap-3 px-4 py-3">
       <Avatar label="H" tone="accent" />
       <div className="min-w-0 flex-1 space-y-2">
-        {message.content.map((block, i) => {
-          if (block.type === "text") {
-            return <Markdown key={i}>{block.text}</Markdown>;
-          }
-          if (block.type === "tool_use") {
-            return <ToolActivity key={i} name={block.name} input={block.input} />;
-          }
-          return null;
-        })}
-        {toolUses.length === 0 && message.content.every((b) => b.type !== "text") && (
+        {textBlocks.map((block, i) => (
+          <Markdown key={i}>{block.text}</Markdown>
+        ))}
+        <ToolStepChecklist steps={steps} />
+        {toolUses.length === 0 && textBlocks.length === 0 && (
           <p className="text-sm italic text-fg-subtle">(no output)</p>
         )}
         {message.cost > 0 && (

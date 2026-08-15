@@ -95,6 +95,7 @@ export interface Agent {
   model: string;
   mode: "manual" | "plan" | "auto";
   status: "idle" | "running" | "error";
+  lastStatus?: string | null;
   createdAt: string;
   homeProjectName?: string;
 }

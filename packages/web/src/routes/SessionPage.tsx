@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, Files, Paperclip, TriangleAlert, X } from "lucide-react";
@@ -184,6 +184,16 @@ export function SessionPage() {
 
   const budget = data?.budget;
 
+  const toolResultsById = useMemo(() => {
+    const results = new Map<string, { content: string; isError?: boolean }>();
+    for (const m of data?.messages ?? []) {
+      for (const block of m.content) {
+        if (block.type === "tool_result") results.set(block.toolUseId, { content: block.content, isError: block.isError });
+      }
+    }
+    return results;
+  }, [data?.messages]);
+
   return (
     <div className={`grid h-full ${showFiles ? "grid-cols-[1fr_340px]" : "grid-cols-[1fr_0px]"}`}>
       <div className="flex min-w-0 flex-col">
@@ -213,7 +223,7 @@ export function SessionPage() {
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-6">
           {data?.messages.map((m) => (
-            <MessageView key={m.id} message={m} />
+            <MessageView key={m.id} message={m} toolResultsById={toolResultsById} />
           ))}
           {streamingText && (
             <div className="mx-auto flex w-full max-w-3xl gap-3 px-4 py-3">

@@ -59,6 +59,15 @@ function toChatMessages(history: PersistedMessage[]): ChatMessage[] {
     .map((m) => ({ role: m.role, content: m.content }));
 }
 
+function deriveStatusLine(text: string): string {
+  const firstLine = text
+    .split("\n")
+    .map((l) => l.replace(/^#+\s*/, "").trim())
+    .find((l) => l.length > 0);
+  if (!firstLine) return "Done.";
+  return firstLine.length > 100 ? `${firstLine.slice(0, 100)}…` : firstLine;
+}
+
 const COMPACT_SYSTEM_PROMPT =
   "Summarize this conversation into a dense briefing so the agent can resume with full working context but far fewer tokens. Capture concretely: what the user wants, key decisions made and why, files/paths touched and their current state, what's already done, and what's left to do. This replaces the raw history entirely — write it as a briefing for yourself, not commentary about the conversation.";
 
@@ -321,6 +330,7 @@ export class AgentLoopManager {
 
       if (stopReason !== "tool_use" || toolUses.length === 0) {
         await persistence.updateSessionStatus(config.sessionId, "completed");
+        await persistence.updateAgentLastStatus(config.agentId, deriveStatusLine(assistantText));
         return;
       }
 

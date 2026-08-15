@@ -8,6 +8,7 @@ import { ROLE_LABEL } from "../lib/types";
 import { subscribeToMeeting } from "../lib/ws-client";
 import { Markdown } from "../components/Markdown";
 import { Avatar } from "../components/ui";
+import { agentColor } from "../lib/agent-color";
 
 interface MeetingDetail {
   meeting: Meeting;
@@ -90,7 +91,7 @@ export function MeetingPage() {
         <div className="ml-auto flex -space-x-2">
           {data?.participants.map((a) => (
             <div key={a.id} title={`${a.name} — ${ROLE_LABEL[a.role]}`} className="ring-2 ring-bg">
-              <Avatar label={a.name} tone={a.role === "manager" ? "accent" : "neutral"} />
+              <Avatar label={a.name} color={agentColor(a.id)} />
             </div>
           ))}
         </div>
@@ -102,10 +103,10 @@ export function MeetingPage() {
           const isUser = !m.senderAgentId;
           return (
             <div key={m.id} className={`mx-auto flex w-full max-w-3xl gap-3 px-4 py-3 ${isUser ? "justify-end" : ""}`}>
-              {!isUser && <Avatar label={speaker?.name ?? "?"} tone="accent" />}
+              {!isUser && <Avatar label={speaker?.name ?? "?"} color={m.senderAgentId ? agentColor(m.senderAgentId) : undefined} />}
               <div className={isUser ? "max-w-[80%] rounded-lg bg-accent-wash px-4 py-2.5" : "min-w-0 flex-1"}>
                 {!isUser && (
-                  <p className="mb-1 text-xs font-medium text-fg-muted">
+                  <p className="mb-1 text-xs font-medium" style={{ color: m.senderAgentId ? agentColor(m.senderAgentId) : undefined }}>
                     {speaker?.name ?? "Former teammate"}
                     {speaker && <span className="text-fg-subtle"> · {ROLE_LABEL[speaker.role]}</span>}
                   </p>

@@ -51,6 +51,8 @@ export interface PersistencePort {
   getSessionMetadata(sessionId: string): Promise<Record<string, unknown> | undefined>;
   setSessionMetadata(sessionId: string, metadata: Record<string, unknown>): Promise<void>;
   recordUsage(rec: UsageRecordInput): Promise<void>;
+  /** One-line, human-facing summary of an agent's most recent run ("Done.", "3 intros drafted…") — shown in the sidebar. */
+  updateAgentLastStatus(agentId: string, status: string): Promise<void>;
 }
 
 export type { ToolContext } from "@kuclab-hertz/tools";
