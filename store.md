@@ -2,8 +2,8 @@
 schema_version: 1
 app_name: KucLab Hertz CLI
 package_id: kuclab-hertz
-version_name: "0.5.0"
-version_code: 5
+version_name: "0.6.0"
+version_code: 6
 last_updated: 2026-08-15
 license: MIT
 category: Developer Tools
@@ -37,6 +37,17 @@ screenshots:
   - store/screenshots/01_login.png
   - store/screenshots/02_session.png
 changelog:
+  - version: "0.6.0"
+    date: 2026-08-15
+    notes:
+      - "Agenti si teď průběžně ukládají krátké poznámky do vlastní paměti po každém tahu (co jim kdo řekl, co zjistili), ne jen když si na remember vzpomenou sami"
+      - "Manažer si před najímáním vždy nejdřív prohlédne stávající tým (list_employees) a radši přidělí práci jemu, než aby najímal duplicitu"
+      - "Nový nástroj list_provider_models — manažer vybírá zaměstnanci model podle potřeby úkolu (levný/rychlý vs. silnější), místo aby vždy kopíroval svůj vlastní"
+      - "CEO může kdykoliv změnit model i providera libovolného zaměstnance přímo v jeho detailu"
+      - "Nový nástroj view_employee_memory — manažer vidí paměť všech svých zaměstnanců"
+      - "Přepínač 'Auto-approve' na projektu — když je zapnutý, manažerovy žádosti o najmutí i propuštění se schválí automaticky, jinak čekají na CEO"
+      - "Nový nástroj fire_employee s workflow schválení propuštění (stejně jako u najímání), mirror v UI na detailu zaměstnance i na projektu"
+      - "API klíče a OAuth client secrets se teď při uložení ořezávají (trim) — vyřazuje běžnou chybu, kdy zkopírovaný klíč s mezerou navíc vypadá jako neplatný (401)"
   - version: "0.5.0"
     date: 2026-08-15
     notes:

@@ -9,13 +9,13 @@ Self-hosted agentní vývojová platforma — jeden příkaz nastartuje server s
 ## Funkce
 
 - **Agentní smyčka** — čtení/zápis/editace souborů, shell, grep/glob, web fetch, todo/plán, vše nad sandboxovaným project rootem.
-- **Organizace, ne jen chat** — každý projekt má Manager Agenta, který smí najímat zaměstnance s reálnou rolí (architekt/implementer/reviewer/tester/researcher) a delegovat jim úkoly — manažer nemá přístup k zápisu souborů ani shellu, takže práci nemůže dělat sám za ně; zaměstnanci mohou pracovat napříč více projekty.
+- **Organizace, ne jen chat** — každý projekt má Manager Agenta, který si nejdřív prohlédne stávající tým a radši mu přidělí práci, než aby najímal duplicitu; když najímá, vybere zaměstnanci model podle potřeby úkolu z dostupných providerů (list_provider_models), ne vždy jen kopii svého vlastního. Manažer nemá přístup k zápisu souborů ani shellu, takže práci nemůže dělat sám za ně; zaměstnanci mohou pracovat napříč více projekty a manažer vidí paměť celého svého týmu.
 - **Víc uživatelských účtů** — admin zakládá další účty a nastavuje jim přístup k jednotlivým projektům (uživatel bez adminu vidí jen projekty, ke kterým dostal přístup); každý si může změnit vlastní heslo.
 - **Persistentní paměť zaměstnanců** — každý agent si sám spravuje vlastní paměť (remember/list_memory/forget) i vlastní složku na disku (notes/materials/data) mimo sdílený project root, obojí vidí i uživatel.
 - **Zaměstnanci komunikují mezi sebou** — přímé zprávy (message_employee) i skupinové schůzky (meetings), transparentně viditelné uživateli, ne jen jednosměrné delegování.
 - **Úkoly a routines** — úkol lze zadat jen vybrané podmnožině týmu; routines re-briefují stejného agenta na plán (jednou/denně/týdně/vlastní cron), scheduler je DB-backed a přežije restart serveru.
 - **MCP integrace se skutečným OAuth** — Gmail, Google Drive a Slack se připojují přes opravdovou přihlašovací obrazovku (CEO jednou zaregistruje vlastní OAuth app), ne přes ruční vkládání tokenů; Gmail/Drive běží na vlastním first-party MCP serveru (`@kuclab-hertz/mcp-google`). Katalog dlaždic i pro GitHub/Postgres/atd., globálně nebo per zaměstnanec.
-- **Schvalování nových najmutí** — manažer smí požádat o nového zaměstnance (hire_employee) i s popisem práce, ale skutečně funkční se stane až po schválení uživatelem (CEO) — jako u reálné firmy.
+- **Schvalování najmutí i propuštění** — manažer smí požádat o nového zaměstnance (hire_employee) i o jeho propuštění (fire_employee), ale obojí se projeví až po schválení uživatelem (CEO) — jako u reálné firmy; přepínač "Auto-approve" na projektu umí obojí schvalovat automaticky. CEO může kdykoliv změnit model/providera libovolného zaměstnance.
 - **Vlastní Linux shell pro každého zaměstnance** — reálný persistentní bash proces (ne jednorázový spawn), víc pojmenovaných shellů, sdílení přístupu mezi kolegy, transkript viditelný uživateli.
 - **Detail zaměstnance** — jedna stránka na CEO dohled: popis práce, paměť, osobní prostor na disku, MCP nastavení, shelly.
 - **`/compact`** — jedním příkazem v chatu se historie session shrne do jedné souhrnné zprávy, další tahy čtou jen ji.
