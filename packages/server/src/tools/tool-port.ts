@@ -7,15 +7,18 @@ import { agents } from "../db/schema.js";
 import { createOrgTools, type OrgToolDef } from "./org-tools.js";
 import { createMemoryTools } from "./memory-tools.js";
 import { createMessagingTools } from "./messaging-tools.js";
+import { createShellTools } from "./shell-tools.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
 import { McpRegistry } from "../mcp/mcp-registry.js";
+import type { ShellManager } from "../shells/shell-manager.js";
 
 export interface ToolPortDeps {
   db: Database;
   paths: HertzPaths;
   sandboxRegistry: SandboxRegistry;
   mcpRegistry: McpRegistry;
+  shellManager: ShellManager;
   /** Lazy: AgentLoopManager depends on ToolPort, so ToolPort can't depend on a concrete instance at construction time. */
   getAgentLoop: () => AgentLoopManager;
 }
@@ -39,18 +42,20 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const orgTools = createOrgTools(deps);
   const memoryTools = createMemoryTools(deps.db, deps.paths);
   const messagingTools = createMessagingTools(deps.db);
-  const allByName = new Map([...orgTools, ...memoryTools, ...messagingTools].map((t) => [t.name, t]));
+  const shellTools = createShellTools(deps.db, deps.shellManager);
+  const allByName = new Map([...orgTools, ...memoryTools, ...messagingTools, ...shellTools].map((t) => [t.name, t]));
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
   const memoryDefs = toDefs(memoryTools);
   const messagingDefs = toDefs(messagingTools);
+  const shellDefs = toDefs(shellTools);
   const orgDefs = toDefs(orgTools);
 
   return {
     async listDefinitions(agentId) {
       const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      const defs = [...baseDefs, ...memoryDefs, ...messagingDefs, ...mcpDefs];
+      const defs = [...baseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...mcpDefs];
       return rows[0]?.role === "manager" ? [...defs, ...orgDefs] : defs;
     },
     run(name, input, ctx) {

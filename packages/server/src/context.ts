@@ -13,6 +13,7 @@ import { createDbAuditSink } from "./audit/db-audit-sink.js";
 import { MeetingOrchestrator } from "./meetings/meeting-orchestrator.js";
 import { McpRegistry } from "./mcp/mcp-registry.js";
 import { RoutineScheduler } from "./routines/routine-scheduler.js";
+import { ShellManager } from "./shells/shell-manager.js";
 import { users } from "./db/schema.js";
 
 export interface AppContext {
@@ -25,6 +26,7 @@ export interface AppContext {
   meetingOrchestrator: MeetingOrchestrator;
   mcpRegistry: McpRegistry;
   routineScheduler: RoutineScheduler;
+  shellManager: ShellManager;
 }
 
 export async function createAppContext(dataDir?: string): Promise<AppContext> {
@@ -41,6 +43,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const persistence = createPersistenceAdapter(db);
   const providers = createProviderRegistry(db, masterKey);
   const mcpRegistry = new McpRegistry(db, masterKey);
+  const shellManager = new ShellManager(audit);
 
   // ToolPort's org tools (assign_task) need to trigger the agent loop, but the
   // agent loop needs a ToolPort to be constructed — break the cycle with a lazy
@@ -51,6 +54,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     paths,
     sandboxRegistry,
     mcpRegistry,
+    shellManager,
     getAgentLoop: () => {
       if (!agentLoopRef) throw new Error("AgentLoopManager not initialized yet");
       return agentLoopRef;
@@ -81,5 +85,5 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   });
   routineScheduler.start();
 
-  return { paths, db, masterKey, audit, sandboxRegistry, agentLoop, meetingOrchestrator, mcpRegistry, routineScheduler };
+  return { paths, db, masterKey, audit, sandboxRegistry, agentLoop, meetingOrchestrator, mcpRegistry, routineScheduler, shellManager };
 }

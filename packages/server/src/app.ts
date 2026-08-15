@@ -19,6 +19,7 @@ import { registerTaskRoutes } from "./routes/tasks.js";
 import { registerMcpRoutes } from "./routes/mcp.js";
 import { registerEmployeeMessageRoutes } from "./routes/employee-messages.js";
 import { registerRoutineRoutes } from "./routes/routines.js";
+import { registerShellRoutes } from "./routes/shells.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
 import { registerMeetingWebsocket } from "./ws/meeting-hub.js";
 
@@ -52,6 +53,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerMcpRoutes(app, ctx);
   registerEmployeeMessageRoutes(app, ctx);
   registerRoutineRoutes(app, ctx);
+  registerShellRoutes(app, ctx);
   registerSessionWebsocket(app, ctx);
   registerMeetingWebsocket(app, ctx);
 
