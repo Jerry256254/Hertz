@@ -30,7 +30,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = "secondary", size = "md", className = "", ...props }, ref) => (
     <button
       ref={ref}
-      className={`inline-flex items-center justify-center rounded-md font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={`inline-flex items-center justify-center rounded-full font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
       {...props}
     />
   ),
@@ -41,7 +41,7 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
   ({ className = "", ...props }, ref) => (
     <button
       ref={ref}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-fg-muted transition-colors duration-150 hover:bg-bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
       {...props}
     />
   ),
@@ -52,7 +52,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ({ className = "", ...props }, ref) => (
     <input
       ref={ref}
-      className={`h-9 w-full rounded-md border border-border bg-bg-raised px-3 text-sm text-fg placeholder:text-fg-subtle outline-none transition-colors focus:border-accent disabled:opacity-50 ${className}`}
+      className={`h-9 w-full rounded-sm border border-border bg-bg-raised px-3 text-sm text-fg placeholder:text-fg-subtle outline-none transition-colors focus:border-accent disabled:opacity-50 ${className}`}
       {...props}
     />
   ),
@@ -63,7 +63,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   ({ className = "", ...props }, ref) => (
     <textarea
       ref={ref}
-      className={`w-full resize-none rounded-md border border-border bg-bg-raised px-3 py-2 text-sm text-fg placeholder:text-fg-subtle outline-none transition-colors focus:border-accent disabled:opacity-50 ${className}`}
+      className={`w-full resize-none rounded-sm border border-border bg-bg-raised px-3 py-2 text-sm text-fg placeholder:text-fg-subtle outline-none transition-colors focus:border-accent disabled:opacity-50 ${className}`}
       {...props}
     />
   ),
@@ -87,7 +87,7 @@ const BADGE_TONE_CLASSES: Record<BadgeTone, string> = {
 export function Badge({ children, tone = "neutral", className = "" }: { children: ReactNode; tone?: BadgeTone; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-none ${BADGE_TONE_CLASSES[tone]} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${BADGE_TONE_CLASSES[tone]} ${className}`}
     >
       {children}
     </span>
