@@ -3,7 +3,7 @@ import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { PersistedMessage, PersistencePort, UsageRecordInput } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agents, messages, sessions, usageRecords } from "../db/schema.js";
+import { agentMemory, agents, messages, sessions, usageRecords } from "../db/schema.js";
 
 function toPersistedMessage(row: typeof messages.$inferSelect): PersistedMessage {
   return {
@@ -89,6 +89,10 @@ export function createPersistenceAdapter(db: Database): PersistencePort {
 
     async updateAgentLastStatus(agentId, status) {
       await db.update(agents).set({ lastStatus: status }).where(eq(agents.id, agentId));
+    },
+
+    async appendMemoryNote(agentId, note) {
+      await db.insert(agentMemory).values({ id: newId(), agentId, note, createdAt: new Date() });
     },
   };
 }

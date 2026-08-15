@@ -53,6 +53,8 @@ export interface PersistencePort {
   recordUsage(rec: UsageRecordInput): Promise<void>;
   /** One-line, human-facing summary of an agent's most recent run ("Done.", "3 intros drafted…") — shown in the sidebar. */
   updateAgentLastStatus(agentId: string, status: string): Promise<void>;
+  /** Appends one auto-captured memory note for an agent — see agent-loop.ts's per-turn auto-save. */
+  appendMemoryNote(agentId: string, note: string): Promise<void>;
 }
 
 export type { ToolContext } from "@kuclab-hertz/tools";

@@ -4,7 +4,7 @@ import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { ProviderPort } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agents, meetingMessages, meetingParticipants, meetings, usageRecords } from "../db/schema.js";
+import { agentMemory, agents, meetingMessages, meetingParticipants, meetings, usageRecords } from "../db/schema.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
 
 export interface MeetingChatMessage {
@@ -122,6 +122,9 @@ export class MeetingOrchestrator {
       .innerJoin(agents, eq(meetingParticipants.agentId, agents.id))
       .where(eq(meetingParticipants.meetingId, meetingId));
 
+    const meetingRows = await db.select({ title: meetings.title }).from(meetings).where(eq(meetings.id, meetingId)).limit(1);
+    const meetingTitle = meetingRows[0]?.title ?? "a meeting";
+
     for (const { agent } of participantRows) {
       this.emit(meetingId, { type: "turn_started", agentId: agent.id, agentName: agent.name });
       const transcript = await this.buildTranscript(meetingId);
@@ -170,6 +173,18 @@ export class MeetingOrchestrator {
       });
 
       this.emit(meetingId, { type: "message", message: { id, meetingId, senderAgentId: agent.id, content, createdAt } });
+
+      // Same auto-capture principle as a normal chat turn (see agent-loop.ts) — meetings
+      // run a separate, non-tool-using code path, so it's duplicated here rather than shared.
+      const ownText = textOf(content).split("\n").find((l) => l.trim().length > 0)?.trim();
+      if (ownText) {
+        await db.insert(agentMemory).values({
+          id: newId(),
+          agentId: agent.id,
+          note: `In meeting "${meetingTitle}": ${ownText.length > 200 ? `${ownText.slice(0, 200)}…` : ownText}`,
+          createdAt,
+        });
+      }
     }
   }
 }

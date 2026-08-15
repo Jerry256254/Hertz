@@ -59,6 +59,17 @@ function toChatMessages(history: PersistedMessage[]): ChatMessage[] {
     .map((m) => ({ role: m.role, content: m.content }));
 }
 
+function extractTextSummary(blocks: ContentBlock[], maxLen: number): string {
+  const text = blocks
+    .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return blocks.some((b) => b.type === "image") ? "(sent an image)" : "(no text)";
+  return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+}
+
 function deriveStatusLine(text: string): string {
   const firstLine = text
     .split("\n")
@@ -330,7 +341,15 @@ export class AgentLoopManager {
 
       if (stopReason !== "tool_use" || toolUses.length === 0) {
         await persistence.updateSessionStatus(config.sessionId, "completed");
-        await persistence.updateAgentLastStatus(config.agentId, deriveStatusLine(assistantText));
+        const statusLine = deriveStatusLine(assistantText);
+        await persistence.updateAgentLastStatus(config.agentId, statusLine);
+        // Auto-captured, in addition to whatever the agent chose to remember itself via
+        // the remember tool — the point is every exchange leaves *something* behind,
+        // not just the ones the model happened to judge worth a deliberate note.
+        await persistence.appendMemoryNote(
+          config.agentId,
+          `Was told: ${extractTextSummary(userMessage, 200)} — ${statusLine}`,
+        );
         return;
       }
 

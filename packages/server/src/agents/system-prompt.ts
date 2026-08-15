@@ -1,8 +1,10 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { agentMemory, agents, employeeMessages } from "../db/schema.js";
 
 const RECENT_MESSAGE_COUNT = 5;
+/** Notes now auto-accumulate every turn (see agent-loop.ts), not just when an agent deliberately calls remember — capped here so the prompt itself doesn't grow unbounded; the full history is still visible via list_memory and the memory dialog in the UI. */
+const RECENT_MEMORY_COUNT = 40;
 
 /**
  * Combines an agent's static role prompt with its live persistent memory and
@@ -15,11 +17,13 @@ export async function buildSystemPrompt(
   db: Database,
   agent: { id: string; systemPrompt: string | null },
 ): Promise<string> {
-  const notes = await db
+  const recentNotesDesc = await db
     .select()
     .from(agentMemory)
     .where(eq(agentMemory.agentId, agent.id))
-    .orderBy(asc(agentMemory.createdAt));
+    .orderBy(desc(agentMemory.createdAt))
+    .limit(RECENT_MEMORY_COUNT);
+  const notes = [...recentNotesDesc].reverse();
 
   const recentMessages = await db
     .select({ body: employeeMessages.body, createdAt: employeeMessages.createdAt, fromName: agents.name })
@@ -33,7 +37,7 @@ export async function buildSystemPrompt(
 
   if (notes.length > 0) {
     const memoryBlock = notes.map((n) => `- ${n.note}`).join("\n");
-    prompt += `\n\n## Your persistent memory\nThis carries across every chat, project, and meeting you're part of — the user can see it too. Keep it current with remember/forget.\n${memoryBlock}`;
+    prompt += `\n\n## Your persistent memory\nThis carries across every chat, project, and meeting you're part of — the user can see it too. Some entries are auto-captured from what you were told; add your own with remember for anything that deserves a clearer, more durable note, and use forget to prune what's stale.\n${memoryBlock}`;
   }
 
   if (recentMessages.length > 0) {
