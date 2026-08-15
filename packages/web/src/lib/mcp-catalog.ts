@@ -13,20 +13,47 @@ export type McpCatalogEntry = {
   description: string;
   /** First letter shown in the tile when there's no dedicated icon — kept simple and text-based like the rest of the UI. */
   letter: string;
+  /** When set, "Connect" redirects to a real OAuth consent screen instead of opening a credential form — see routes/oauth.ts. */
+  oauth?: { service: "google" | "slack" };
 } & (
   | { transport: "stdio"; command: string; args: string[]; credentials: McpCredentialField[] }
   | { transport: "sse"; url: string; credentials: McpCredentialField[] }
 );
 
 /**
- * Presets for well-known MCP servers, each declaring exactly the credential(s)
- * its own server package actually needs. This is NOT an OAuth broker — there's
- * no registered Google/Slack/GitHub OAuth app behind this (that requires the
- * app owner's own client id/secret, which a self-hosted tool can't fabricate).
- * "Connect" collects the token/credential the real server expects and stores
- * it encrypted, the same as a provider API key — honest about what it is.
+ * Presets for well-known MCP servers. Entries with `oauth` set connect via a
+ * real authorization-code flow (the CEO registers a Client ID/Secret once in
+ * Integrations → OAuth apps, using their own Google Cloud / Slack app — a
+ * self-hosted tool has no OAuth app of its own to broker through). Entries
+ * without `oauth` collect exactly the credential their server package needs
+ * (a token, a connection string) and store it encrypted, same as a provider
+ * API key.
  */
 export const MCP_CATALOG: McpCatalogEntry[] = [
+  {
+    id: "gmail",
+    name: "Gmail",
+    category: "communication",
+    description: "Search, read, and send email from the connected Gmail account.",
+    letter: "M",
+    oauth: { service: "google" },
+    transport: "stdio",
+    command: "node",
+    args: [],
+    credentials: [],
+  },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    category: "productivity",
+    description: "Search and read files from the connected Google Drive account.",
+    letter: "D",
+    oauth: { service: "google" },
+    transport: "stdio",
+    command: "node",
+    args: [],
+    credentials: [],
+  },
   {
     id: "github",
     name: "GitHub",
@@ -44,8 +71,9 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     id: "slack",
     name: "Slack",
     category: "communication",
-    description: "Read and post to channels via a Slack bot token.",
+    description: "Read and post to channels in the connected Slack workspace.",
     letter: "S",
+    oauth: { service: "slack" },
     transport: "stdio",
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-slack"],
@@ -64,21 +92,6 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-postgres"],
     credentials: [{ key: "connectionString", label: "Connection string", secret: true, placeholder: "postgres://user:pass@host/db" }],
-  },
-  {
-    id: "google-drive",
-    name: "Google Drive",
-    category: "productivity",
-    description: "Search and read files. Needs your own Google Cloud OAuth client — self-hosted, not Anthropic's managed connector.",
-    letter: "D",
-    transport: "stdio",
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-gdrive"],
-    credentials: [
-      { key: "GDRIVE_OAUTH_CLIENT_ID", label: "OAuth client ID", helpText: "From your own Google Cloud project" },
-      { key: "GDRIVE_OAUTH_CLIENT_SECRET", label: "OAuth client secret", secret: true },
-      { key: "GDRIVE_OAUTH_REFRESH_TOKEN", label: "OAuth refresh token", secret: true },
-    ],
   },
   {
     id: "memory",

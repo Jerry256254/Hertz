@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BrainCircuit, FolderOpen, Plug, TerminalSquare } from "lucide-react";
 import { api } from "../lib/api";
@@ -18,7 +18,8 @@ export function EmployeeDetailPage() {
   const { projectId, agentId } = useParams<{ projectId: string; agentId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("overview");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(searchParams.has("connected") || searchParams.has("oauthError") ? "mcp" : "overview");
   const [showMemory, setShowMemory] = useState(false);
 
   const { data: agent } = useQuery({
@@ -112,7 +113,7 @@ export function EmployeeDetailPage() {
         )}
         {tab === "mcp" && agentId && (
           <div className="mx-auto max-w-2xl px-6 py-6">
-            <ConnectorCatalog scopeAgentId={agentId} />
+            <ConnectorCatalog scopeAgentId={agentId} projectId={projectId} />
           </div>
         )}
         {tab === "shells" && agentId && (

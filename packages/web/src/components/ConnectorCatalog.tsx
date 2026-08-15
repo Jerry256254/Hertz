@@ -1,11 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Search, X } from "lucide-react";
+import { Check, Search, TriangleAlert, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { McpServer } from "../lib/types";
 import { MCP_CATALOG, MCP_CATEGORY_LABEL, type McpCatalogEntry } from "../lib/mcp-catalog";
-import { Button, Card, Input, Label } from "./ui";
+import { Badge, Button, Card, Input, Label } from "./ui";
 
 function ConnectDialog({
   entry,
@@ -92,18 +93,42 @@ function ConnectDialog({
   );
 }
 
+interface OAuthApp {
+  service: "google" | "slack";
+  clientId: string;
+  secretHint: string;
+}
+
 /**
- * Tile-based connector browser, modeled on Claude's own connector directory —
- * "Connect" collects whatever credential the real MCP server needs (a token,
- * a connection string) rather than a fake OAuth popup, since a self-hosted
- * tool has no registered OAuth app to broker through. Reused both globally
- * (scopeAgentId undefined) and scoped to one employee's own settings.
+ * Tile-based connector browser, modeled on Claude's own connector directory.
+ * Entries with a real OAuth app configured (see the "OAuth apps" section on
+ * the Integrations page) redirect straight to the provider's consent screen;
+ * everything else opens a small form asking for exactly the credential its
+ * server needs. Reused both globally (scopeAgentId undefined) and scoped to
+ * one employee's own settings.
  */
-export function ConnectorCatalog({ scopeAgentId }: { scopeAgentId?: string }) {
+export function ConnectorCatalog({ scopeAgentId, projectId }: { scopeAgentId?: string; projectId?: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | McpCatalogEntry["category"]>("all");
   const [connecting, setConnecting] = useState<McpCatalogEntry | undefined>(undefined);
+
+  const connectedNotice = searchParams.get("connected");
+  const oauthError = searchParams.get("oauthError");
+
+  useEffect(() => {
+    if (!connectedNotice && !oauthError) return;
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(searchParams);
+      next.delete("connected");
+      next.delete("oauthError");
+      setSearchParams(next, { replace: true });
+    }, 6000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedNotice, oauthError]);
 
   const queryKey = ["mcp-servers", scopeAgentId ?? "global"];
   const { data } = useQuery({
@@ -112,11 +137,32 @@ export function ConnectorCatalog({ scopeAgentId }: { scopeAgentId?: string }) {
   });
   const rows = data?.servers ?? [];
 
+  const { data: oauthAppsData } = useQuery({
+    queryKey: ["oauth-apps"],
+    queryFn: () => api.get<{ apps: OAuthApp[] }>("/oauth/apps"),
+  });
+  const configuredServices = new Set((oauthAppsData?.apps ?? []).map((a) => a.service));
+
   function isConnected(entry: McpCatalogEntry): boolean {
     return rows.some((s) => {
-      const matches = entry.transport === "stdio" ? s.transport === "stdio" && s.command === entry.command : s.transport === "sse" && s.url === entry.url;
+      const matches = entry.oauth ? s.name === entry.name : entry.transport === "stdio" ? s.transport === "stdio" && s.command === entry.command : s.transport === "sse" && s.url === entry.url;
       return matches && (s.agentId ?? null) === (scopeAgentId ?? null);
     });
+  }
+
+  function onConnectClick(entry: McpCatalogEntry) {
+    if (!entry.oauth) {
+      setConnecting(entry);
+      return;
+    }
+    if (!configuredServices.has(entry.oauth.service)) {
+      navigate(`/integrations?setupOAuth=${entry.oauth.service}`);
+      return;
+    }
+    const params = new URLSearchParams({ catalogId: entry.id });
+    if (scopeAgentId) params.set("agentId", scopeAgentId);
+    if (projectId) params.set("projectId", projectId);
+    window.location.href = `/api/oauth/${entry.oauth.service}/start?${params.toString()}`;
   }
 
   const filtered = MCP_CATALOG.filter((e) => {
@@ -129,6 +175,17 @@ export function ConnectorCatalog({ scopeAgentId }: { scopeAgentId?: string }) {
 
   return (
     <div>
+      {connectedNotice && (
+        <p className="mb-3 flex items-center gap-1.5 rounded-md border border-success/30 bg-success-wash px-3 py-1.5 text-xs text-success">
+          <Check size={13} /> Connected {connectedNotice}.
+        </p>
+      )}
+      {oauthError && (
+        <p className="mb-3 flex items-center gap-1.5 rounded-md border border-danger/30 bg-danger-wash px-3 py-1.5 text-xs text-danger">
+          <TriangleAlert size={13} /> Couldn't connect: {oauthError}
+        </p>
+      )}
+
       <div className="relative mb-3">
         <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" />
         <Input placeholder="Search connectors…" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
@@ -150,6 +207,7 @@ export function ConnectorCatalog({ scopeAgentId }: { scopeAgentId?: string }) {
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         {filtered.map((entry) => {
           const connected = isConnected(entry);
+          const needsOAuthSetup = !!entry.oauth && !configuredServices.has(entry.oauth.service);
           return (
             <Card key={entry.id} className="p-3">
               <div className="mb-2 flex items-start justify-between gap-2">
@@ -157,15 +215,18 @@ export function ConnectorCatalog({ scopeAgentId }: { scopeAgentId?: string }) {
                   <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-bg-sunken text-sm font-semibold text-fg-muted">
                     {entry.letter}
                   </span>
-                  <p className="truncate text-sm font-medium text-fg">{entry.name}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-fg">{entry.name}</p>
+                    {entry.oauth && <Badge tone="neutral">OAuth</Badge>}
+                  </div>
                 </div>
                 {connected ? (
                   <span className="flex flex-shrink-0 items-center gap-1 text-xs text-success">
                     <Check size={12} /> Connected
                   </span>
                 ) : (
-                  <Button variant="secondary" size="sm" onClick={() => setConnecting(entry)} className="flex-shrink-0">
-                    Connect
+                  <Button variant="secondary" size="sm" onClick={() => onConnectClick(entry)} className="flex-shrink-0">
+                    {needsOAuthSetup ? "Needs setup" : "Connect"}
                   </Button>
                 )}
               </div>

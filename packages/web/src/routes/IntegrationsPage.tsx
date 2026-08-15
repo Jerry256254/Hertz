@@ -1,11 +1,145 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Plug, Plus } from "lucide-react";
+import { ChevronDown, KeyRound, Plug, Plus } from "lucide-react";
 import { api } from "../lib/api";
 import type { Agent, McpServer } from "../lib/types";
 import { Avatar, Badge, Button, Card, Input, Label, Textarea } from "../components/ui";
 import { DeleteButton } from "../components/DeleteButton";
 import { ConnectorCatalog } from "../components/ConnectorCatalog";
+
+interface OAuthApp {
+  service: "google" | "slack";
+  clientId: string;
+  secretHint: string;
+}
+
+const OAUTH_SERVICE_LABEL: Record<OAuthApp["service"], string> = { google: "Google", slack: "Slack" };
+
+function OAuthAppForm({ defaultService, onDone }: { defaultService: OAuthApp["service"]; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [service, setService] = useState<OAuthApp["service"]>(defaultService);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const redirectUri = `${window.location.origin}/api/oauth/${service}/callback`;
+
+  const save = useMutation({
+    mutationFn: () => api.post("/oauth/apps", { service, clientId, clientSecret }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["oauth-apps"] });
+      onDone();
+    },
+    onError: (err) => setError((err as Error).message),
+  });
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(undefined);
+    save.mutate();
+  }
+
+  return (
+    <Card className="p-4">
+      <form onSubmit={onSubmit} className="space-y-3">
+        <div>
+          <Label>Service</Label>
+          <select
+            value={service}
+            onChange={(e) => setService(e.target.value as OAuthApp["service"])}
+            className="h-9 w-full rounded-md border border-border bg-bg-raised px-3 text-sm text-fg outline-none focus:border-accent"
+          >
+            <option value="google">Google (Gmail, Drive)</option>
+            <option value="slack">Slack</option>
+          </select>
+        </div>
+        <p className="text-xs text-fg-subtle">
+          Register your own OAuth app in the {service === "google" ? "Google Cloud Console" : "Slack API dashboard"} with
+          this exact redirect URI, then paste its credentials below:
+        </p>
+        <p className="mono select-all rounded-md bg-bg-sunken px-2.5 py-1.5 text-xs text-fg-muted">{redirectUri}</p>
+        <div>
+          <Label>Client ID</Label>
+          <Input value={clientId} onChange={(e) => setClientId(e.target.value)} required className="mono" />
+        </div>
+        <div>
+          <Label>Client secret</Label>
+          <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} required className="mono" />
+        </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex gap-2">
+          <Button type="submit" variant="primary" disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+          <Button type="button" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+function OAuthAppsSection({ defaultOpen, presetService }: { defaultOpen: boolean; presetService: OAuthApp["service"] }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(defaultOpen);
+  const [showForm, setShowForm] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (defaultOpen) {
+      setOpen(true);
+      setShowForm(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultOpen]);
+
+  const { data } = useQuery({
+    queryKey: ["oauth-apps"],
+    queryFn: () => api.get<{ apps: OAuthApp[] }>("/oauth/apps"),
+  });
+
+  const remove = useMutation({
+    mutationFn: (service: string) => api.delete(`/oauth/apps/${service}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["oauth-apps"] }),
+  });
+
+  const apps = data?.apps ?? [];
+
+  return (
+    <div className="mt-6">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg">
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        OAuth apps — needed for Gmail, Drive, Slack
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2">
+          {apps.map((a) => (
+            <Card key={a.service} className="flex items-center justify-between p-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <KeyRound size={14} className="flex-shrink-0 text-accent" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-fg">{OAUTH_SERVICE_LABEL[a.service]}</p>
+                  <p className="mono truncate text-xs text-fg-subtle">
+                    {a.clientId} · {a.secretHint}
+                  </p>
+                </div>
+              </div>
+              <DeleteButton title="Remove OAuth app" onDelete={() => remove.mutate(a.service)} />
+            </Card>
+          ))}
+          {showForm ? (
+            <OAuthAppForm defaultService={presetService} onDone={() => setShowForm(false)} />
+          ) : (
+            <Button variant="secondary" onClick={() => setShowForm(true)}>
+              <Plus size={14} /> Add OAuth app
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function parseLines(text: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -172,8 +306,20 @@ function ServerRow({ server, agentName }: { server: McpServer; agentName: string
 }
 
 export function IntegrationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showForm, setShowForm] = useState(false);
+
+  const setupOAuth = searchParams.get("setupOAuth");
+  const presetService: OAuthApp["service"] = setupOAuth === "slack" ? "slack" : "google";
+
+  useEffect(() => {
+    if (!setupOAuth) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("setupOAuth");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setupOAuth]);
 
   const { data: servers } = useQuery({
     queryKey: ["mcp-servers", "global"],
@@ -201,6 +347,7 @@ export function IntegrationsPage() {
       </p>
 
       <ConnectorCatalog />
+      <OAuthAppsSection defaultOpen={!!setupOAuth} presetService={presetService} />
 
       {connectedServers.length > 0 && (
         <div className="mt-8">
