@@ -2,7 +2,7 @@
 
 Self-hosted agent development platform — one command starts a server with a WebUI in which AI agents work on real projects on disk, even after you close the browser.
 
-[![Download latest release](https://img.shields.io/github/v/release/Jerry256254/Hertz?label=Download&style=for-the-badge&color=D97757)](https://github.com/Jerry256254/Hertz/releases/latest)
+[![Download latest release](https://img.shields.io/github/v/release/Jerry256254/Hertz?label=Download&style=for-the-badge&color=D97757&cacheSeconds=86400)](https://github.com/Jerry256254/Hertz/releases/latest)
 
 **➡️ Run: `npx kuclab-hertz`** — installs, runs the setup wizard, and starts the local server with WebUI. No registration, no cloud account.
 
