@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronUp, File, Folder } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ChevronUp, File, Folder, FolderPlus } from "lucide-react";
 import { api } from "../lib/api";
 import type { FileEntry } from "../lib/types";
 
@@ -19,6 +19,27 @@ export function FileExplorer({
   const [currentPath, setCurrentPath] = useState(".");
   const [previewPath, setPreviewPath] = useState<string | undefined>(undefined);
   const scopeParam = `&root=${root}${agentId ? `&agentId=${agentId}` : ""}`;
+  const queryClient = useQueryClient();
+
+  const createFolder = useMutation({
+    mutationFn: (name: string) =>
+      api.post(`/projects/${projectId}/files/dir`, {
+        path: currentPath === "." ? name : `${currentPath}/${name}`,
+        root,
+        agentId,
+      }),
+    onSuccess: (_data, name) => {
+      queryClient.invalidateQueries({ queryKey: ["files", projectId, root, agentId] });
+      setPreviewPath(undefined);
+      setCurrentPath(currentPath === "." ? name : `${currentPath}/${name}`);
+    },
+  });
+
+  function promptNewFolder() {
+    const name = window.prompt("New folder name")?.trim();
+    if (!name || name === "." || name === ".." || name.includes("/")) return;
+    createFolder.mutate(name);
+  }
 
   useEffect(() => {
     setCurrentPath(".");
@@ -72,8 +93,21 @@ export function FileExplorer({
           <ChevronUp size={13} />
         </button>
         <span className="mono truncate text-xs text-fg-muted">{currentPath === "." ? "/" : currentPath}</span>
+        <button
+          onClick={promptNewFolder}
+          disabled={createFolder.isPending}
+          title="New folder"
+          className="ml-auto flex items-center text-fg-muted hover:text-fg disabled:opacity-30"
+        >
+          <FolderPlus size={13} />
+        </button>
         {isFetching && <span className="h-1 w-1 flex-shrink-0 rounded-full bg-fg-subtle" />}
       </div>
+      {createFolder.isError && (
+        <p className="flex-shrink-0 border-b border-border px-2 py-1 text-xs text-danger">
+          {(createFolder.error as Error).message}
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         {previewPath ? (
           <div className="flex h-full flex-col">

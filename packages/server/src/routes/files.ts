@@ -15,6 +15,14 @@ const listQuerySchema = z.object({
   agentId: z.string().optional(),
 });
 
+const mkdirBodySchema = z.object({
+  /** Full path of the directory to create, relative to the chosen root. */
+  path: z.string().min(1),
+  /** "main" is the shared project root (default); "self" is one employee's own folder, requires agentId. */
+  root: z.enum(["main", "self"]).optional().default("main"),
+  agentId: z.string().optional(),
+});
+
 const MAX_PREVIEW_BYTES = 200_000;
 
 export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -66,6 +74,38 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
           }))
           .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "directory" ? -1 : 1)),
       };
+    });
+
+    instance.post("/api/projects/:projectId/files/dir", async (request, reply) => {
+      const { projectId } = request.params as { projectId: string };
+      const parsed = mkdirBodySchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
+
+      const built = await buildGuard(projectId, parsed.data.root, parsed.data.agentId);
+      if (!built) return reply.code(404).send({ error: "Project has no roots configured" });
+
+      const name = parsed.data.path.split("/").pop()!;
+      if (!name || name === "." || name === "..") return reply.code(400).send({ error: "Invalid directory name" });
+
+      let abs: string;
+      try {
+        abs = built.guard.resolve(
+          { actorId: request.user!.id, actorType: "user", projectId },
+          built.rootId,
+          parsed.data.path,
+        );
+      } catch (err) {
+        return reply.code(403).send({ error: (err as Error).message });
+      }
+
+      try {
+        await fs.mkdir(abs, { recursive: false });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EEXIST") return reply.code(409).send({ error: "Already exists" });
+        throw err;
+      }
+      return reply.code(201).send({ path: parsed.data.path });
     });
 
     instance.get("/api/projects/:projectId/file-content", async (request, reply) => {
