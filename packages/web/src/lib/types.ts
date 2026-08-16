@@ -134,9 +134,11 @@ export interface TaskAssignee {
 export interface HertzSession {
   id: string;
   agentId: string;
+  peerAgentId?: string | null;
   projectId: string;
   title: string;
-  status: "active" | "completed" | "error" | "archived";
+  kind: "chat" | "conversation";
+  status: "active" | "completed" | "error" | "archived" | "paused";
   createdAt: string;
   updatedAt: string;
 }
@@ -169,6 +171,8 @@ export interface PersistedMessage {
   sessionId: string;
   role: "system" | "user" | "assistant" | "tool";
   content: ContentBlock[];
+  /** Agent that wrote this message (null = the human user). */
+  senderAgentId?: string | null;
   tokensIn: number;
   tokensOut: number;
   cachedTokensIn: number;
@@ -202,9 +206,25 @@ export type AgentLoopEvent =
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; id: string; name: string; summary: string; isError?: boolean }
   | { type: "message_saved"; message: PersistedMessage }
-  | { type: "status"; status: "running" | "idle" | "error" }
+  | { type: "status"; status: "running" | "idle" | "error" | "paused" }
   | { type: "error"; message: string }
   | { type: "done" };
+
+/** One direct agent ↔ agent chat thread (a session with kind = "conversation"). */
+export interface ConversationSummary {
+  id: string;
+  agentId: string;
+  peerAgentId: string;
+  projectId?: string;
+  title: string;
+  status: string;
+  agentName: string;
+  peerAgentName: string | null;
+  updatedAt: string;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastSenderAgentId: string | null;
+}
 
 export interface Routine {
   id: string;
@@ -217,16 +237,6 @@ export interface Routine {
   enabled: boolean;
   lastRunAt: string | null;
   nextRunAt: string | null;
-  createdAt: string;
-}
-
-export interface EmployeeMessage {
-  id: string;
-  fromAgentId: string;
-  toAgentId: string;
-  fromName: string;
-  toName: string;
-  body: string;
   createdAt: string;
 }
 

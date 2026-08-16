@@ -1,9 +1,18 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuit, Bot, Clock, FolderGit2, ListTodo, MessageSquarePlus, Plus, UserPlus, Video } from "lucide-react";
 import { api } from "../lib/api";
-import type { Agent, AgentRole, EmployeeMessage, HertzTask, Meeting, Project, ProviderConfig, Routine } from "../lib/types";
+import type {
+  Agent,
+  AgentRole,
+  ConversationSummary,
+  HertzTask,
+  Meeting,
+  Project,
+  ProviderConfig,
+  Routine,
+} from "../lib/types";
 import { AGENT_ROLES, ROLE_LABEL } from "../lib/types";
 import { agentColor } from "../lib/agent-color";
 import { useAuth } from "../lib/auth";
@@ -161,9 +170,9 @@ export function ProjectPage() {
     queryFn: () => api.get<{ routines: Routine[] }>(`/projects/${projectId}/routines`),
   });
 
-  const { data: teamMessagesData } = useQuery({
-    queryKey: ["employee-messages", projectId],
-    queryFn: () => api.get<{ messages: EmployeeMessage[] }>(`/projects/${projectId}/employee-messages`),
+  const { data: conversationsData } = useQuery({
+    queryKey: ["conversations", projectId],
+    queryFn: () => api.get<{ conversations: ConversationSummary[] }>(`/projects/${projectId}/conversations`),
     refetchInterval: 10000,
   });
 
@@ -223,7 +232,7 @@ export function ProjectPage() {
   const meetings = meetingsData?.meetings ?? [];
   const tasks = tasksData?.tasks ?? [];
   const routines = routinesData?.routines ?? [];
-  const teamMessages = teamMessagesData?.messages ?? [];
+  const conversations = conversationsData?.conversations ?? [];
 
   const toggleRoutine = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.patch(`/routines/${id}`, { enabled }),
@@ -237,7 +246,7 @@ export function ProjectPage() {
   const NEXT_TASK_STATUS: Record<HertzTask["status"], HertzTask["status"]> = { open: "in_progress", in_progress: "done", done: "open" };
 
   return (
-    <div className="grid h-full grid-cols-1 md:grid-cols-[1fr_320px]">
+    <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-1 md:grid-cols-[1fr_320px]">
       <div className="overflow-auto px-4 py-6 md:px-6">
         <div className="mb-6 flex items-center gap-2">
           <FolderGit2 size={18} className="text-accent" />
@@ -619,24 +628,29 @@ export function ProjectPage() {
           </ul>
         )}
 
-        {teamMessages.length > 0 && (
+        {conversations.length > 0 && (
           <>
-            <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Team messages</h2>
-            <Card className="max-h-64 space-y-2.5 overflow-y-auto p-3">
-              {teamMessages.map((m) => (
-                <div key={m.id} className="flex items-start gap-2 text-sm">
+            <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+              Direct messages
+            </h2>
+            <Card className="max-h-64 space-y-1 overflow-y-auto p-2">
+              {conversations.map((c) => (
+                <Link
+                  key={c.id}
+                  to={`/projects/${projectId}/sessions/${c.id}`}
+                  className="flex items-start gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-bg-hover"
+                >
                   <span
-                    className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                    style={{ backgroundColor: agentColor(m.fromAgentId) }}
+                    className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full"
+                    style={{ backgroundColor: agentColor(c.peerAgentId) }}
                   />
                   <p className="min-w-0 flex-1 leading-snug">
-                    <span className="font-medium text-fg" style={{ color: agentColor(m.fromAgentId) }}>
-                      {m.fromName}
+                    <span className="font-medium text-fg" style={{ color: agentColor(c.peerAgentId) }}>
+                      {c.peerAgentName ?? c.title}
                     </span>{" "}
-                    <span className="text-fg-subtle">→ {m.toName}:</span>{" "}
-                    <span className="text-fg-muted">{m.body}</span>
+                    <span className="text-fg-muted">{c.lastMessagePreview}</span>
                   </p>
-                </div>
+                </Link>
               ))}
             </Card>
           </>

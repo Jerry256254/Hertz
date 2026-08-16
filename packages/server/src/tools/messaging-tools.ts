@@ -1,9 +1,17 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { newId } from "../db/client.js";
+import type { AgentLoopManager } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
-import { agentProjects, agents, employeeMessages } from "../db/schema.js";
+import { agents, agentProjects } from "../db/schema.js";
 import type { OrgToolDef } from "./org-tools.js";
+import {
+  deliverConversationMessage,
+  ensureConversationSession,
+  startConversationReplyRun,
+  type ConversationDeps,
+} from "../conversations.js";
+import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
+import type { HertzPaths } from "../paths.js";
 
 const messageSchema = z.object({
   colleague: z
@@ -16,23 +24,38 @@ const messageSchema = z.object({
 /**
  * Given to every agent, not just managers — this is what makes employee-to-
  * employee coordination real instead of always routing through the manager.
- * Messages are async (the recipient sees it whenever they next run, not
- * mid-turn) and always visible to the user for oversight, same principle as
- * meetings: nothing agent-to-agent happens off the record.
+ * Every message lands in the pair's direct conversation (a real thread with its
+ * own context window the user can open like any chat) and the recipient replies
+ * automatically when idle, or answers mid-run without stopping their current
+ * work. Always visible to the user for oversight, same principle as meetings:
+ * nothing agent-to-agent happens off the record.
  */
-export function createMessagingTools(db: Database): OrgToolDef[] {
+export function createMessagingTools(deps: {
+  db: Database;
+  paths: HertzPaths;
+  sandboxRegistry: SandboxRegistry;
+  /** Lazy — AgentLoopManager doesn't exist yet when the tool port is constructed. */
+  getAgentLoop: () => AgentLoopManager;
+}): OrgToolDef[] {
+  const loopDeps = (): ConversationDeps => ({
+    db: deps.db,
+    paths: deps.paths,
+    sandboxRegistry: deps.sandboxRegistry,
+    agentLoop: deps.getAgentLoop(),
+  });
+
   const messageEmployee: OrgToolDef = {
     name: "message_employee",
     description:
-      "Send an async message to a colleague on this project's team — they'll see it next time they run, and the user can see it too. Use this instead of guessing when you need input from someone else, or to loop them in on something relevant (mention them as @Name in your own reply so the user can follow along).",
+      "Send a message to a colleague on this project's team — it lands in your direct chat with them (both the recipient and the user can see it), and they'll answer even while they're mid-work. Use this instead of guessing when you need input from someone else, or to loop them in on something relevant (mention them as @Name in your own reply so the user can follow along).",
     inputSchema: messageSchema,
     async execute(rawInput, ctx) {
       const input = messageSchema.parse(rawInput);
       const projectId = ctx.actor.projectId;
       if (!projectId) return { summary: "No project context to message a colleague in.", isError: true };
 
-      const homeRows = await db.select().from(agents).where(eq(agents.projectId, projectId));
-      const attachedRows = await db
+      const homeRows = await loopDeps().db.select().from(agents).where(eq(agents.projectId, projectId));
+      const attachedRows = await loopDeps().db
         .select({ agent: agents })
         .from(agentProjects)
         .innerJoin(agents, eq(agentProjects.agentId, agents.id))
@@ -60,14 +83,34 @@ export function createMessagingTools(db: Database): OrgToolDef[] {
       }
 
       const to = candidates[0]!;
-      await db.insert(employeeMessages).values({
-        id: newId(),
+      const from = await loopDeps().db
+        .select({ name: agents.name })
+        .from(agents)
+        .where(eq(agents.id, ctx.actor.actorId))
+        .limit(1);
+
+      const conversation = await ensureConversationSession(loopDeps(), {
         projectId,
-        fromAgentId: ctx.actor.actorId,
-        toAgentId: to.id,
-        body: input.message,
-        createdAt: new Date(),
+        senderId: ctx.actor.actorId,
+        recipientId: to.id,
+        senderName: from[0]?.name ?? "A colleague",
+        recipientName: to.name,
       });
+
+      await deliverConversationMessage(loopDeps(), {
+        sessionId: conversation.id,
+        senderAgentId: ctx.actor.actorId,
+        text: input.message,
+      });
+
+      void startConversationReplyRun(loopDeps(), {
+        sessionId: conversation.id,
+        actorAgentId: to.id,
+        projectId,
+        userId: ctx.actor.userId,
+        incomingText: input.message,
+      });
+
       return { summary: `Sent to ${to.name}: "${input.message}"` };
     },
   };

@@ -84,7 +84,7 @@ export function MeetingPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-border px-6">
         <Video size={15} className="text-accent" />
         <span className="truncate text-sm font-medium text-fg">{data?.meeting.title}</span>

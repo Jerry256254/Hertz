@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq } from "drizzle-orm";
+import { aliasedTable, and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
@@ -10,6 +10,7 @@ import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
 import { employeeDir, ensureEmployeeDirs } from "../paths.js";
+import { listConversations, pickConversationActor } from "../conversations.js";
 
 const DEFAULT_TITLE = "New chat";
 
@@ -82,20 +83,25 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   instance.get("/api/sessions", async () => {
+    const peer = aliasedTable(agents, "peer");
     const rows = await ctx.db
       .select({
         id: sessions.id,
         agentId: sessions.agentId,
         projectId: sessions.projectId,
         title: sessions.title,
+        kind: sessions.kind,
+        peerAgentId: sessions.peerAgentId,
         status: sessions.status,
         createdAt: sessions.createdAt,
         updatedAt: sessions.updatedAt,
         agentName: agents.name,
+        peerAgentName: peer.name,
         projectName: projects.name,
       })
       .from(sessions)
       .innerJoin(agents, eq(sessions.agentId, agents.id))
+      .leftJoin(peer, eq(sessions.peerAgentId, peer.id))
       .innerJoin(projects, eq(sessions.projectId, projects.id))
       .orderBy(desc(sessions.updatedAt))
       .limit(200);
@@ -108,6 +114,12 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     return { sessions: rows };
   });
 
+  /** Direct agent ↔ agent chats — a conversation is a session with kind = "conversation", so this is a thin list wrapper. */
+  instance.get("/api/projects/:projectId/conversations", async (request) => {
+    const { projectId } = request.params as { projectId: string };
+    return { conversations: await listConversations(ctx.db, projectId) };
+  });
+
   instance.get("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
@@ -118,12 +130,36 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const messages = await adapter.listMessages(id);
     const budget = computeBudget(messages);
 
+    const agent = session.agentId
+      ? (await ctx.db.select({ id: agents.id, name: agents.name, role: agents.role }).from(agents).where(eq(agents.id, session.agentId)).limit(1))[0]
+      : undefined;
+    const peerAgent = session.peerAgentId
+      ? (await ctx.db.select({ id: agents.id, name: agents.name, role: agents.role }).from(agents).where(eq(agents.id, session.peerAgentId)).limit(1))[0]
+      : undefined;
+
     return {
       session,
       messages,
       budget,
       running: ctx.agentLoop.isRunning(id),
+      paused: ctx.agentLoop.isPaused(id),
+      agent,
+      peerAgent,
     };
+  });
+
+  instance.post("/api/sessions/:id/pause", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ok = await ctx.agentLoop.pause(id);
+    if (!ok) return reply.code(409).send({ error: "Session isn't running" });
+    return { ok: true };
+  });
+
+  instance.post("/api/sessions/:id/resume", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ok = await ctx.agentLoop.resume(id);
+    if (!ok) return reply.code(409).send({ error: "Session isn't running" });
+    return { ok: true };
   });
 
   instance.patch("/api/sessions/:id", async (request, reply) => {
@@ -187,17 +223,52 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (!parsed.data.text && parsed.data.images.length === 0) {
       return reply.code(400).send({ error: "Message must include text or at least one image" });
     }
-    if (ctx.agentLoop.isRunning(id)) {
-      return reply.code(409).send({ error: "Session is already running" });
-    }
 
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const session = sessionRows[0];
     if (!session) return reply.code(404).send({ error: "Session not found" });
 
-    const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1);
-    const agent = agentRows[0];
-    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+    const content: ContentBlock[] = [];
+    if (parsed.data.text) content.push({ type: "text", text: parsed.data.text });
+    for (const img of parsed.data.images) {
+      content.push({ type: "image", mimeType: img.mimeType, data: img.data });
+    }
+
+    // A message sent while the agent is mid-work is injected into the run: the
+    // loop notices it between turns and answers it without stopping what it's
+    // doing (pause takes effect between turns too).
+    if (ctx.agentLoop.isRunning(id)) {
+      await ctx.agentLoop.appendInbound(id, content);
+      return reply.code(202).send({ ok: true });
+    }
+
+    // Direct conversations are answered by the agent whose turn it is (the one
+    // who didn't speak last), with message_employee withheld so replies stay
+    // in-thread instead of re-sending to the peer.
+    let agent = session.agentId
+      ? (await ctx.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1))[0]
+      : undefined;
+    let peerAgent: (typeof agents.$inferSelect) | undefined;
+    let systemPrompt: string;
+    let excludeTools: string[] | undefined;
+
+    if (session.kind === "conversation") {
+      const actorId = await pickConversationActor(ctx.db, session);
+      const actorRows = await ctx.db.select().from(agents).where(eq(agents.id, actorId)).limit(1);
+      agent = actorRows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      const peerId = session.agentId === actorId ? session.peerAgentId : session.agentId;
+      peerAgent = peerId
+        ? (await ctx.db.select().from(agents).where(eq(agents.id, peerId)).limit(1))[0]
+        : undefined;
+      systemPrompt = await buildSystemPrompt(ctx.db, agent, {
+        conversationPeerName: peerAgent?.name ?? "a colleague",
+      });
+      excludeTools = ["message_employee"];
+    } else {
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      systemPrompt = await buildSystemPrompt(ctx.db, agent);
+    }
 
     const rootRows = await ctx.db
       .select()
@@ -212,17 +283,11 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       self: employeeDir(ctx.paths, session.projectId, agent.id),
     });
 
-    if (session.title === DEFAULT_TITLE && parsed.data.text) {
+    if (session.kind !== "conversation" && session.title === DEFAULT_TITLE && parsed.data.text) {
       await ctx.db
         .update(sessions)
         .set({ title: deriveTitle(parsed.data.text) })
         .where(eq(sessions.id, id));
-    }
-
-    const content: ContentBlock[] = [];
-    if (parsed.data.text) content.push({ type: "text", text: parsed.data.text });
-    for (const img of parsed.data.images) {
-      content.push({ type: "image", mimeType: img.mimeType, data: img.data });
     }
 
     ctx.agentLoop.start(
@@ -234,7 +299,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         rootId: mainRoot.rootId,
         model: agent.model,
         providerConfigId: agent.providerConfigId,
-        systemPrompt: await buildSystemPrompt(ctx.db, agent),
+        systemPrompt,
+        excludeTools,
       },
       content,
     );

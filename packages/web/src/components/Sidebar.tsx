@@ -8,6 +8,7 @@ import {
   Loader2,
   LogOut,
   MessagesSquare,
+  Pause,
   Plug,
   Plus,
   Users,
@@ -17,10 +18,12 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { HertzSession, Project } from "../lib/types";
 import { Avatar, IconButton } from "./ui";
+import { agentColor } from "../lib/agent-color";
 import { DeleteButton } from "./DeleteButton";
 
 interface SidebarSession extends HertzSession {
   agentName: string;
+  peerAgentName?: string | null;
   projectName: string;
 }
 
@@ -146,12 +149,24 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
                             to={`/projects/${project.id}/sessions/${session.id}`}
                             className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5"
                           >
-                            {session.status === "active" ? (
+                            {session.kind === "conversation" ? (
+                              <span
+                                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                style={{ backgroundColor: agentColor(session.peerAgentId ?? session.agentId) }}
+                                title="Direct agent chat"
+                              />
+                            ) : session.status === "active" ? (
                               <Loader2 size={12} className="flex-shrink-0 animate-spin text-accent" />
+                            ) : session.status === "paused" ? (
+                              <Pause size={12} className="flex-shrink-0 text-fg-subtle" />
                             ) : (
                               <MessagesSquare size={12} className="flex-shrink-0" />
                             )}
-                            <span className="truncate">{session.title}</span>
+                            <span className="truncate">
+                              {session.kind === "conversation" && session.peerAgentName
+                                ? session.peerAgentName
+                                : session.title}
+                            </span>
                           </Link>
                           <span className="hidden flex-shrink-0 group-hover/session:block">
                             <DeleteButton title="Delete chat" onDelete={() => deleteSession.mutate(session.id)} />

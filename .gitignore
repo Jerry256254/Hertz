@@ -18,3 +18,4 @@ dist/
 
 # --- Runtime data (created by the setup wizard, never committed) ---
 .kuclab-hertz/
+.smoke-test/

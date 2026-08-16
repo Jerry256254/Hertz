@@ -65,7 +65,7 @@ export interface OrgToolsDeps {
   getAgentLoop: () => AgentLoopManager;
 }
 
-async function fallbackUserId(db: Database): Promise<string> {
+export async function fallbackUserId(db: Database): Promise<string> {
   const rows = await db.select({ id: users.id }).from(users).limit(1);
   return rows[0]?.id ?? "";
 }

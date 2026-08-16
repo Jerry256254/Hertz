@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'chat',
+  peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'active',
   metadata TEXT,
   parent_session_id TEXT,
@@ -109,6 +111,7 @@ CREATE TABLE IF NOT EXISTS messages (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
+  sender_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
   tool_calls TEXT,
   tokens_in INTEGER NOT NULL DEFAULT 0,
   tokens_out INTEGER NOT NULL DEFAULT 0,
@@ -291,6 +294,14 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agents ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'",
   "ALTER TABLE agents ADD COLUMN pending_termination INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE projects ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'",
+  "ALTER TABLE sessions ADD COLUMN peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
+  "ALTER TABLE messages ADD COLUMN sender_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
+];
+
+/** One row per agent↔agent conversation pair, enforced by a partial unique index — must run after the sessions columns exist, so it lives here rather than in BOOTSTRAP_SQL. */
+const INDEX_MIGRATIONS: string[] = [
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_conversation_pair ON sessions(project_id, agent_id, peer_agent_id) WHERE kind = 'conversation'",
 ];
 
 export async function runMigrations(client: Client): Promise<void> {
@@ -306,5 +317,8 @@ export async function runMigrations(client: Client): Promise<void> {
     } catch (err) {
       if (!/duplicate column name/i.test((err as Error).message)) throw err;
     }
+  }
+  for (const ddl of INDEX_MIGRATIONS) {
+    await client.execute(ddl);
   }
 }

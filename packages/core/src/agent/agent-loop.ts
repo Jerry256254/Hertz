@@ -16,12 +16,17 @@ export interface AgentLoopConfig {
   sessionId: string;
   agentId: string;
   projectId: string;
-  userId: string;
+  /** May be absent for tool-triggered runs (e.g. an agent replying in a direct conversation); used only for memory-note attribution. */
+  userId?: string;
   rootId: string;
   model: string;
   providerConfigId: string;
   systemPrompt: string;
   maxTurns?: number;
+  /** Tools to withhold from the model this run (e.g. message_employee inside a direct conversation, where replies are in-thread instead). */
+  excludeTools?: string[];
+  /** Set when the triggering user/agent message was already persisted by the caller (message_employee into a conversation), so runLoop must not append it again. */
+  prePersisted?: boolean;
 }
 
 export type AgentLoopEvent =
@@ -29,7 +34,7 @@ export type AgentLoopEvent =
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; id: string; name: string; summary: string; isError?: boolean }
   | { type: "message_saved"; message: PersistedMessage }
-  | { type: "status"; status: "running" | "idle" | "error" }
+  | { type: "status"; status: "running" | "idle" | "error" | "paused" }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -98,6 +103,7 @@ interface PendingToolUse {
 export class AgentLoopManager {
   private readonly emitters = new Map<string, EventEmitter>();
   private readonly running = new Set<string>();
+  private readonly paused = new Map<string, boolean>();
 
   constructor(
     private readonly deps: {
@@ -110,6 +116,57 @@ export class AgentLoopManager {
 
   isRunning(sessionId: string): boolean {
     return this.running.has(sessionId);
+  }
+
+  isPaused(sessionId: string): boolean {
+    return this.paused.get(sessionId) === true;
+  }
+
+  /** Pauses between turns: the in-flight model call / tool finishes, then the loop waits here until resume(). */
+  async pause(sessionId: string): Promise<boolean> {
+    if (!this.running.has(sessionId)) return false;
+    this.paused.set(sessionId, true);
+    this.emit(sessionId, { type: "status", status: "paused" });
+    await this.deps.persistence.updateSessionStatus(sessionId, "paused");
+    return true;
+  }
+
+  async resume(sessionId: string): Promise<boolean> {
+    if (!this.running.has(sessionId)) return false;
+    this.paused.delete(sessionId);
+    this.emit(sessionId, { type: "status", status: "running" });
+    await this.deps.persistence.updateSessionStatus(sessionId, "active");
+    return true;
+  }
+
+  private async waitIfPaused(sessionId: string): Promise<void> {
+    while (this.paused.get(sessionId)) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  }
+
+  /**
+   * Persists an inbound message (human or colleague) into a session without
+   * starting a new run — the in-flight loop notices it between turns (it
+   * reloads history from the DB and refuses to terminate while new inbound
+   * messages are pending) and answers it without interrupting its current
+   * work. senderAgentId null = the human user; otherwise a colleague agent
+   * (direct conversations have both sides in one thread).
+   */
+  async appendInbound(sessionId: string, content: ContentBlock[], senderAgentId?: string | null): Promise<PersistedMessage> {
+    const saved = await this.deps.persistence.appendMessage({
+      sessionId,
+      role: "user",
+      content,
+      senderAgentId: senderAgentId ?? null,
+      tokensIn: 0,
+      tokensOut: 0,
+      cachedTokensIn: 0,
+      cost: 0,
+      purpose: "agent_turn",
+    });
+    this.emit(sessionId, { type: "message_saved", message: saved });
+    return saved;
   }
 
   subscribe(sessionId: string, listener: (event: AgentLoopEvent) => void): () => void {
@@ -239,6 +296,7 @@ export class AgentLoopManager {
       })
       .finally(() => {
         this.running.delete(config.sessionId);
+        this.paused.delete(config.sessionId);
         this.emit(config.sessionId, { type: "status", status: "idle" });
         this.emit(config.sessionId, { type: "done" });
       });
@@ -247,26 +305,41 @@ export class AgentLoopManager {
   private async runLoop(config: AgentLoopConfig, userMessage: ContentBlock[]): Promise<void> {
     const { persistence, providers, tools } = this.deps;
     const sandbox = this.deps.sandbox(config.sessionId);
+    // Tool-triggered runs (an agent replying in a direct conversation) may have no human
+    // user behind them — recordUsage demands an id, so fall back to a placeholder.
+    const userId = config.userId ?? "";
 
-    const savedUserMsg = await persistence.appendMessage({
-      sessionId: config.sessionId,
-      role: "user",
-      content: userMessage,
-      tokensIn: 0,
-      tokensOut: 0,
-      cachedTokensIn: 0,
-      cost: 0,
-      purpose: "agent_turn",
-    });
-    this.emit(config.sessionId, { type: "message_saved", message: savedUserMsg });
+    // The triggering message is normally persisted here; prePersisted runs (a colleague's
+    // message_employee landing in a direct conversation) already have it in the DB.
+    if (!config.prePersisted) {
+      const savedUserMsg = await persistence.appendMessage({
+        sessionId: config.sessionId,
+        role: "user",
+        content: userMessage,
+        senderAgentId: null,
+        tokensIn: 0,
+        tokensOut: 0,
+        cachedTokensIn: 0,
+        cost: 0,
+        purpose: "agent_turn",
+      });
+      this.emit(config.sessionId, { type: "message_saved", message: savedUserMsg });
+    }
 
     const adapter = await providers.getAdapter(config.providerConfigId);
-    const toolDefs = await tools.listDefinitions(config.agentId);
+    let toolDefs = await tools.listDefinitions(config.agentId);
+    if (config.excludeTools?.length) {
+      toolDefs = toolDefs.filter((def) => !config.excludeTools!.includes(def.name));
+    }
     const maxTurns = config.maxTurns ?? 25;
 
     for (let turn = 0; turn < maxTurns; turn++) {
+      // Pause takes effect between turns: the current model call / tool finishes first.
+      await this.waitIfPaused(config.sessionId);
+
       const history = await persistence.listMessages(config.sessionId);
       const chatMessages = toChatMessages(history);
+      const snapshotId = history.length > 0 ? history[history.length - 1]!.id : null;
 
       const req: ChatRequest = {
         model: config.model,
@@ -320,6 +393,7 @@ export class AgentLoopManager {
         sessionId: config.sessionId,
         role: "assistant",
         content: assistantBlocks,
+        senderAgentId: config.agentId,
         tokensIn: usage.inputTokens,
         tokensOut: usage.outputTokens,
         cachedTokensIn: usage.cachedInputTokens ?? 0,
@@ -328,7 +402,7 @@ export class AgentLoopManager {
       });
       await persistence.recordUsage({
         sessionId: config.sessionId,
-        userId: config.userId,
+        userId,
         provider: adapter.id,
         model: config.model,
         purpose: "agent_turn",
@@ -339,7 +413,11 @@ export class AgentLoopManager {
       });
       this.emit(config.sessionId, { type: "message_saved", message: savedAssistantMsg });
 
-      if (stopReason !== "tool_use" || toolUses.length === 0) {
+      // Terminate only if the agent isn't mid-tool-loop AND no new inbound message
+      // (user or colleague) arrived since this turn's history snapshot — a message
+      // sent while working must be answered rather than silently left for the next run.
+      const hasInbound = await this.hasNewInboundMessage(config.sessionId, snapshotId);
+      if ((stopReason !== "tool_use" || toolUses.length === 0) && !hasInbound) {
         await persistence.updateSessionStatus(config.sessionId, "completed");
         const statusLine = deriveStatusLine(assistantText);
         await persistence.updateAgentLastStatus(config.agentId, statusLine);
@@ -364,7 +442,7 @@ export class AgentLoopManager {
             actorType: "agent",
             sessionId: config.sessionId,
             projectId: config.projectId,
-            userId: config.userId,
+            userId,
           } satisfies ActorContext,
           rootId: config.rootId,
           pathGuard: sandbox.pathGuard,
@@ -389,18 +467,35 @@ export class AgentLoopManager {
         });
       }
 
-      await persistence.appendMessage({
-        sessionId: config.sessionId,
-        role: "user",
-        content: resultBlocks,
-        tokensIn: 0,
-        tokensOut: 0,
-        cachedTokensIn: 0,
-        cost: 0,
-        purpose: "agent_turn",
-      });
+      // Only append a tool-result turn when tools actually ran — continuing the
+      // loop because a new inbound message arrived (not because of a tool call)
+      // must not litter an empty user message into the history.
+      if (resultBlocks.length > 0) {
+        await persistence.appendMessage({
+          sessionId: config.sessionId,
+          role: "user",
+          content: resultBlocks,
+          senderAgentId: null,
+          tokensIn: 0,
+          tokensOut: 0,
+          cachedTokensIn: 0,
+          cost: 0,
+          purpose: "agent_turn",
+        });
+      }
     }
 
     await persistence.updateSessionStatus(config.sessionId, "active");
+  }
+
+  /** True when any new human/colleague message (real text or image, not tool-result plumbing) landed after the given snapshot message id. */
+  private async hasNewInboundMessage(sessionId: string, snapshotId: string | null): Promise<boolean> {
+    const history = await this.deps.persistence.listMessages(sessionId);
+    const snapshotIndex = snapshotId ? history.findIndex((m) => m.id === snapshotId) : -1;
+    for (const message of history.slice(snapshotIndex + 1)) {
+      if (message.role !== "user") continue;
+      if (message.content.some((b) => b.type === "text" || b.type === "image")) return true;
+    }
+    return false;
   }
 }

@@ -102,7 +102,11 @@ export const sessions = sqliteTable("sessions", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
-  status: text("status", { enum: ["active", "completed", "error", "archived"] })
+  /** "chat" = human ↔ agent thread; "conversation" = a direct agent ↔ agent chat (peerAgentId set). */
+  kind: text("kind", { enum: ["chat", "conversation"] }).notNull().default("chat"),
+  /** For kind = "conversation": the other agent in the pair. Stored as the lexicographically larger id so each pair has exactly one session. */
+  peerAgentId: text("peer_agent_id").references(() => agents.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["active", "paused", "completed", "error", "archived"] })
     .notNull()
     .default("active"),
   /** Session-scoped state that isn't message history: current todo list, cached budget, etc. */
@@ -121,6 +125,8 @@ export const messages = sqliteTable("messages", {
   role: text("role", { enum: ["system", "user", "assistant", "tool"] }).notNull(),
   /** JSON-serialized ContentBlock[] (text/image/tool_use/tool_result) from @kuclab-hertz/providers. */
   content: text("content").notNull(),
+  /** Null = the human user; otherwise the agent that produced this message (conversation threads have both sides in one session). */
+  senderAgentId: text("sender_agent_id").references(() => agents.id, { onDelete: "cascade" }),
   /** JSON-serialized raw tool call/result pairs, kept alongside content for UI rendering. */
   toolCalls: text("tool_calls"),
   tokensIn: integer("tokens_in").notNull().default(0),

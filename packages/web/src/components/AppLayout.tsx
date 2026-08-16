@@ -50,8 +50,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* The one canonical scroll container for every page — some pages (Dashboard,
           Integrations, Providers) size to natural content height and previously relied
           on the whole body scrolling, which is exactly what let content scroll "under"
-          the fixed mobile drawer/backdrop instead of being contained by it. */}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</div>
+          the fixed mobile drawer/backdrop instead of being contained by it.
+          It's a flex column so pages that need to pin their own header/input to the
+          viewport (chat, employee detail) fill it with flex-1 min-h-0 instead of
+          h-full — percentage heights against this stretched scroll wrapper don't
+          resolve reliably, which let the whole page scroll and the chat input scroll
+          out of view. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">{children}</div>
     </div>
   );
 }

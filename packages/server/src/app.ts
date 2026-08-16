@@ -17,7 +17,6 @@ import { registerSetupRoutes } from "./routes/setup.js";
 import { registerMeetingRoutes } from "./routes/meetings.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { registerMcpRoutes } from "./routes/mcp.js";
-import { registerEmployeeMessageRoutes } from "./routes/employee-messages.js";
 import { registerRoutineRoutes } from "./routes/routines.js";
 import { registerShellRoutes } from "./routes/shells.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
@@ -53,7 +52,6 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerMeetingRoutes(app, ctx);
   registerTaskRoutes(app, ctx);
   registerMcpRoutes(app, ctx);
-  registerEmployeeMessageRoutes(app, ctx);
   registerRoutineRoutes(app, ctx);
   registerShellRoutes(app, ctx);
   registerOAuthRoutes(app, ctx);

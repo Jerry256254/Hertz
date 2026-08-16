@@ -60,7 +60,7 @@ export function EmployeeDetailPage() {
   ];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex-shrink-0 border-b border-border px-4 py-4 md:px-6">
         <button
           onClick={() => navigate(`/projects/${projectId}`)}

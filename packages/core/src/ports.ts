@@ -21,6 +21,8 @@ export interface PersistedMessage {
   sessionId: string;
   role: MessageRole;
   content: ContentBlock[];
+  /** Null/undefined = the human user; otherwise the id of the agent who produced this message (both sides of an agent-to-agent conversation are role user/assistant with a real sender). */
+  senderAgentId?: string | null;
   tokensIn: number;
   tokensOut: number;
   cachedTokensIn: number;
@@ -46,7 +48,7 @@ export interface PersistencePort {
   listMessages(sessionId: string): Promise<PersistedMessage[]>;
   updateSessionStatus(
     sessionId: string,
-    status: "active" | "completed" | "error" | "archived",
+    status: "active" | "paused" | "completed" | "error" | "archived",
   ): Promise<void>;
   getSessionMetadata(sessionId: string): Promise<Record<string, unknown> | undefined>;
   setSessionMetadata(sessionId: string, metadata: Record<string, unknown>): Promise<void>;

@@ -52,7 +52,12 @@ const MANAGER_RESTRICTED_TOOLS = new Set(["write_file", "edit_file", "shell_exec
 export function createToolPort(deps: ToolPortDeps): ToolPort {
   const orgTools = createOrgTools(deps);
   const memoryTools = createMemoryTools(deps.db, deps.paths);
-  const messagingTools = createMessagingTools(deps.db);
+  const messagingTools = createMessagingTools({
+    db: deps.db,
+    paths: deps.paths,
+    sandboxRegistry: deps.sandboxRegistry,
+    getAgentLoop: deps.getAgentLoop,
+  });
   const shellTools = createShellTools(deps.db, deps.shellManager);
   const allByName = new Map([...orgTools, ...memoryTools, ...messagingTools, ...shellTools].map((t) => [t.name, t]));
 
