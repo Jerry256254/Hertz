@@ -1,37 +1,50 @@
-# KucLab Hertz CLI
+# Hertz
 
-Self-hosted agentní vývojová platforma — jeden příkaz nastartuje server s WebUI, ve kterém AI agenti pracují na reálných projektech na disku i po zavření prohlížeče.
+Self-hosted agent development platform — one command starts a server with a WebUI in which AI agents work on real projects on disk, even after you close the browser.
 
-[![Stáhnout nejnovější verzi](https://img.shields.io/github/v/release/Jerry256254/HertzCli?label=St%C3%A1hnout&style=for-the-badge&color=D97757)](https://github.com/Jerry256254/HertzCli/releases/latest)
+[![Download latest release](https://img.shields.io/github/v/release/Jerry256254/Hertz?label=Download&style=for-the-badge&color=D97757)](https://github.com/Jerry256254/Hertz/releases/latest)
 
-**➡️ Spuštění: `npx kuclab-hertz`** — nainstaluje, provede setupem a spustí lokální server s WebUI. Žádná registrace, žádný cloud účet.
+**➡️ Run: `npx kuclab-hertz`** — installs, runs the setup wizard, and starts the local server with WebUI. No registration, no cloud account.
 
-## Funkce
+## Features
 
-- **Agentní smyčka** — čtení/zápis/editace souborů, shell, grep/glob, web fetch, todo/plán, vše nad sandboxovaným project rootem.
-- **Organizace, ne jen chat** — každý projekt má Manager Agenta, který si nejdřív prohlédne stávající tým a radši mu přidělí práci, než aby najímal duplicitu; když najímá, vybere zaměstnanci model podle potřeby úkolu z dostupných providerů (list_provider_models), ne vždy jen kopii svého vlastního. Manažer nemá přístup k zápisu souborů ani shellu, takže práci nemůže dělat sám za ně; zaměstnanci mohou pracovat napříč více projekty a manažer vidí paměť celého svého týmu.
-- **Víc uživatelských účtů** — admin zakládá další účty a nastavuje jim přístup k jednotlivým projektům (uživatel bez adminu vidí jen projekty, ke kterým dostal přístup); každý si může změnit vlastní heslo.
-- **Persistentní paměť zaměstnanců** — každý agent si sám spravuje vlastní paměť (remember/list_memory/forget) i vlastní složku na disku (notes/materials/data) mimo sdílený project root, obojí vidí i uživatel.
-- **Zaměstnanci komunikují mezi sebou** — přímé zprávy (message_employee) i skupinové schůzky (meetings), transparentně viditelné uživateli, ne jen jednosměrné delegování.
-- **Úkoly a routines** — úkol lze zadat jen vybrané podmnožině týmu; routines re-briefují stejného agenta na plán (jednou/denně/týdně/vlastní cron), scheduler je DB-backed a přežije restart serveru.
-- **MCP integrace se skutečným OAuth** — Gmail, Google Drive a Slack se připojují přes opravdovou přihlašovací obrazovku (CEO jednou zaregistruje vlastní OAuth app), ne přes ruční vkládání tokenů; Gmail/Drive běží na vlastním first-party MCP serveru (`@kuclab-hertz/mcp-google`). Katalog dlaždic i pro GitHub/Postgres/atd., globálně nebo per zaměstnanec.
-- **Schvalování najmutí i propuštění** — manažer smí požádat o nového zaměstnance (hire_employee) i o jeho propuštění (fire_employee), ale obojí se projeví až po schválení uživatelem (CEO) — jako u reálné firmy; přepínač "Auto-approve" na projektu umí obojí schvalovat automaticky. CEO může kdykoliv změnit model/providera libovolného zaměstnance.
-- **Vlastní Linux shell pro každého zaměstnance** — reálný persistentní bash proces (ne jednorázový spawn), víc pojmenovaných shellů, sdílení přístupu mezi kolegy, transkript viditelný uživateli.
-- **Detail zaměstnance** — jedna stránka na CEO dohled: popis práce, paměť, osobní prostor na disku, MCP nastavení, shelly.
-- **`/compact`** — jedním příkazem v chatu se historie session shrne do jedné souhrnné zprávy, další tahy čtou jen ji.
-- **Vlastní API klíč, výběr providera, pool klíčů** — Anthropic, OpenAI, Google, nebo libovolný OpenAI-compatible endpoint (Ollama, OpenRouter, vLLM, LM Studio…), s automatickým skenem modelů a rotací mezi více klíči při rate limitu.
-- **Sessions běží nezávisle na prohlížeči** — zavřete tab, agent pokračuje, po návratu vidíte celý průběh.
-- **WebUI pro telefon i desktop** — přihlášení, správa projektů, streamovaný chat, file explorer, checklist zobrazení nástrojových kroků, sidebar jako výsuvné menu na mobilu.
-- **Token-efficiency jako priorita** — rozsahové čtení souborů, prompt caching, telemetrie tokenů/ceny na každý request.
-- **Bezpečnost** — API klíče i MCP secrets šifrované at-rest, shell allowlist (včetně `gh`), agent nesmí opustit povolené project rooty, audit log na každou akci.
+- **Agent loop** — read/write/edit files, shell, grep/glob, web fetch, todo/plan, all scoped to a sandboxed project root.
+- **An organization, not just a chat** — every project has a Manager agent that first reviews the existing team and prefers delegating work over hiring duplicates; when it hires, it picks an employee model based on the task from available providers (list_provider_models), not just a copy of its own. Managers have no file-write or shell access, so they cannot do the work themselves; employees can work across multiple projects and the manager sees the memory of the whole team.
+- **Multiple user accounts** — admins create additional accounts and grant project access per account (non-admin users only see the projects they were given); everyone can change their own password.
+- **Persistent employee memory** — every agent manages its own memory (remember/list_memory/forget) and its own folder on disk (notes/materials/data) outside the shared project root, both visible to the user.
+- **Employees talk to each other** — direct messages (message_employee) land in a real per-pair chat thread with its own context window, and group meetings are supported — all transparently visible to the user, not just one-way delegation. Agents answer even while mid-work, and you can message an agent while it is working without stopping it.
+- **Pause/resume** — pause an agent's work between turns and resume it later; a paused agent keeps waiting until you say go.
+- **Tasks and routines** — a task can be assigned to a chosen subset of the team; routines re-brief the same agent on a schedule (daily/weekly/custom cron); the scheduler is DB-backed and survives server restarts.
+- **MCP integration with real OAuth** — Gmail, Google Drive, and Slack connect through a real login screen (the CEO registers their own OAuth app once), not manual token pasting; Gmail/Drive run on our own first-party MCP server (`@kuclab-hertz/mcp-google`). A tile catalog also covers GitHub/Postgres/etc., globally or per employee.
+- **Hire and termination approvals** — the manager may request a new employee (hire_employee) or a termination (fire_employee), but both only take effect after user (CEO) approval — like a real company; a per-project "Auto-approve" toggle can approve both automatically. The CEO can change any employee's model/provider at any time.
+- **A real Linux shell per employee** — a persistent bash process (not a one-shot spawn), multiple named shells, access sharing between colleagues, transcript visible to the user.
+- **Employee detail page** — one page for CEO oversight: job description, memory, personal disk space, MCP settings, shells.
+- **`/compact`** — one chat command summarizes the session history into a single summary message; later turns only read that.
+- **Bring your own API key, provider choice, key pool** — Anthropic, OpenAI, Google, or any OpenAI-compatible endpoint (Ollama, OpenRouter, vLLM, LM Studio…), with automatic model scanning and rotation across multiple keys on rate limits.
+- **Sessions run independently of the browser** — close the tab, the agent keeps working; come back and see the full progress.
+- **WebUI for phone and desktop** — login, project management, streamed chat, file explorer, tool-step checklist rendering, sidebar that becomes a slide-out menu on mobile.
+- **Token-efficiency first** — scoped file reads, prompt caching, token/cost telemetry on every request.
+- **Security** — API keys and MCP secrets encrypted at rest, shell allowlist (including `gh`), agents cannot leave the permitted project roots, audit log for every action.
 
-## Design
+## Recommended: run it in tmux
 
-Material You (M3) — tonální paleta odvozená z jednoho seed odstínu, zaoblené plochy, jemné vrstvení, tmavý i světlý režim. Hustá informační vrstva a klávesnice na prvním místě zůstávají — cíl je profesionální nástroj pro každodenní práci, ne "AI startup" landing page.
+The server keeps running as long as the process lives, but a terminal that closes (SSH drop, reboot, laptop lid) takes it down. Install tmux and run Hertz in the background so it survives disconnects:
 
-## Sestavení ze zdrojového kódu
+```bash
+# install tmux (Debian/Ubuntu):
+sudo apt install tmux
+# Fedora:
+sudo dnf install tmux
 
-Vyžaduje Node.js ≥20 a [pnpm](https://pnpm.io).
+tmux new -s hertz          # create a named session
+npx kuclab-hertz           # start the server inside tmux
+# detach with Ctrl-B D — the server keeps running; reattach anytime:
+tmux attach -t hertz
+```
+
+## Build from source
+
+Requires Node.js ≥20 and [pnpm](https://pnpm.io).
 
 ```bash
 pnpm install
@@ -39,12 +52,12 @@ pnpm build
 node packages/cli/dist/bin.js start
 ```
 
-Výsledný publikovatelný balíček najdete v `packages/cli/dist`.
+The publishable package ends up in `packages/cli/dist`.
 
-## Technologie
+## Stack
 
 Node.js + TypeScript, Fastify + WebSocket, SQLite (libSQL) + Drizzle ORM, React + Vite + Tailwind.
 
-## Licence
+## License
 
 [MIT](LICENSE)

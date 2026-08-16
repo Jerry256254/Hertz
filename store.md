@@ -1,6 +1,6 @@
 ---
 schema_version: 1
-app_name: KucLab Hertz CLI
+app_name: Hertz
 package_id: kuclab-hertz
 version_name: "0.6.0"
 version_code: 6
@@ -8,30 +8,30 @@ last_updated: 2026-08-15
 license: MIT
 category: Developer Tools
 short_description: >-
-  Self-hosted agentní vývojová platforma s WebUI, distribuovaná přes npm.
+  Self-hosted agent development platform with a WebUI, distributed via npm.
 full_description: |-
-  KucLab Hertz je self-hosted agentní vývojová platforma. Jedním příkazem
-  (`npx kuclab-hertz`) se nainstaluje, nastaví a spustí lokální server
-  s WebUI, ve kterém běží jeden nebo více AI agentů pracujících na reálných
-  projektech na disku — i po zavření prohlížeče.
+  Hertz is a self-hosted agent development platform. A single command
+  (`npx kuclab-hertz`) installs, sets up, and starts a local server with a
+  WebUI where one or more AI agents work on real projects on disk — even
+  after you close the browser.
 
-  Každý projekt má Manager Agenta, který najímá zaměstnance s reálnou rolí,
-  deleguje jim úkoly a hlásí výsledky uživateli. Zaměstnanci mají vlastní
-  persistentní paměť i pracovní složku na disku, komunikují mezi sebou
-  přímo i na schůzkách (vždy viditelně pro uživatele), a lze jim připojit
-  externí nástroje přes MCP nebo je nechat pracovat na plánu (routines).
+  Every project has a Manager agent that hires employees with real roles,
+  delegates tasks, and reports results to the user. Employees have their own
+  persistent memory and working folder on disk, talk to each other directly
+  and in meetings (always visible to the user), and can be connected to
+  external tools via MCP or set to work on a schedule (routines).
 
-  Uživatel používá vlastní API klíč a providera dle výběru (Anthropic,
-  OpenAI, Google, nebo libovolný OpenAI-compatible endpoint), s automatickým
-  skenem dostupných modelů. Sessions, historie a paměť se ukládají lokálně
-  na stroji, kde server běží.
+  You bring your own API key and provider of choice (Anthropic, OpenAI,
+  Google, or any OpenAI-compatible endpoint), with automatic model scanning.
+  Sessions, history, and memory are stored locally on the machine where the
+  server runs.
 tags:
   - ai-agent
   - developer-tools
   - self-hosted
   - cli
-repository_url: https://github.com/Jerry256254/HertzCli
-download_url: https://github.com/Jerry256254/HertzCli/releases/latest
+repository_url: https://github.com/Jerry256254/Hertz
+download_url: https://github.com/Jerry256254/Hertz/releases/latest
 logo: store/logo.png
 screenshots:
   - store/screenshots/01_login.png
@@ -83,34 +83,34 @@ changelog:
       - "M1: bootstrap CLI, setup wizard, auth, jeden project root, agent loop se 4 provider adaptéry, streamovaný WebUI chat"
 ---
 
-# KucLab Hertz CLI
+# Hertz
 
-Self-hosted agentní vývojová platforma s WebUI, distribuovaná přes npm.
+Self-hosted agent development platform with a WebUI, distributed via npm.
 
-## Popis
+## Description
 
-KucLab Hertz je self-hosted agentní vývojová platforma. Jedním příkazem
-(`npx kuclab-hertz`) se nainstaluje, nastaví a spustí lokální server
-s WebUI, ve kterém běží jeden nebo více AI agentů pracujících na reálných
-projektech na disku — i po zavření prohlížeče.
+Hertz is a self-hosted agent development platform. A single command
+(`npx kuclab-hertz`) installs, sets up, and starts a local server with a
+WebUI where one or more AI agents work on real projects on disk — even
+after you close the browser.
 
-Uživatel používá vlastní API klíč a providera dle výběru (Anthropic,
-OpenAI, Google, nebo libovolný OpenAI-compatible endpoint), s automatickým
-skenem dostupných modelů. Sessions, historie a paměť se ukládají lokálně
-na stroji, kde server běží.
+You bring your own API key and provider of choice (Anthropic, OpenAI,
+Google, or any OpenAI-compatible endpoint), with automatic model scanning.
+Sessions, history, and memory are stored locally on the machine where the
+server runs.
 
 ## Logo
 
-![KucLab Hertz CLI logo](store/logo.png)
+![Hertz logo](store/logo.png)
 
-## Screenshoty
+## Screenshots
 
 | Login | Session |
 |---|---|
 | ![Login](store/screenshots/01_login.png) | ![Session](store/screenshots/02_session.png) |
 
-## Odkazy
+## Links
 
-- Zdrojový kód: <https://github.com/Jerry256254/HertzCli>
-- Stažení nejnovější verze: <https://github.com/Jerry256254/HertzCli/releases/latest>
+- Source code: <https://github.com/Jerry256254/Hertz>
+- Download the latest release: <https://github.com/Jerry256254/Hertz/releases/latest>
 - Licence: [MIT](LICENSE)
