@@ -69,4 +69,8 @@ Node.js + TypeScript, Fastify + WebSocket, SQLite (libSQL) + Drizzle ORM, React 
 
 ## License
 
-[MIT](LICENSE)
+[Hertz License](LICENSE) — personal use is free, but production, commercial,
+or distributed use (including modified versions) requires prior written
+consent from KucLab, obtainable via [kuclab.org/podpora](https://kuclab.org/podpora).
+You may not remove the copyright notices or present this software (or a
+modified version of it) as your own work.

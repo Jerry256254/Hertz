@@ -5,7 +5,7 @@ package_id: kuclab-hertz
 version_name: "0.6.0"
 version_code: 6
 last_updated: 2026-08-15
-license: MIT
+license: Hertz License
 category: Developer Tools
 short_description: >-
   Self-hosted agent development platform with a WebUI, distributed via npm.

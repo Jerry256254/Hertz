@@ -1,21 +1,27 @@
-MIT License
+HERTZ LICENSE
 
 Copyright (c) 2026 KucLab
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Personal use
+You may download, run, study, and modify this software for your own
+personal, non-commercial, non-public use without further permission.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. Production, commercial, and distributed use
+Any other use — including but not limited to: running the software in a
+production environment, providing it as a service, using it in a business,
+publishing or distributing modified versions, bundling it into another
+product, or using it commercially in any way — requires prior written
+consent from KucLab. Consent is granted individually via
+https://kuclab.org/podpora (or the contact address stated there).
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. Attribution and authorship
+You may not remove or alter any copyright notices. You may not present
+this software or any modified version of it as your own work, and you
+may not rebrand or rename it in a way that suggests you are the author.
+
+4. No warranty
+This software is provided "as is", without warranty of any kind, express
+or implied. The author accepts no liability for any damages arising from
+its use.
+
+Requests for consent and licensing questions: https://kuclab.org/podpora
