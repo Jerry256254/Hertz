@@ -106,7 +106,9 @@ export const sessions = sqliteTable("sessions", {
   kind: text("kind", { enum: ["chat", "conversation"] }).notNull().default("chat"),
   /** For kind = "conversation": the other agent in the pair. Stored as the lexicographically larger id so each pair has exactly one session. */
   peerAgentId: text("peer_agent_id").references(() => agents.id, { onDelete: "cascade" }),
-  status: text("status", { enum: ["active", "paused", "completed", "error", "archived"] })
+  /** How the agent works in this session: "plan" = think/answer only, no tools; "auto" = full tools, may ask the user; "autonomous" = never asks, works until the goal is done. */
+  mode: text("mode", { enum: ["plan", "auto", "autonomous"] }).notNull().default("auto"),
+  status: text("status", { enum: ["active", "paused", "completed", "error", "archived", "awaiting_input"] })
     .notNull()
     .default("active"),
   /** Session-scoped state that isn't message history: current todo list, cached budget, etc. */

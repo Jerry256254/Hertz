@@ -25,6 +25,13 @@ export interface AgentLoopConfig {
   maxTurns?: number;
   /** Tools to withhold from the model this run (e.g. message_employee inside a direct conversation, where replies are in-thread instead). */
   excludeTools?: string[];
+  /**
+   * How the agent behaves this run:
+   * - "plan": no tools at all — the agent only thinks and answers (a plan, not execution);
+   * - "auto" (default): full tool access, including ask_user when it needs input only the user can give;
+   * - "autonomous": works until the goal is done, never asks — ask_user is withheld.
+   */
+  mode?: "plan" | "auto" | "autonomous";
   /** Set when the triggering user/agent message was already persisted by the caller (message_employee into a conversation), so runLoop must not append it again. */
   prePersisted?: boolean;
 }
@@ -35,6 +42,7 @@ export type AgentLoopEvent =
   | { type: "tool_result"; id: string; name: string; summary: string; isError?: boolean }
   | { type: "message_saved"; message: PersistedMessage }
   | { type: "status"; status: "running" | "idle" | "error" | "paused" }
+  | { type: "awaiting_input"; question: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -331,6 +339,12 @@ export class AgentLoopManager {
     if (config.excludeTools?.length) {
       toolDefs = toolDefs.filter((def) => !config.excludeTools!.includes(def.name));
     }
+    const mode = config.mode ?? "auto";
+    if (mode === "plan") {
+      toolDefs = [];
+    } else if (mode === "autonomous") {
+      toolDefs = toolDefs.filter((def) => def.name !== "ask_user");
+    }
     const maxTurns = config.maxTurns ?? 25;
 
     for (let turn = 0; turn < maxTurns; turn++) {
@@ -434,6 +448,57 @@ export class AgentLoopManager {
       const resultBlocks: ContentBlock[] = [];
       for (const t of toolUses) {
         const input = safeJsonParse(t.inputRaw);
+
+        // ask_user stops the run: the question is persisted on the session and
+        // the UI shows it with an answer field; POST /answer resumes with a new
+        // run. A stub tool_result is appended so the history stays valid for
+        // the provider (a tool_use must be followed by a tool_result).
+        if (t.name === "ask_user") {
+          if (mode === "autonomous") {
+            // Defensive: the tool isn't offered in this mode, but if the model
+            // calls it anyway, nudge it back to deciding for itself instead of
+            // stopping for user input.
+            this.emit(config.sessionId, { type: "tool_call", id: t.id, name: t.name, input });
+            resultBlocks.push({
+              type: "tool_result",
+              toolUseId: t.id,
+              content:
+                "You're in autonomous mode: asking the user is not allowed. Decide from context yourself, state your assumption, and keep working.",
+              isError: true,
+            });
+            continue;
+          }
+          const raw = input as { question?: unknown };
+          const question =
+            typeof raw?.question === "string" && raw.question.trim()
+              ? raw.question.trim()
+              : "(the agent wants your input)";
+          this.emit(config.sessionId, { type: "tool_call", id: t.id, name: t.name, input });
+          await persistence.appendMessage({
+            sessionId: config.sessionId,
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                toolUseId: t.id,
+                content: "The question is waiting for the user's answer in the UI.",
+                isError: false,
+              },
+            ],
+            senderAgentId: null,
+            tokensIn: 0,
+            tokensOut: 0,
+            cachedTokensIn: 0,
+            cost: 0,
+            purpose: "agent_turn",
+          });
+          const meta = (await persistence.getSessionMetadata(config.sessionId)) ?? {};
+          await persistence.setSessionMetadata(config.sessionId, { ...meta, pendingQuestion: question });
+          await persistence.updateSessionStatus(config.sessionId, "awaiting_input");
+          this.emit(config.sessionId, { type: "awaiting_input", question });
+          return;
+        }
+
         this.emit(config.sessionId, { type: "tool_call", id: t.id, name: t.name, input });
 
         const ctx: ToolContext = {

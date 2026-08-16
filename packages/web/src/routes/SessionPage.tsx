@@ -17,9 +17,18 @@ interface SessionDetail {
   budget: Budget;
   running: boolean;
   paused: boolean;
+  pendingQuestion: string | null;
   agent?: { id: string; name: string; role: string } | null;
   peerAgent?: { id: string; name: string; role: string } | null;
 }
+
+type RunMode = "plan" | "auto" | "autonomous";
+
+const MODES: Array<{ value: RunMode; label: string; title: string }> = [
+  { value: "plan", label: "Plan", title: "Only thinks and plans — no tools, no file changes" },
+  { value: "auto", label: "Auto", title: "Works with full tools; can ask you when it genuinely needs input" },
+  { value: "autonomous", label: "Autonomous", title: "Works until the goal is done, never asks — decides itself and keeps going" },
+];
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -93,6 +102,8 @@ export function SessionPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [runError, setRunError] = useState<string | undefined>(undefined);
   const [showFiles, setShowFiles] = useState(false);
+  const [mode, setMode] = useState<RunMode>("auto");
+  const [answerText, setAnswerText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -121,6 +132,7 @@ export function SessionPage() {
     if (data) {
       setIsRunning(data.running);
       setIsPaused(data.paused);
+      if (data.session.kind !== "conversation" && data.session.mode) setMode(data.session.mode);
     }
   }, [data]);
 
@@ -138,6 +150,9 @@ export function SessionPage() {
         setIsPaused(event.status === "paused");
         if (event.status === "running") setRunError(undefined);
         if (event.status !== "running") setStreamingText("");
+      } else if (event.type === "awaiting_input") {
+        setStreamingText("");
+        void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
       } else if (event.type === "error") {
         setRunError(event.message);
       } else if (event.type === "done") {
@@ -185,7 +200,7 @@ export function SessionPage() {
 
     // Messages sent while the agent is working are injected into the run — it
     // answers them without stopping (and a paused run stays paused until resumed).
-    const payload = { text, images };
+    const payload = { text, images, mode };
     setText("");
     setImages([]);
     try {
@@ -206,6 +221,35 @@ export function SessionPage() {
     },
     onError: (err) => setRunError(err instanceof ApiError ? err.message : "Couldn't update the run state"),
   });
+
+  const setSessionMode = useMutation({
+    mutationFn: (next: RunMode) => api.patch(`/sessions/${sessionId}`, { mode: next }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+    },
+    onError: (err) => setRunError(err instanceof ApiError ? err.message : "Couldn't switch the mode"),
+  });
+
+  function selectMode(next: RunMode) {
+    setMode(next);
+    if (next !== data?.session.mode) setSessionMode.mutate(next);
+  }
+
+  const answerQuestion = useMutation({
+    mutationFn: (answer: string) => api.post(`/sessions/${sessionId}/answer`, { text: answer }),
+    onSuccess: () => {
+      setAnswerText("");
+      setIsRunning(true);
+      void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+    },
+    onError: (err) => setRunError(err instanceof ApiError ? err.message : "Couldn't send the answer"),
+  });
+
+  function submitAnswer(e: FormEvent) {
+    e.preventDefault();
+    if (!answerText.trim()) return;
+    answerQuestion.mutate(answerText);
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -355,6 +399,42 @@ export function SessionPage() {
         </div>
 
         <div className="flex-shrink-0 px-4 pb-4">
+          {data?.pendingQuestion && data.session.status === "awaiting_input" && (
+            <form
+              onSubmit={submitAnswer}
+              className="mx-auto mb-3 max-w-3xl rounded-lg border border-border-strong bg-bg-raised p-3 shadow-sm"
+            >
+              <p className="flex items-center gap-2 text-xs font-medium text-fg">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                The agent is waiting for your answer
+              </p>
+              <p className="mt-1 text-sm text-fg">{data.pendingQuestion}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <textarea
+                  value={answerText}
+                  onChange={(e) => setAnswerText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      submitAnswer(e);
+                    }
+                  }}
+                  rows={2}
+                  autoFocus
+                  placeholder="Your answer…"
+                  className="max-h-[160px] w-full resize-none rounded-md border border-border bg-bg px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-subtle outline-none focus:border-border-strong disabled:opacity-60"
+                />
+                <button
+                  type="submit"
+                  disabled={!answerText.trim() || answerQuestion.isPending}
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition-opacity disabled:opacity-30"
+                  title="Send answer"
+                >
+                  <ArrowUp size={16} />
+                </button>
+              </div>
+            </form>
+          )}
           <form
             onSubmit={onSubmit}
             onDragOver={(e) => e.preventDefault()}
@@ -400,27 +480,52 @@ export function SessionPage() {
               onKeyDown={onKeyDown}
               onPaste={(e) => void onFiles(e.clipboardData.files)}
               placeholder={
-                isPaused
-                  ? "Paused — the agent will read this after you resume"
-                  : isRunning
-                    ? "Type to message the agent — it will answer without stopping its work"
-                    : "Message the agent — drop or paste images, Enter to send, /compact to shrink context"
+                data?.pendingQuestion && data.session.status === "awaiting_input"
+                  ? "The agent is waiting for your answer above — or send it a new message"
+                  : isPaused
+                    ? "Paused — the agent will read this after you resume"
+                    : isRunning
+                      ? "Type to message the agent — it will answer without stopping its work"
+                      : "Message the agent — drop or paste images, Enter to send, /compact to shrink context"
               }
               rows={1}
               className="max-h-[200px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle outline-none disabled:opacity-60"
             />
             <div className="flex items-center justify-between px-1 pt-1">
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => void onFiles(e.target.files)}
-                className="hidden"
-                id="file-input"
-              />
-              <IconButton type="button" onClick={() => document.getElementById("file-input")?.click()}>
-                <Paperclip size={15} />
-              </IconButton>
+              <div className="flex items-center gap-1">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => void onFiles(e.target.files)}
+                  className="hidden"
+                  id="file-input"
+                />
+                <IconButton type="button" onClick={() => document.getElementById("file-input")?.click()}>
+                  <Paperclip size={15} />
+                </IconButton>
+                {data?.session.kind !== "conversation" && (
+                  <div
+                    className="ml-1 flex items-center rounded-full border border-border bg-bg-sunken p-0.5"
+                    role="group"
+                    aria-label="Run mode"
+                  >
+                    {MODES.map((m) => (
+                      <button
+                        key={m.value}
+                        type="button"
+                        title={m.title}
+                        onClick={() => selectMode(m.value)}
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                          mode === m.value ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 type="submit"
                 disabled={!text && images.length === 0}

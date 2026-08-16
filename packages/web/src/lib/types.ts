@@ -138,7 +138,8 @@ export interface HertzSession {
   projectId: string;
   title: string;
   kind: "chat" | "conversation";
-  status: "active" | "completed" | "error" | "archived" | "paused";
+  mode?: "plan" | "auto" | "autonomous" | null;
+  status: "active" | "completed" | "error" | "archived" | "paused" | "awaiting_input";
   createdAt: string;
   updatedAt: string;
 }
@@ -207,6 +208,7 @@ export type AgentLoopEvent =
   | { type: "tool_result"; id: string; name: string; summary: string; isError?: boolean }
   | { type: "message_saved"; message: PersistedMessage }
   | { type: "status"; status: "running" | "idle" | "error" | "paused" }
+  | { type: "awaiting_input"; question: string }
   | { type: "error"; message: string }
   | { type: "done" };
 

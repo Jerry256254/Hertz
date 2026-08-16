@@ -48,7 +48,7 @@ export interface PersistencePort {
   listMessages(sessionId: string): Promise<PersistedMessage[]>;
   updateSessionStatus(
     sessionId: string,
-    status: "active" | "paused" | "completed" | "error" | "archived",
+    status: "active" | "paused" | "completed" | "error" | "archived" | "awaiting_input",
   ): Promise<void>;
   getSessionMetadata(sessionId: string): Promise<Record<string, unknown> | undefined>;
   setSessionMetadata(sessionId: string, metadata: Record<string, unknown>): Promise<void>;

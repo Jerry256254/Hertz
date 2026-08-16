@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   title TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'chat',
   peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL DEFAULT 'auto',
   status TEXT NOT NULL DEFAULT 'active',
   metadata TEXT,
   parent_session_id TEXT,
@@ -296,6 +297,7 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE projects ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'",
   "ALTER TABLE sessions ADD COLUMN peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
+  "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'",
   "ALTER TABLE messages ADD COLUMN sender_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
 ];
 

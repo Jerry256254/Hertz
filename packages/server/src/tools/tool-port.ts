@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { ALL_TOOLS, runTool, toProviderToolDefinitions } from "@kuclab-hertz/tools";
 import type { AgentLoopManager, ProviderPort, ToolPort } from "@kuclab-hertz/core";
@@ -40,8 +41,20 @@ function toDefs(tools: OrgToolDef[]) {
  * the work itself instead of hiring/briefing employees for it, which defeats
  * the entire point of the org structure. This is enforced here, not just in
  * the system prompt, so it holds even if a model ignores its instructions.
+ * run_in_shell and save_note are included because both can write to disk.
  */
-const MANAGER_RESTRICTED_TOOLS = new Set(["write_file", "edit_file", "shell_exec"]);
+const MANAGER_RESTRICTED_TOOLS = new Set(["write_file", "edit_file", "shell_exec", "run_in_shell", "save_note"]);
+
+/** Asks the human user a question and stops until they answer (auto mode only — withheld in plan/autonomous). */
+const ASK_USER_DEF: OrgToolDef = {
+  name: "ask_user",
+  description:
+    "Ask the human user a single, concrete question you genuinely cannot resolve yourself (a preference, a decision, missing information only they have). The run pauses and the question is shown in the UI with an answer field; you continue when they answer. Don't use it for things you can decide or look up yourself.",
+  inputSchema: z.object({ question: z.string().min(1).describe("The question, phrased so it can be answered with a short text") }),
+  async execute() {
+    return { summary: "Question sent to the user — waiting for their answer in the UI." };
+  },
+};
 
 /**
  * Every agent gets the base fs/shell/web/todo tools plus memory (remember/
@@ -59,13 +72,14 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
     getAgentLoop: deps.getAgentLoop,
   });
   const shellTools = createShellTools(deps.db, deps.shellManager);
-  const allByName = new Map([...orgTools, ...memoryTools, ...messagingTools, ...shellTools].map((t) => [t.name, t]));
+  const allByName = new Map([...orgTools, ...memoryTools, ...messagingTools, ...shellTools, ASK_USER_DEF].map((t) => [t.name, t]));
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
   const memoryDefs = toDefs(memoryTools);
   const messagingDefs = toDefs(messagingTools);
   const shellDefs = toDefs(shellTools);
   const orgDefs = toDefs(orgTools);
+  const askUserDefs = toDefs([ASK_USER_DEF]);
 
   async function isManager(agentId: string): Promise<boolean> {
     const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
@@ -77,7 +91,7 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
       const managerRole = await isManager(agentId);
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
       const filteredBaseDefs = managerRole ? baseDefs.filter((d) => !MANAGER_RESTRICTED_TOOLS.has(d.name)) : baseDefs;
-      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...mcpDefs];
+      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...mcpDefs, ...askUserDefs];
       return managerRole ? [...defs, ...orgDefs] : defs;
     },
     async run(name, input, ctx) {

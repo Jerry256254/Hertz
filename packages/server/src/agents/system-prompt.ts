@@ -22,7 +22,7 @@ const RECENT_MEMORY_COUNT = 40;
 export async function buildSystemPrompt(
   db: Database,
   agent: { id: string; systemPrompt: string | null },
-  opts: { conversationPeerName?: string } = {},
+  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous" } = {},
 ): Promise<string> {
   const recentNotesDesc = await db
     .select()
@@ -37,6 +37,16 @@ export async function buildSystemPrompt(
   if (notes.length > 0) {
     const memoryBlock = notes.map((n) => `- ${n.note}`).join("\n");
     prompt += `\n\n## Your persistent memory\nThis carries across every chat, project, and meeting you're part of — the user can see it too. Some entries are auto-captured from what you were told; add your own with remember for anything that deserves a clearer, more durable note, and use forget to prune what's stale.\n${memoryBlock}`;
+  }
+
+  if (opts.mode) {
+    const modeBlock: Record<"plan" | "auto" | "autonomous", string> = {
+      plan: "## Mode: Plan\nYou are in PLAN mode: do NOT call any tools and do NOT touch any files. Think the request through and return a concrete plan — what you would do, in what order, with which tools and team members — or the answer itself if the request is a question. No execution.",
+      auto: "## Mode: Auto\nYou work on the task with full tool access. If you genuinely need input that only the user can give (a preference, a decision, missing information), call ask_user and stop — the question appears in the UI and you continue when they answer. For anything you can decide or look up yourself, don't ask: decide and proceed.",
+      autonomous:
+        "## Mode: Autonomous (goal mode)\nWork autonomously until the goal is complete: no questions, no check-ins, no status reports mid-work. ask_user is not available to you. When something is ambiguous or unspecified, decide yourself from context, state your assumption, and keep going. You stop only when the task is actually done, or when you hit an explicit limit (a stop instruction, a hard deadline, or something genuinely impossible — report that instead of pretending).",
+    };
+    prompt += `\n\n${modeBlock[opts.mode]}`;
   }
 
   if (opts.conversationPeerName) {

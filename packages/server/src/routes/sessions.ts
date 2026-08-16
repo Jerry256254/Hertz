@@ -21,7 +21,8 @@ const createSessionSchema = z.object({
 });
 
 const renameSessionSchema = z.object({
-  title: z.string().min(1).max(200),
+  title: z.string().min(1).max(200).optional(),
+  mode: z.enum(["plan", "auto", "autonomous"]).optional(),
 });
 
 const sendMessageSchema = z.object({
@@ -30,11 +31,63 @@ const sendMessageSchema = z.object({
     .array(z.object({ mimeType: z.string(), data: z.string() }))
     .optional()
     .default([]),
+  /** plan = think/answer only, no tools; auto (default) = full tools, may ask; autonomous = never asks, works until done. */
+  mode: z.enum(["plan", "auto", "autonomous"]).optional(),
+});
+
+const answerSchema = z.object({
+  text: z.string().min(1).max(20_000),
 });
 
 function deriveTitle(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length > 60 ? `${oneLine.slice(0, 60)}…` : oneLine;
+}
+
+/** Starts a fresh run on a session (user message already persisted, or prePersisted for tool-triggered runs). */
+async function startSessionRun(
+  ctx: AppContext,
+  session: { id: string; projectId: string; agentId: string; kind: string; mode: string | null },
+  agent: { id: string; model: string; providerConfigId: string; systemPrompt: string | null },
+  content: ContentBlock[],
+  opts: { userId: string; prePersisted?: boolean; conversationPeerName?: string; excludeTools?: string[] },
+): Promise<void> {
+  const mode = (session.mode === "plan" || session.mode === "autonomous" ? session.mode : "auto") as
+    | "plan"
+    | "auto"
+    | "autonomous";
+
+  const systemPrompt = await buildSystemPrompt(ctx.db, agent, {
+    conversationPeerName: opts.conversationPeerName,
+    mode: session.kind === "conversation" ? undefined : mode,
+  });
+
+  const rootRows = await ctx.db.select().from(projectRoots).where(eq(projectRoots.projectId, session.projectId));
+  const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
+  if (!mainRoot) throw new Error("Project has no roots configured");
+
+  await ensureEmployeeDirs(ctx.paths, session.projectId, agent.id);
+  ctx.sandboxRegistry.register(session.id, {
+    [mainRoot.rootId]: mainRoot.absolutePath,
+    self: employeeDir(ctx.paths, session.projectId, agent.id),
+  });
+
+  ctx.agentLoop.start(
+    {
+      sessionId: session.id,
+      agentId: agent.id,
+      projectId: session.projectId,
+      userId: opts.userId,
+      rootId: mainRoot.rootId,
+      model: agent.model,
+      providerConfigId: agent.providerConfigId,
+      systemPrompt,
+      mode,
+      excludeTools: opts.excludeTools,
+      prePersisted: opts.prePersisted,
+    },
+    content,
+  );
 }
 
 export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -143,6 +196,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       budget,
       running: ctx.agentLoop.isRunning(id),
       paused: ctx.agentLoop.isPaused(id),
+      pendingQuestion: session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null,
       agent,
       peerAgent,
     };
@@ -172,7 +226,11 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
 
     await ctx.db
       .update(sessions)
-      .set({ title: parsed.data.title, updatedAt: new Date() })
+      .set({
+        ...(parsed.data.title ? { title: parsed.data.title } : {}),
+        ...(parsed.data.mode ? { mode: parsed.data.mode } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(sessions.id, id));
     return { ok: true };
   });
@@ -242,14 +300,14 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       return reply.code(202).send({ ok: true });
     }
 
-    // Direct conversations are answered by the agent whose turn it is (the one
-    // who didn't speak last), with message_employee withheld so replies stay
-    // in-thread instead of re-sending to the peer.
+    // Pick the agent that answers: direct conversations go to whoever didn't
+    // speak last, with message_employee and ask_user withheld so replies stay
+    // in-thread instead of re-sending to the peer / stopping for user input.
     let agent = session.agentId
       ? (await ctx.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1))[0]
       : undefined;
     let peerAgent: (typeof agents.$inferSelect) | undefined;
-    let systemPrompt: string;
+    let conversationPeerName: string | undefined;
     let excludeTools: string[] | undefined;
 
     if (session.kind === "conversation") {
@@ -261,27 +319,27 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       peerAgent = peerId
         ? (await ctx.db.select().from(agents).where(eq(agents.id, peerId)).limit(1))[0]
         : undefined;
-      systemPrompt = await buildSystemPrompt(ctx.db, agent, {
-        conversationPeerName: peerAgent?.name ?? "a colleague",
-      });
-      excludeTools = ["message_employee"];
+      conversationPeerName = peerAgent?.name ?? "a colleague";
+      excludeTools = ["message_employee", "ask_user"];
     } else {
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
-      systemPrompt = await buildSystemPrompt(ctx.db, agent);
+      // New message supersedes any pending ask_user question.
+      if (session.status === "awaiting_input") {
+        await ctx.db
+          .update(sessions)
+          .set({ status: "active", metadata: null, updatedAt: new Date() })
+          .where(eq(sessions.id, id));
+      }
     }
 
-    const rootRows = await ctx.db
-      .select()
-      .from(projectRoots)
-      .where(eq(projectRoots.projectId, session.projectId));
-    const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
-    if (!mainRoot) return reply.code(400).send({ error: "Project has no roots configured" });
-
-    await ensureEmployeeDirs(ctx.paths, session.projectId, agent.id);
-    ctx.sandboxRegistry.register(id, {
-      [mainRoot.rootId]: mainRoot.absolutePath,
-      self: employeeDir(ctx.paths, session.projectId, agent.id),
-    });
+    // Persist the chosen mode on the session (the UI sends it with each message).
+    if (parsed.data.mode && parsed.data.mode !== session.mode) {
+      await ctx.db
+        .update(sessions)
+        .set({ mode: parsed.data.mode, updatedAt: new Date() })
+        .where(eq(sessions.id, id));
+      session.mode = parsed.data.mode;
+    }
 
     if (session.kind !== "conversation" && session.title === DEFAULT_TITLE && parsed.data.text) {
       await ctx.db
@@ -290,21 +348,53 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         .where(eq(sessions.id, id));
     }
 
-    ctx.agentLoop.start(
-      {
-        sessionId: id,
-        agentId: agent.id,
-        projectId: session.projectId,
+    try {
+      await startSessionRun(ctx, session, agent, content, {
         userId: request.user!.id,
-        rootId: mainRoot.rootId,
-        model: agent.model,
-        providerConfigId: agent.providerConfigId,
-        systemPrompt,
+        conversationPeerName,
         excludeTools,
-      },
-      content,
-    );
+      });
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
 
+    return reply.code(202).send({ ok: true });
+  });
+
+  /** Answers an ask_user question: the answer lands as a user message and the agent's run continues. */
+  instance.post("/api/sessions/:id/answer", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = answerSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+
+    const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
+    const session = sessionRows[0];
+    if (!session) return reply.code(404).send({ error: "Session not found" });
+    if (session.status !== "awaiting_input") {
+      return reply.code(409).send({ error: "The agent isn't waiting for an answer right now" });
+    }
+    if (ctx.agentLoop.isRunning(id)) {
+      return reply.code(409).send({ error: "The agent is still working — wait for it to ask" });
+    }
+
+    const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1);
+    const agent = agentRows[0];
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+    await ctx.agentLoop.appendInbound(id, [{ type: "text", text: parsed.data.text }]);
+    await ctx.db
+      .update(sessions)
+      .set({ status: "active", metadata: null, updatedAt: new Date() })
+      .where(eq(sessions.id, id));
+
+    try {
+      await startSessionRun(ctx, session, agent, [{ type: "text", text: parsed.data.text }], {
+        userId: request.user!.id,
+        prePersisted: true,
+      });
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
     return reply.code(202).send({ ok: true });
   });
   });
