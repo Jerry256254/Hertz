@@ -42,6 +42,15 @@ npx kuclab-hertz           # start the server inside tmux
 tmux attach -t hertz
 ```
 
+## Download
+
+Clone the repository and build it (see below), or grab the latest release assets from the [releases page](https://github.com/Jerry256254/Hertz/releases/latest).
+
+```bash
+git clone https://github.com/Jerry256254/Hertz.git
+cd Hertz
+```
+
 ## Build from source
 
 Requires Node.js ≥20 and [pnpm](https://pnpm.io).
