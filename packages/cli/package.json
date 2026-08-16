@@ -22,11 +22,19 @@
   "dependencies": {
     "@kuclab-hertz/server": "workspace:*",
     "prompts": "^2.4.2",
-    "kleur": "^4.1.5"
+    "kleur": "^4.1.5",
+    "@kuclab-hertz/web": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/prompts": "^2.4.9",
     "typescript": "^5.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jerry256254/Hertz.git"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

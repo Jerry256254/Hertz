@@ -1,7 +1,6 @@
 {
   "name": "@kuclab-hertz/server",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -34,5 +33,16 @@
     "@types/node": "^22.10.0",
     "drizzle-kit": "^0.30.0",
     "typescript": "^5.7.0"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jerry256254/Hertz.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ]
 }

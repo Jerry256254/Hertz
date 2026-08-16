@@ -20,6 +20,9 @@ importers:
       '@kuclab-hertz/server':
         specifier: workspace:*
         version: link:../server
+      '@kuclab-hertz/web':
+        specifier: workspace:*
+        version: link:../web
       kleur:
         specifier: ^4.1.5
         version: 4.1.5
