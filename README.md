@@ -56,12 +56,20 @@ cd Hertz
 Requires Node.js ≥20 and [pnpm](https://pnpm.io).
 
 ```bash
+git clone https://github.com/Jerry256254/Hertz.git
+cd Hertz
 pnpm install
 pnpm build
-node packages/cli/dist/bin.js start
 ```
 
-The publishable package ends up in `packages/cli/dist`.
+Then run it (the `kuclab-hertz` binary is only on your PATH after a global install — from a checkout use the pnpm scripts):
+
+```bash
+pnpm setup   # first run only — creates the network config
+pnpm start   # starts the server + WebUI (or: pnpm hertz)
+```
+
+`pnpm hertz` passes through to the CLI, so `pnpm hertz setup` / `pnpm hertz start` work too. Everything lives in `~/.kuclab-hertz` (config, database, projects).
 
 ## Stack
 

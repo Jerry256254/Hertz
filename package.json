@@ -13,7 +13,10 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "hertz": "node packages/cli/dist/bin.js",
+    "setup": "node packages/cli/dist/bin.js setup",
+    "start": "node packages/cli/dist/bin.js start"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

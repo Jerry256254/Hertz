@@ -27,7 +27,11 @@ async function main(): Promise<void> {
   let config = await loadConfig(ctx.paths);
   if (!config) {
     if (command === "start") {
-      console.error(kleur.red("No network config found. Run `kuclab-hertz setup` first."));
+      console.error(
+        kleur.red(
+          "No network config found. Run `kuclab-hertz setup` first (from a source checkout: `pnpm setup`, or `node packages/cli/dist/bin.js setup`).",
+        ),
+      );
       process.exit(1);
     }
     config = await runNetworkSetup(ctx);
