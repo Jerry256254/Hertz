@@ -14,7 +14,7 @@ export const projects = sqliteTable("projects", {
   /** Free-form JSON pointer to a kuclab.config.json override for this project, if any. */
   standardProfile: text("standard_profile"),
   /** When true, the manager's hire_employee and fire_employee requests take effect immediately instead of waiting for the user's approval. */
-  autoApprove: integer("auto_approve", { mode: "boolean" }).notNull().default(false),
+  autoApprove: integer("auto_approve", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -107,7 +107,7 @@ export const sessions = sqliteTable("sessions", {
   /** For kind = "conversation": the other agent in the pair. Stored as the lexicographically larger id so each pair has exactly one session. */
   peerAgentId: text("peer_agent_id").references(() => agents.id, { onDelete: "cascade" }),
   /** How the agent works in this session: "plan" = think/answer only, no tools; "auto" = full tools, may ask the user; "autonomous" = never asks, works until the goal is done. */
-  mode: text("mode", { enum: ["plan", "auto", "autonomous"] }).notNull().default("auto"),
+  mode: text("mode", { enum: ["plan", "auto", "autonomous"] }).notNull().default("autonomous"),
   status: text("status", { enum: ["active", "paused", "completed", "error", "archived", "awaiting_input"] })
     .notNull()
     .default("active"),

@@ -9,12 +9,12 @@ export type McpCredentialField = {
 export type McpCatalogEntry = {
   id: string;
   name: string;
-  category: "development" | "productivity" | "communication" | "data";
+  category: "development" | "productivity" | "communication" | "data" | "ai";
   description: string;
   /** First letter shown in the tile when there's no dedicated icon — kept simple and text-based like the rest of the UI. */
   letter: string;
   /** When set, "Connect" redirects to a real OAuth consent screen instead of opening a credential form — see routes/oauth.ts. */
-  oauth?: { service: "google" | "slack" };
+  oauth?: { service: "google" | "slack" | "grok" };
 } & (
   | { transport: "stdio"; command: string; args: string[]; credentials: McpCredentialField[] }
   | { transport: "sse"; url: string; credentials: McpCredentialField[] }
@@ -116,6 +116,18 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     args: ["-y", "@modelcontextprotocol/server-puppeteer"],
     credentials: [],
   },
+  {
+    id: "grok",
+    name: "Grok",
+    category: "ai",
+    description: "Access xAI's Grok language model API for reasoning and generation tasks.",
+    letter: "G",
+    transport: "sse",
+    url: "https://api.grok.com/v1",
+    credentials: [
+      { key: "GROK_API_KEY", label: "Grok API Key", secret: true, placeholder: "grok-..." },
+    ],
+  },
 ];
 
 export const MCP_CATEGORY_LABEL: Record<McpCatalogEntry["category"], string> = {
@@ -123,4 +135,5 @@ export const MCP_CATEGORY_LABEL: Record<McpCatalogEntry["category"], string> = {
   productivity: "Productivity",
   communication: "Communication",
   data: "Data",
+  ai: "AI & Models",
 };

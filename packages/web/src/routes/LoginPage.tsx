@@ -26,12 +26,9 @@ export function LoginPage() {
     <div className="flex h-full items-center justify-center bg-gradient-bg px-4">
       <form onSubmit={onSubmit} className="w-full max-w-sm rounded-xl border border-border bg-bg-raised p-8 shadow-lg">
         <div className="mb-7 flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-accent text-lg font-bold text-accent-fg shadow-lg">
-            H
-          </span>
           <div>
-            <p className="text-xl font-semibold leading-none text-fg">Hertz</p>
-            <p className="text-sm leading-none text-fg-subtle">by KucLab</p>
+            <p className="text-xl font-semibold leading-none text-fg">Hertz Jobs</p>
+            <p className="text-sm leading-none text-fg-subtle">AI Agent Platform</p>
           </div>
         </div>
 

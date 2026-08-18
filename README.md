@@ -1,4 +1,4 @@
-# Hertz
+# Hertz Jobs
 
 Self-hosted agent development platform — one command starts a server with a WebUI in which AI agents work on real projects on disk, even after you close the browser.
 

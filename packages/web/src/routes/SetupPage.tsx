@@ -35,12 +35,9 @@ export function SetupPage() {
     <div className="flex h-full items-center justify-center bg-bg-sidebar px-4">
       <form onSubmit={onSubmit} className="w-full max-w-sm rounded-lg border border-border bg-bg-raised p-7 shadow-md">
         <div className="mb-6 flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent text-sm font-bold text-accent-fg">
-            H
-          </span>
           <div>
-            <p className="text-sm font-semibold leading-none text-fg">Hertz</p>
-            <p className="text-[11px] leading-none text-fg-subtle">by KucLab</p>
+            <p className="text-sm font-semibold leading-none text-fg">Hertz Jobs</p>
+            <p className="text-[11px] leading-none text-fg-subtle">AI Agent Platform</p>
           </div>
         </div>
 

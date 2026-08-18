@@ -77,11 +77,8 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   return (
     <aside className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border bg-bg-sidebar">
       <div className="flex h-14 flex-shrink-0 items-center gap-3 px-4">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-accent text-sm font-bold text-accent-fg shadow-lg">
-          H
-        </span>
-        <span className="text-base font-semibold tracking-tight text-fg">Hertz</span>
-        <span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">KucLab</span>
+        <span className="text-base font-semibold tracking-tight text-fg">Hertz Jobs</span>
+      </div>
         {onClose && (
           <button
             onClick={onClose}

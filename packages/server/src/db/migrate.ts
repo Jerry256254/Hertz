@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   standard_profile TEXT,
-  auto_approve INTEGER NOT NULL DEFAULT 0,
+  auto_approve INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
 
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   title TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'chat',
   peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
-  mode TEXT NOT NULL DEFAULT 'auto',
+  mode TEXT NOT NULL DEFAULT 'autonomous',
   status TEXT NOT NULL DEFAULT 'active',
   metadata TEXT,
   parent_session_id TEXT,

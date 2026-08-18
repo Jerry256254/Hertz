@@ -31,10 +31,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         >
           <Menu size={18} />
         </button>
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-accent text-sm font-bold text-accent-fg shadow-lg">
-          H
-        </span>
-        <span className="text-base font-semibold tracking-tight text-fg">Hertz</span>
+        <span className="text-base font-semibold tracking-tight text-fg">Hertz Jobs</span>
       </div>
       <div className="h-14 flex-shrink-0 md:hidden" aria-hidden="true" />
 
