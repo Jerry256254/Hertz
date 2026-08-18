@@ -23,25 +23,25 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center bg-bg-sidebar px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-sm rounded-lg border border-border bg-bg-raised p-7 shadow-md">
-        <div className="mb-6 flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent text-sm font-bold text-accent-fg">
+    <div className="flex h-full items-center justify-center bg-gradient-bg px-4">
+      <form onSubmit={onSubmit} className="w-full max-w-sm rounded-xl border border-border bg-bg-raised p-8 shadow-lg">
+        <div className="mb-7 flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-accent text-lg font-bold text-accent-fg shadow-lg">
             H
           </span>
           <div>
-            <p className="text-sm font-semibold leading-none text-fg">Hertz</p>
-            <p className="text-[11px] leading-none text-fg-subtle">by KucLab</p>
+            <p className="text-xl font-semibold leading-none text-fg">Hertz</p>
+            <p className="text-sm leading-none text-fg-subtle">by KucLab</p>
           </div>
         </div>
 
-        <h1 className="mb-5 text-base font-semibold text-fg">Sign in</h1>
+        <h1 className="mb-6 text-lg font-semibold text-fg">Sign in</h1>
 
-        <div className="mb-3">
+        <div className="mb-4">
           <Label>Email</Label>
           <Input type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
-        <div className="mb-5">
+        <div className="mb-6">
           <Label>Password</Label>
           <Input
             type="password"
@@ -51,7 +51,7 @@ export function LoginPage() {
           />
         </div>
 
-        {error && <p className="mb-3 text-xs text-danger">{error}</p>}
+        {error && <p className="mb-4 text-sm text-danger">{error}</p>}
 
         <Button type="submit" variant="primary" size="md" disabled={submitting} className="w-full">
           {submitting ? "Signing in…" : "Sign in"}
