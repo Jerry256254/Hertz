@@ -2,93 +2,277 @@
 
 Self-hosted autonomous agent platform — one command starts a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you can talk to them from Telegram or Discord.
 
-**➡️ Run: `npx kuclab-hertz`** — installs, runs the setup wizard, and starts the local server with WebUI. No registration, no cloud account.
+**➡️ Quick start:** `npx kuclab-hertz` — installs everything, opens a setup wizard, and starts a local server with a web interface. No registration, no cloud account, nothing leaves your machine.
 
-## Features
+---
 
-- **Agent loop** — read/write/edit files, shell, grep/glob, web fetch, todo/plan, all scoped to a sandboxed project root.
-- **A durable 24/7 runtime** — every bot's work is a job in a database-backed queue: a server crash or reboot costs at most the current turn, never the intent to work. On boot Hertz reconciles automatically and resumes exactly where interrupted runs stopped (including repairing half-finished tool calls). Pause/resume survive restarts; provider hiccups (429/5xx) retry with exponential backoff; long autonomous runs auto-extend past the turn budget instead of stalling.
-- **Each bot has its own computer (Docker)** — switch any agent to the `docker` backend and it gets a dedicated container with its own filesystem workspace, shells, resource caps (`--memory 2g --cpus 2 --pids-limit 512`, no-new-privileges), and auto-restart. Project and personal directories are mounted at identical host paths so every tool works unchanged.
-- **Browser automation inside the bot's computer** — docker-backend bots get a persistent Playwright/Chromium daemon (`browser_navigate/click/type/press/snapshot/screenshot`): log into your apps once and the login persists across calls, Grok-Bot-style. Screenshots land in the bot's personal folder where both of you can see them.
-- **Heartbeats (proactive bots)** — give a bot an interval plus standing instructions ("check my inbox hourly") and it wakes itself up on schedule, acts on what it owns, reports only when there is something worth reporting, and stays quiet otherwise.
-- **Human-in-the-loop approvals** — before sending e-mail on your behalf, spending money, publishing or deleting anything real, a bot files a request ("Should I send this e-mail?"), its session parks, and the decision from the Approvals inbox resumes it automatically with the verdict.
-- **Skills — bots that learn workflows** — after solving something repeatable, a bot saves the exact procedure as a personal skill (`save_skill`); every later prompt carries just the skill index and `read_skill` pulls full steps only when relevant. Skills follow the bot across all projects.
-- **Chat channels: Telegram & Discord** — connect a bot token and message your agents from your phone; inbound messages route to a bound session thread and replies are delivered back into the same chat. Optional chat-ID allowlist.
-- **An organization, not just a chat** — every project has a Manager agent that first reviews the existing team and prefers delegating work over hiring duplicates; when it hires, it picks an employee model based on the task from available providers (list_provider_models), not just a copy of its own. Managers have no file-write or shell access, so they cannot do the work themselves; employees can work across multiple projects and the manager sees the memory of the whole team.
-- **Multiple user accounts** — admins create additional accounts and grant project access per account (non-admin users only see the projects they were given); everyone can change their own password.
-- **Persistent employee memory** — every agent manages its own memory (remember/list_memory/forget) and its own folder on disk (notes/materials/data) outside the shared project root, both visible to the user.
-- **Employees talk to each other** — direct messages (message_employee) land in a real per-pair chat thread with its own context window, and group meetings are supported — all transparently visible to the user, not just one-way delegation. Agents answer even while mid-work, and you can message an agent while it is working without stopping it.
-- **Pause/resume/hard-stop** — pause between turns, resume later (works across restarts), or abort the in-flight model call entirely with Stop.
-- **Tasks and routines** — a task can be assigned to a chosen subset of the team; routines re-brief the same agent on a schedule (daily/weekly/custom cron); everything goes through the durable queue, so scheduled work survives restarts too.
-- **MCP integration with real OAuth** — Gmail, Google Drive, and Slack connect through a real login screen (the CEO registers their own OAuth app once), not manual token pasting; Gmail/Drive run on our own first-party MCP server (`@kuclab-hertz/mcp-google`). A tile catalog also covers GitHub/Postgres/etc., globally or per employee.
-- **Hire and termination approvals** — the manager may request a new employee (hire_employee) or a termination (fire_employee), but both only take effect after user (CEO) approval — like a real company; a per-project "Auto-approve" toggle can approve both automatically. The CEO can change any employee's model/provider at any time.
-- **A real Linux shell per employee** — a persistent bash process (not a one-shot spawn), multiple named shells, access sharing between colleagues, transcript visible to the user; docker-backend employees' shells run inside their container.
-- **Employee detail page** — one page for CEO oversight: job description, memory, personal disk space, MCP settings, shells, computer status/restart, heartbeat configuration, skills.
-- **`/compact`** — one chat command summarizes the session history into a single summary message; later turns only read that.
-- **Bring your own API key, provider choice, key pool** — Anthropic, OpenAI, Google, or any OpenAI-compatible endpoint (Ollama, OpenRouter, vLLM, LM Studio…), with automatic model scanning and rotation across multiple keys on rate limits.
-- **Sessions run independently of the browser** — close the tab, the agent keeps working; come back and see the full progress.
-- **WebUI for phone and desktop** — login, project management, streamed chat, file explorer, tool-step checklist rendering, sidebar that becomes a slide-out menu on mobile.
-- **Token-efficiency first** — scoped file reads, prompt caching, token/cost telemetry on every request.
-- **Security** — API keys, channel tokens and MCP secrets encrypted at rest (AES-256-GCM under a master key), shell allowlist (including `gh`) enforced also for container execution, PathGuard containment including browser screenshot writes, audit log for every action.
+## Contents
 
-## Your bot's own computer (Docker backend)
+1. [What is this?](#1-what-is-this)
+2. [What you need before installing](#2-what-you-need-before-installing)
+3. [Installing Node.js](#3-installing-nodejs)
+4. [Starting Hertz Jobs](#4-starting-hertz-jobs)
+5. [First run — the setup wizard](#5-first-run--the-setup-wizard)
+6. [Your first project and your first bot](#6-your-first-project-and-your-first-bot)
+7. [Making bots autonomous (the Grok-Bot features)](#7-making-bots-autonomous-the-grok-bot-features)
+8. [Running 24/7 (so work survives closing the terminal)](#8-running-247-so-work-survives-closing-the-terminal)
+9. [Updating](#9-updating)
+10. [Where your data lives](#10-where-your-data-lives)
+11. [Troubleshooting](#11-troubleshooting)
+12. [For developers: build from source](#12-for-developers-build-from-source)
 
-The default `local` backend runs everything as plain processes next to the server. For Grok-Bot-style isolation, build the computer image once and switch agents to Docker:
+---
+
+## 1. What is this?
+
+Think of Hertz Jobs as a small company living on your computer:
+
+- You are the **CEO**.
+- Every project has a **manager** — an AI that plans, hires other AI **employees**, and delegates work to them.
+- Employees are real autonomous **bots**: they read and write files, run shell commands, browse websites, use your connected apps (Gmail, Slack…), and keep working after you close the browser.
+- Everything happens **on your machine**. You bring your own AI API key; there is no subscription and no vendor lock-in.
+
+Typical things people ask their team to do:
+"Research these 20 companies and draft a personalized e-mail to each", "Fix the failing tests in my repo", "Every Friday, generate a sales report from this folder".
+
+---
+
+## 2. What you need before installing
+
+| Requirement | Minimum | Notes |
+|---|---|---|
+| Operating system | Linux, macOS, or Windows | Windows works best through [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) |
+| RAM | 4 GB free | More = more parallel bots |
+| Disk | ~500 MB + your projects | The database grows slowly over time |
+| Internet | Required | Bots call AI providers and fetch web pages |
+| An AI API key | Any ONE of: Anthropic, OpenAI, Google, xAI, Mistral, DeepSeek, OpenRouter… or a local Ollama | This pays the AI provider directly for what the bots think |
+
+> **Where do I get an API key?**
+> Create an account at your chosen provider (e.g. [console.anthropic.com](https://console.anthropic.com), [platform.openai.com](https://platform.openai.com), [aistudio.google.com](https://aistudio.google.com), [openrouter.ai](https://openrouter.ai)) and create an "API key" in their dashboard. It looks like `sk-...`. Copy it — you'll paste it into the setup wizard in step 5. You only pay the provider for actual usage; Hertz itself is free.
+
+Optional extras (all set up later, none required to start):
+- **Docker** — gives each bot its own isolated container ("its own computer") and enables browser automation,
+- a **Telegram** or **Discord** bot token — so you can message your bots from your phone.
+
+---
+
+## 3. Installing Node.js
+
+Hertz needs **Node.js version 20 or newer**. Check whether you already have it:
+
+```bash
+node --version
+```
+
+If you see `v20.` or higher (e.g. `v22.11.0`) — skip to step 4.
+
+**Don't have it, or too old?** Install the current LTS version:
+
+- **Windows:** download the LTS installer from <https://nodejs.org>, run it, click Next until done. (Or use WSL2 and follow the Linux steps inside it.)
+- **macOS:** download the LTS installer from <https://nodejs.org>, or run `brew install node` if you use Homebrew.
+- **Linux (Debian/Ubuntu):**
+  ```bash
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt install -y nodejs
+  ```
+- **Linux (Fedora/RHEL):** `sudo dnf install nodejs`
+
+Then verify again: `node --version` should print v20+.
+
+---
+
+## 4. Starting Hertz Jobs
+
+Open a terminal and run **one command**:
+
+```bash
+npx kuclab-hertz
+```
+
+What happens the first time:
+1. `npx` downloads the package (takes a minute),
+2. a small setup wizard asks two network questions — just press **Enter** twice to accept the defaults (`127.0.0.1`, port `3000`),
+   - choose `0.0.0.0` only if you deliberately want other devices on your network to reach the server,
+3. the server starts and prints something like `KucLab Hertz is running at http://127.0.0.1:3000`.
+
+Now open that address (**http://127.0.0.1:3000**) in your browser. That's the whole product — there is no desktop app.
+
+> Keep this terminal window open! Closing it stops the server (see [section 8](#8-running-247-so-work-survives-closing-the-terminal) for running it permanently).
+
+---
+
+## 5. First run — the setup wizard
+
+The browser shows a short wizard. Two screens:
+
+**Screen 1 — CEO account.** Enter your e-mail and pick a password (min. 8 characters). This account is stored locally; the e-mail is just a login name, nothing is sent anywhere.
+
+**Screen 2 — Connect an AI provider.**
+1. Pick a provider from the list (e.g. Anthropic, OpenAI, Google, OpenRouter, Ollama).
+2. Paste the API key you created in step 2.
+3. Click scan/save — Hertz lists the models available on your key automatically.
+
+That's it — you land on the dashboard.
+
+---
+
+## 6. Your first project and your first bot
+
+1. Click **New project**, give it a name, and point it at a folder on disk (you can also create a fresh empty folder here). This folder is the bots' shared workspace — they will read and edit real files in it.
+2. Hertz creates a **manager** for the project automatically. Open the project and just type into the chat:
+   > *"Find out what's in this folder and summarize it."*
+   
+   The manager reads files with tools and answers — you see every step live.
+3. Ask the manager for real work:
+   > *"Hire an implementer and have them build a simple landing page in index.html."*
+   
+   The manager hires an employee (picking a suitable model), assigns the task, and reports back when it's done. You watch everything transparently — including agent-to-agent chats.
+4. Useful controls while a bot works: **Pause** (it finishes its current step and waits), **Stop** (hard-stop now), mode switcher per message — *Plan* (think only), *Auto* (may ask you questions), *Autonomous* (never asks, works until done).
+
+From here you can add the autonomy features below whenever you want them.
+
+---
+
+## 7. Making bots autonomous (the Grok-Bot features)
+
+All of these are optional. Each takes a few minutes.
+
+### 7.1 Give each bot its own computer (Docker)
+
+By default bots run next to the server. With Docker, each bot gets an isolated container with its own filesystem and shells:
 
 ```bash
 docker build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile .
 ```
 
-Then open an employee's page → **Bot computer** → backend `docker`. The container mounts the project root and the employee's personal directory at their host paths, keeps running across server restarts (`--restart unless-stopped`), and hosts the persistent shell and the browser daemon. Requires Docker on the host machine.
+(Install Docker first: <https://docs.docker.com/get-docker/>. The build takes a few minutes.)
 
-## Recommended: run it in tmux
+Then: open an employee's page → **Overview** tab → **Bot computer** card → switch to `docker` → **Restart**. A green `running` badge means the bot's computer is up.
 
-The server keeps running as long as the process lives, but a terminal that closes (SSH drop, reboot, laptop lid) takes it down. Install tmux and run Hertz in the background so it survives disconnects:
+### 7.2 Browser automation
 
-```bash
-# install tmux (Debian/Ubuntu):
-sudo apt install tmux
-# Fedora:
-sudo dnf install tmux
+Bots on the Docker backend get a persistent Chromium: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_screenshot`. Log in once and the login persists across calls — so you can say *"log into my Zendesk and go through open tickets"* and it works like a human session.
 
-tmux new -s hertz          # create a named session
-npx kuclab-hertz           # start the server inside tmux
-# detach with Ctrl-B D — the server keeps running; reattach anytime:
-tmux attach -t hertz
+### 7.3 Heartbeats — bots that wake themselves up
+
+On the employee page → **Heartbeat** card, set an interval (e.g. 60 minutes) and standing instructions, e.g.:
+
+```
+Check my inbox via the Gmail connector and summarize anything urgent.
+No news? Reply exactly (idle).
 ```
 
-## Download
+The bot now wakes itself hourly, acts on what it owns, and stays silent when there's nothing to report. All self-initiated work lands in one inspectable "Heartbeat" chat.
 
-Clone the repository and build it (see below), or grab the latest release assets from the [releases page](https://github.com/Jerry256254/Hertz/releases/latest).
+### 7.4 Approvals — bots ask before doing anything risky
+
+Before sending an e-mail on your behalf, spending money, publishing or deleting anything, a bot calls `request_approval`. Its request appears in the sidebar under **Approvals** with Approve/Reject buttons — your decision is delivered straight back into the bot's work. Nothing risky happens without you.
+
+### 7.5 Skills — bots remember procedures
+
+When a bot figures out something repeatable (a weekly report, a deployment dance), tell it: *"save this as a skill"*. Next time it follows its own saved recipe (`save_skill` / `read_skill`). Skills appear on the employee page and follow the bot across projects.
+
+### 7.6 Talk to your bots from your phone (Telegram / Discord)
+
+**Telegram (easiest):**
+1. In Telegram, message [@BotFather](https://t.me/BotFather): `/newbot`, follow prompts, copy the token.
+2. Hertz sidebar → **Channels** (admin) → **Connect a bot** → paste token → pick a default agent.
+3. Message your bot on Telegram. Replies come back to the same chat.
+
+**Discord:** create an app in the [Developer Portal](https://discord.com/developers/applications), enable **MESSAGE CONTENT INTENT** (Bot tab), invite the bot, paste its token on the Channels page.
+
+Set the "allowed chats" field to your own chat/channel IDs so only you can talk to the bots.
+
+### 7.7 Routines, tasks, MCP integrations
+
+- **Routines** (project page) — cron-style recurring briefings: *"every weekday at 8:00, triage the inbox folder"*.
+- **Tasks** — hand one brief to several employees at once; each gets its own session.
+- **Integrations** — Gmail, Google Drive, Slack (with a real OAuth login screen), GitHub, Postgres and more via MCP.
+
+---
+
+## 8. Running 24/7 (so work survives closing the terminal)
+
+The server keeps working as long as its process lives — but closing the terminal kills it. Run it inside **tmux** so it keeps going in the background:
 
 ```bash
-git clone https://github.com/Jerry256254/Hertz.git
-cd Hertz
+sudo apt install tmux        # Debian/Ubuntu    (Fedora: sudo dnf install tmux)
+tmux new -s hertz            # create a background workspace named "hertz"
+npx kuclab-hertz             # start the server inside it
 ```
 
-## Build from source
+Detach (leave it running): press **Ctrl-B**, then **D**. You're back in a normal terminal; the server lives on.
 
-Requires Node.js ≥20 and [pnpm](https://pnpm.io).
+Come back anytime: `tmux attach -t hertz`.
+
+And because of the durable job queue, even a crash or reboot isn't a problem: on the next start Hertz resumes interrupted sessions exactly where they stopped.
+
+---
+
+## 9. Updating
+
+```bash
+npx kuclab-hertz@latest
+```
+
+That's all — database migrations run automatically on boot, your data stays.
+
+---
+
+## 10. Where your data lives
+
+Everything is local, in `~/.kuclab-hertz/`:
+
+| File/folder | What it is |
+|---|---|
+| `config.json` | Host/port settings from the wizard |
+| `master.key` | Encryption key for stored secrets (**back this up** — without it saved keys/tokens are unreadable) |
+| `hertz.db` | The whole database: accounts, chats, memory, queue |
+| `projects/` | Bot personal folders (notes/materials/data per employee) |
+| `logs/` | Server and audit logs |
+| `agents/<id>/skills/` | Bots' learned skills |
+
+---
+
+## 11. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `npx kuclab-hertz` says "command not found" or Node errors | Node.js missing or too old — see [section 3](#3-installing-nodejs) |
+| Browser shows nothing at localhost:3000 | Check the terminal for the exact address/port; make sure the server is still running |
+| Forgot password | Delete is drastic — for now ask on the project's issues page; future versions get a reset CLI |
+| Provider scan finds no models | Double-check the API key and that the provider isn't blocked by a firewall/proxy |
+| A bot seems stuck | Open its session and press **Stop**, then send a new message; the durable queue never loses the work |
+| Session shows `active` after a crash | Rebooting the server auto-resumes it (look for `[hertz] recovered after restart` in the log) |
+| Docker backend badge says `unavailable` | Docker isn't running on the host — start Docker Desktop/the daemon |
+| Browser tools say a computer is required | Switch that bot to the `docker` backend (section 7.1) |
+| Discord bot ignores messages | Enable MESSAGE CONTENT INTENT in the Developer Portal |
+| Port already in use | Start with another port: rerun `pnpm setup` / the wizard, or edit `~/.kuclab-hertz/config.json` |
+
+Found a bug? Please [open an issue](https://github.com/Jerry256254/Hertz/issues).
+
+---
+
+## 12. For developers: build from source
+
+Requires Node.js ≥ 20 and [pnpm](https://pnpm.io).
 
 ```bash
 git clone https://github.com/Jerry256254/Hertz.git
 cd Hertz
 pnpm install
 pnpm build
-```
-
-Then run it (the `kuclab-hertz` binary is only on your PATH after a global install — from a checkout use the pnpm scripts):
-
-```bash
 pnpm setup   # first run only — creates the network config
 pnpm start   # starts the server + WebUI (or: pnpm hertz)
 ```
 
-`pnpm hertz` passes through to the CLI, so `pnpm hertz setup` / `pnpm hertz start` work too. Everything lives in `~/.kuclab-hertz` (config, database, projects).
+`pnpm hertz` passes through to the CLI, so `pnpm hertz setup` / `pnpm hertz start` work too. Monorepo layout: `packages/{cli,core,tools,sandbox,providers,mcp,mcp-google,server,standard,web}`.
+
+A smoke test against built packages lives in `.smoke-test/` (fake LLM provider + scripted end-to-end checks).
 
 ## Stack
 
-Node.js + TypeScript, Fastify + WebSocket, SQLite (libSQL) + Drizzle ORM, React + Vite + Tailwind.
+Node.js + TypeScript, Fastify + WebSocket, SQLite (libSQL) + Drizzle ORM, React + Vite + Tailwind, Docker (optional bot computers), Playwright (optional browser automation).
 
 ## License
 
