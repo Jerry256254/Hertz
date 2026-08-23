@@ -189,7 +189,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
           className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
         >
           <ShieldCheck size={15} />
-          Schválení
+          Approvals
         </Link>
         {user?.role === "admin" && (
           <Link
@@ -197,7 +197,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
             className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
           >
             <Radio size={15} />
-            Kanály
+            Channels
           </Link>
         )}
         <Link

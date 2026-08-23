@@ -225,9 +225,9 @@ function ComputerCard({ agentId, backend }: { agentId: string; backend: "local" 
 
   return (
     <Card className="p-4">
-      <p className="text-sm font-medium text-fg">Počítač bota</p>
+      <p className="text-sm font-medium text-fg">Bot computer</p>
       <p className="mb-3 text-xs text-fg-subtle">
-        Docker = izolovaný kontejner s vlastním filesystémem, shellem a browserem (vyžaduje image kuclab-hertz-computer).
+        Docker = an isolated container with its own filesystem, shells, and browser (requires the kuclab-hertz-computer image).
       </p>
       <div className="flex items-center gap-2">
         <select
@@ -235,8 +235,8 @@ function ComputerCard({ agentId, backend }: { agentId: string; backend: "local" 
           onChange={(e) => patch.mutate({ computerBackend: e.target.value })}
           className="h-9 flex-1 rounded-md border border-border bg-bg-raised px-3 text-sm text-fg outline-none focus:border-accent"
         >
-          <option value="local">local — přímo na serveru</option>
-          <option value="docker">docker — vlastní kontejner</option>
+          <option value="local">local — on the host machine</option>
+          <option value="docker">docker — dedicated container</option>
         </select>
         <Badge tone={effectiveBackend === "docker" ? (data?.status === "running" ? "success" : "warning") : "neutral"}>
           {effectiveBackend === "docker" ? data?.status ?? "?" : "local"}
@@ -254,7 +254,7 @@ function ComputerCard({ agentId, backend }: { agentId: string; backend: "local" 
                 restart.mutate();
               }}
             >
-              Restartovat
+              Restart
             </Button>
           </div>
           {data?.containerName && <p className="mono truncate text-xs text-fg-subtle">{data.containerName}</p>}
@@ -284,24 +284,24 @@ function HeartbeatCard({ agentId, minutes, prompt }: { agentId: string; minutes:
     <Card className="p-4">
       <p className="text-sm font-medium text-fg">Heartbeat</p>
       <p className="mb-3 text-xs text-fg-subtle">
-        Agent se pravidelně sám probudí, zkontroluje, co má na starost, a případně se ozve. 0 = vypnuto.
+        The agent wakes itself up on an interval, reviews what it owns, and reports only if there is something worth reporting. 0 = off.
       </p>
       <div className="space-y-3">
         <div>
-          <Label>Interval (minuty)</Label>
+          <Label>Interval (minutes)</Label>
           <Input value={mins} onChange={(e) => setMins(e.target.value)} inputMode="numeric" className="h-8 w-28 text-xs" />
         </div>
         <div>
-          <Label>Stálé instrukce pro heartbeat</Label>
+          <Label>Standing heartbeat instructions</Label>
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Např.: Zkontroluj můj e-mail a shrň důležité. Nic naléhavého? Odpověz jen (idle)."
+            placeholder="e.g. Check my e-mail and summarize anything urgent. Nothing urgent? Reply just (idle)."
             rows={3}
           />
         </div>
         <Button size="sm" variant="secondary" onClick={() => save.mutate()} disabled={save.isPending}>
-          Uložit
+          Save
         </Button>
       </div>
     </Card>
@@ -324,10 +324,10 @@ function SkillsCard({ agentId }: { agentId: string }) {
     <Card className="p-4">
       <p className="text-sm font-medium text-fg">Skills</p>
       <p className="mb-2 text-xs text-fg-subtle">
-        Postupy, které se bot naučil a uložil si je pro opakované použití (save_skill / read_skill).
+        Procedures the bot learned and saved for reuse (save_skill / read_skill).
       </p>
       {skills.length === 0 ? (
-        <p className="text-xs text-fg-subtle">Zatím žádné — objeví se, jakmile bot nějaký postup uloží.</p>
+        <p className="text-xs text-fg-subtle">None yet — they appear once the bot saves its first procedure.</p>
       ) : (
         <ul className="space-y-1.5">
           {skills.map((s) => (

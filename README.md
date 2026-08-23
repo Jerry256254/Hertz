@@ -2,11 +2,7 @@
 
 Self-hosted autonomous agent platform — one command starts a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you can talk to them from Telegram or Discord.
 
-[![Download latest release](https://img.shields.io/github/v/release/Jerry256254/Hertz?label=Download&style=for-the-badge&color=D97757&cacheSeconds=86400)](https://github.com/Jerry256254/Hertz/releases/latest)
-
 **➡️ Run: `npx kuclab-hertz`** — installs, runs the setup wizard, and starts the local server with WebUI. No registration, no cloud account.
-
-> 🇨🇿 Kompletní návod v češtině: [docs/NAVOD-CZ.md](docs/NAVOD-CZ.md)
 
 ## Features
 
@@ -15,7 +11,7 @@ Self-hosted autonomous agent platform — one command starts a server with a Web
 - **Each bot has its own computer (Docker)** — switch any agent to the `docker` backend and it gets a dedicated container with its own filesystem workspace, shells, resource caps (`--memory 2g --cpus 2 --pids-limit 512`, no-new-privileges), and auto-restart. Project and personal directories are mounted at identical host paths so every tool works unchanged.
 - **Browser automation inside the bot's computer** — docker-backend bots get a persistent Playwright/Chromium daemon (`browser_navigate/click/type/press/snapshot/screenshot`): log into your apps once and the login persists across calls, Grok-Bot-style. Screenshots land in the bot's personal folder where both of you can see them.
 - **Heartbeats (proactive bots)** — give a bot an interval plus standing instructions ("check my inbox hourly") and it wakes itself up on schedule, acts on what it owns, reports only when there is something worth reporting, and stays quiet otherwise.
-- **Human-in-the-loop approvals** — before sending e-mail on your behalf, spending money, publishing or deleting anything real, a bot files a request ("Mám poslat tento e-mail?"), its session parks, and the decision from the Approvals inbox resumes it automatically with the verdict.
+- **Human-in-the-loop approvals** — before sending e-mail on your behalf, spending money, publishing or deleting anything real, a bot files a request ("Should I send this e-mail?"), its session parks, and the decision from the Approvals inbox resumes it automatically with the verdict.
 - **Skills — bots that learn workflows** — after solving something repeatable, a bot saves the exact procedure as a personal skill (`save_skill`); every later prompt carries just the skill index and `read_skill` pulls full steps only when relevant. Skills follow the bot across all projects.
 - **Chat channels: Telegram & Discord** — connect a bot token and message your agents from your phone; inbound messages route to a bound session thread and replies are delivered back into the same chat. Optional chat-ID allowlist.
 - **An organization, not just a chat** — every project has a Manager agent that first reviews the existing team and prefers delegating work over hiring duplicates; when it hires, it picks an employee model based on the task from available providers (list_provider_models), not just a copy of its own. Managers have no file-write or shell access, so they cannot do the work themselves; employees can work across multiple projects and the manager sees the memory of the whole team.
@@ -43,7 +39,7 @@ The default `local` backend runs everything as plain processes next to the serve
 docker build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile .
 ```
 
-Then open an employee's page → **Počítač bota** → backend `docker`. The container mounts the project root and the employee's personal directory at their host paths, keeps running across server restarts (`--restart unless-stopped`), and hosts the persistent shell and the browser daemon. Requires Docker on the host machine; see [docs/NAVOD-CZ.md](docs/NAVOD-CZ.md) for the complete Czech guide.
+Then open an employee's page → **Bot computer** → backend `docker`. The container mounts the project root and the employee's personal directory at their host paths, keeps running across server restarts (`--restart unless-stopped`), and hosts the persistent shell and the browser daemon. Requires Docker on the host machine.
 
 ## Recommended: run it in tmux
 

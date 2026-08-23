@@ -48,14 +48,14 @@ export function ApprovalsPage() {
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6">
       <div className="mb-5 flex items-center gap-2">
         <ShieldCheck size={18} className="text-accent" />
-        <h1 className="text-base font-semibold text-fg">Schválení</h1>
+        <h1 className="text-base font-semibold text-fg">Approvals</h1>
       </div>
       <p className="mb-6 text-sm text-fg-muted">
-        Akce, u kterých se agenti předem ptají ("Mám to poslat?"). Rozhodnutí se hned vrátí agentovi do práce.
+        Actions the bots ask about in advance ("Should I send this?"). Your decision is delivered straight back into their work.
       </p>
 
       {pending.length === 0 ? (
-        <EmptyState title="Nic nečeká" description="Když bude některý bot potřebovat souhlas s citlivou akcí, objeví se tu." />
+        <EmptyState title="Nothing waiting" description="When a bot needs your approval for a sensitive action, it shows up here." />
       ) : (
         <div className="mb-8 space-y-3">
           {pending.map((a) => (
@@ -77,7 +77,7 @@ export function ApprovalsPage() {
                   onClick={() => decide.mutate({ id: a.id, decision: "approved" })}
                   disabled={decide.isPending}
                 >
-                  Schválit
+                  Approve
                 </Button>
                 <Button
                   size="sm"
@@ -85,7 +85,7 @@ export function ApprovalsPage() {
                   onClick={() => decide.mutate({ id: a.id, decision: "rejected" })}
                   disabled={decide.isPending}
                 >
-                  Zamítnout
+                  Reject
                 </Button>
               </div>
             </Card>
@@ -95,12 +95,12 @@ export function ApprovalsPage() {
 
       {decided.length > 0 && (
         <>
-          <h2 className="mb-3 text-sm font-medium text-fg">Historie</h2>
+          <h2 className="mb-3 text-sm font-medium text-fg">History</h2>
           <ul className="space-y-1.5">
             {decided.map((a) => (
               <li key={a.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
                 <Badge tone={a.status === "approved" ? "success" : "danger"}>
-                  {a.status === "approved" ? "schváleno" : "zamítnuto"}
+                  {a.status === "approved" ? "approved" : "rejected"}
                 </Badge>
                 <span className="min-w-0 flex-1 truncate text-fg">{a.summary}</span>
                 <span className="flex-shrink-0 text-fg-subtle">{a.agentName}</span>
