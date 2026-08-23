@@ -8,6 +8,8 @@ export interface HertzConfig {
 
 const DEFAULT_CONFIG: HertzConfig = { host: "127.0.0.1", port: 4173 };
 
+export const DEFAULT_HOST = DEFAULT_CONFIG.host;
+
 export async function loadConfig(paths: HertzPaths): Promise<HertzConfig | undefined> {
   try {
     const raw = await fs.readFile(paths.configPath, "utf8");

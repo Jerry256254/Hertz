@@ -121,7 +121,9 @@ And start the server:
 pnpm start
 ```
 
-You'll see something like `KucLab Hertz is running at http://127.0.0.1:3000`. Open that address (**http://127.0.0.1:3000**) in your browser. That's the whole product — there is no desktop app.
+You'll see something like `KucLab Hertz is running at http://127.0.0.1:4173`. Open that address (**http://127.0.0.1:4173**) in your browser — on the same machine. That's the whole product — there is no desktop app.
+
+> **Running Hertz on a server and browsing from your laptop/phone?** (LAN or Tailscale) Then during `pnpm setup` choose **"All interfaces (0.0.0.0)"**, not "This machine only" — otherwise the WebUI is unreachable from anywhere else. If you already picked the wrong one, just run `pnpm setup` again, or set `"host": "0.0.0.0"` in `~/.kuclab-hertz/config.json`, and restart. The server prints all reachable addresses on startup.
 
 Everyday routine from now on is just:
 
@@ -278,7 +280,8 @@ Everything is local, in `~/.kuclab-hertz/`:
 | `pnpm: command not found` | pnpm missing — see [section 3](#3-installing-nodejs-and-pnpm) (`corepack enable`) |
 | `node: command not found` or old version | Node.js missing or too old — see [section 3](#3-installing-nodejs-and-pnpm) |
 | `pnpm install` fails on a native module (argon2) | Install build tools: Debian/Ubuntu `sudo apt install -y build-essential python3`, macOS `xcode-select --install` |
-| Browser shows nothing at localhost:3000 | Check the terminal for the exact address/port; make sure the server is still running |
+| Browser shows nothing at localhost:4173 | Check the terminal for the exact address/port; make sure the server is still running |
+| Can't reach the WebUI from another machine (LAN/Tailscale) | The server binds to 127.0.0.1 only. Run `pnpm setup` and choose "All interfaces (0.0.0.0)", or set `"host": "0.0.0.0"` in `~/.kuclab-hertz/config.json`, restart — then open `http://<server-ip>:4173`. If a firewall still blocks it: `sudo ufw allow 4173/tcp` (Ubuntu) or `sudo firewall-cmd --add-port=4173/tcp --permanent && sudo firewall-cmd --reload` (Fedora) |
 | Forgot password | For now ask on the project's issues page; future versions get a reset CLI |
 | Provider scan finds no models | Double-check the API key and that the provider isn't blocked by a firewall/proxy |
 | A bot seems stuck | Open its session and press **Stop**, then send a new message; the durable queue never loses the work |

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -24,6 +25,22 @@ function resolveWebDistDir(): string | undefined {
   return undefined;
 }
 
+function isLoopback(host: string): boolean {
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
+  return host.startsWith("127.");
+}
+
+/** Non-internal IPv4 addresses of this machine — candidates other devices can reach. */
+export function lanAddresses(): string[] {
+  const out: string[] = [];
+  for (const nets of Object.values(os.networkInterfaces())) {
+    for (const net of nets ?? []) {
+      if (net.family === "IPv4" && !net.internal) out.push(net.address);
+    }
+  }
+  return [...new Set(out)];
+}
+
 export async function startServer(ctx: AppContext, config: HertzConfig): Promise<void> {
   const webDistDir = resolveWebDistDir();
   if (!webDistDir) {
@@ -34,4 +51,25 @@ export async function startServer(ctx: AppContext, config: HertzConfig): Promise
   await app.listen({ host: config.host, port: config.port });
 
   console.log(kleur.bold(kleur.green(`\nKucLab Hertz is running at http://${config.host}:${config.port}\n`)));
+
+  if (isLoopback(config.host)) {
+    console.log(
+      kleur.yellow(
+        "⚠ This server listens on 127.0.0.1 only — it is NOT reachable from other machines\n" +
+          "  (LAN, Tailscale, VPN). If you browse from this same computer, you're fine.\n" +
+          "  To allow remote access, run the setup again (`pnpm setup` or `pnpm hertz setup`)\n" +
+          '  and choose "All interfaces", or set "host": "0.0.0.0" in ~/.kuclab-hertz/config.json,\n' +
+          "  then restart the server.\n",
+      ),
+    );
+  } else {
+    const addresses = lanAddresses();
+    if (addresses.length > 0) {
+      console.log("Reachable from other machines on:");
+      for (const address of addresses) {
+        console.log(`  → http://${address}:${config.port}`);
+      }
+      console.log("");
+    }
+  }
 }
