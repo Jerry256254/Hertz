@@ -49,11 +49,11 @@ export function MessageView({
     const senderName = message.senderAgentId ? senderNames?.[message.senderAgentId] : undefined;
     if (senderName) {
       return (
-        <div className="mx-auto flex w-full max-w-3xl gap-3 px-4 py-2">
+        <div className="mx-auto flex w-full max-w-3xl gap-3 px-4 py-1.5">
           <Avatar label={senderName} color={agentColor(message.senderAgentId!)} />
           <div className="min-w-0 max-w-[80%]">
             <p className="mb-0.5 text-xs font-medium text-fg-muted">{senderName}</p>
-            <div className="space-y-2 rounded-lg bg-bg-raised px-4 py-2.5 text-sm text-fg">
+            <div className="space-y-2 rounded-2xl rounded-tl-md bg-bg-raised px-4 py-2.5 text-sm text-fg">
               {imageBlocks.map((block, i) =>
                 block.type === "image" ? (
                   <img
@@ -78,8 +78,8 @@ export function MessageView({
     }
 
     return (
-      <div className="mx-auto flex w-full max-w-3xl justify-end px-4 py-2">
-        <div className="max-w-[80%] space-y-2 rounded-lg bg-accent-wash px-4 py-2.5 text-sm text-fg">
+      <div className="mx-auto flex w-full max-w-3xl justify-end px-4 py-1.5">
+        <div className="max-w-[75%] space-y-2 rounded-2xl rounded-tr-md bg-[#2c2f34] px-4 py-2.5 text-sm text-fg">
           {imageBlocks.map((block, i) =>
             block.type === "image" ? (
               <img

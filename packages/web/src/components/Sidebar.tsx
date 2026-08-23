@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight,
+  Search,
   Cog,
   FolderGit2,
   Loader2,
@@ -35,6 +36,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   const { user, logout } = useAuth();
   const params = useParams<{ projectId?: string; sessionId?: string }>();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
 
   const { data: projectsData } = useQuery({
     queryKey: ["projects"],
@@ -56,8 +58,10 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   });
 
   const sessionsByProject = useMemo(() => {
+    const q = query.trim().toLowerCase();
     const map = new Map<string, SidebarSession[]>();
     for (const session of sessionsData?.sessions ?? []) {
+      if (q && !`${session.title} ${session.agentName ?? ""} ${session.peerAgentName ?? ""}`.toLowerCase().includes(q)) continue;
       const list = map.get(session.projectId) ?? [];
       list.push(session);
       map.set(session.projectId, list);
@@ -91,13 +95,22 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
         )}
       </div>
 
-      <div className="px-3">
+      <div className="space-y-2 px-3">
+        <div className="flex h-9 items-center gap-2 rounded-xl border border-border bg-bg-raised px-3 focus-within:border-border-strong">
+          <Search size={14} className="flex-shrink-0 text-fg-subtle" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search chats"
+            className="w-full border-0 bg-transparent text-sm text-fg placeholder:text-fg-subtle outline-none"
+          />
+        </div>
         <button
           onClick={() => navigate("/")}
-          className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-bg-raised px-3.5 py-2.5 text-sm font-medium text-fg shadow-sm hover:border-border-strong hover:bg-bg-hover transition-all group"
+          className="flex w-full items-center gap-2.5 rounded-xl bg-bg-raised px-3.5 py-2.5 text-sm font-medium text-fg shadow-sm transition-all hover:bg-bg-hover group"
         >
           <Plus size={16} className="text-accent group-hover:scale-110 transition-transform" />
-          New chat
+          Create new
         </button>
       </div>
 

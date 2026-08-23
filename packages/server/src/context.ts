@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
+import path from "node:path";
 import { eq } from "drizzle-orm";
 import { AgentLoopManager } from "@kuclab-hertz/core";
 import type { AuditSink } from "@kuclab-hertz/sandbox";
@@ -45,6 +47,25 @@ export interface AppContext {
 
 export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const paths = resolveHertzPaths(dataDir);
+
+  // Factory reset: a previous run wrote reset.flag and exited; on this boot the
+  // flag means "wipe everything and start like the very first install".
+  const resetFlagPath = path.join(paths.dataDir, "reset.flag");
+  try {
+    if (fsSync.existsSync(resetFlagPath)) {
+      const reason = await fs.readFile(resetFlagPath, "utf8").catch(() => "");
+      console.log(`[hertz] factory reset requested (${reason.trim() || "manual"}) — wiping all data...`);
+      for (const entry of await fs.readdir(paths.dataDir)) {
+        if (entry === "reset.flag") continue;
+        await fs.rm(path.join(paths.dataDir, entry), { recursive: true, force: true });
+      }
+      await fs.rm(resetFlagPath, { force: true });
+      console.log("[hertz] factory reset complete — starting fresh.");
+    }
+  } catch (err) {
+    console.error("[hertz] factory reset failed:", (err as Error).message);
+  }
+
   await fs.mkdir(paths.logsDir, { recursive: true });
   await fs.mkdir(paths.projectsDir, { recursive: true });
   await fs.mkdir(paths.sessionsDir, { recursive: true });

@@ -77,6 +77,60 @@ export function AccountPage() {
           </Button>
         </form>
       </Card>
+
+      <DangerZone />
     </div>
+  );
+}
+
+function DangerZone() {
+  const [confirm, setConfirm] = useState("");
+  const [phase, setPhase] = useState<"idle" | "resetting">("idle");
+
+  async function doReset() {
+    setPhase("resetting");
+    try {
+      await api.post("/admin/reset", { confirm: "RESET" });
+    } catch {
+      /* server is going down either way */
+    }
+    // Poll until the server comes back as a fresh install, then reload.
+    const started = Date.now();
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch("/api/setup/status");
+        if (res.ok) {
+          const body = (await res.json()) as { needsSetup: boolean };
+          if (body.needsSetup || Date.now() - started > 30_000) {
+            clearInterval(poll);
+            window.location.reload();
+          }
+        }
+      } catch {
+        /* still restarting */
+      }
+    }, 1_500);
+  }
+
+  return (
+    <Card className="border-danger/40 p-4">
+      <p className="text-sm font-medium text-danger">Danger zone</p>
+      <p className="mb-3 text-xs text-fg-muted">
+        Factory reset: wipes ALL data — account, chats, memory, skills, provider keys, agent containers — and
+        restarts into a fresh first-run setup, like a brand-new download. This cannot be undone.
+      </p>
+      <div className="flex items-center gap-2">
+        <Input
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder='Type "RESET" to confirm'
+          className="h-9 max-w-xs text-sm"
+        />
+        <Button variant="danger" size="sm" disabled={confirm !== "RESET" || phase === "resetting"} onClick={() => void doReset()}>
+          {phase === "resetting" ? "Resetting…" : "Reset Hertz Jobs"}
+        </Button>
+      </div>
+      {phase === "resetting" && <p className="mt-2 text-xs text-fg-muted">Server is restarting — this page reloads automatically.</p>}
+    </Card>
   );
 }

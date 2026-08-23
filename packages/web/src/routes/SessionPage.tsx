@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Files, Paperclip, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Files, Monitor, Paperclip, Pause, Play, Settings, Square, TriangleAlert, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Budget, HertzSession, PersistedMessage } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
 import { MessageView } from "../components/MessageView";
 import { Markdown } from "../components/Markdown";
 import { FileExplorer } from "../components/FileExplorer";
-import { IconButton, Input } from "../components/ui";
+import { IconButton, Input, Badge, Button } from "../components/ui";
+import { Clock } from "lucide-react";
 import { agentColor } from "../lib/agent-color";
 
 interface SessionDetail {
@@ -89,6 +90,7 @@ function EditableTitle({ sessionId, title }: { sessionId: string; title: string 
 
 export function SessionPage() {
   const { sessionId, projectId } = useParams<{ sessionId: string; projectId: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [images, setImages] = useState<Array<{ mimeType: string; data: string }>>([]);
@@ -97,6 +99,7 @@ export function SessionPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [runError, setRunError] = useState<string | undefined>(undefined);
   const [showFiles, setShowFiles] = useState(false);
+  const [showScreen, setShowScreen] = useState(false);
   const mode = "autonomous" as const;
   const [answerText, setAnswerText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -300,10 +303,20 @@ export function SessionPage() {
   }, [data?.messages]);
 
   return (
-    <div className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-1 ${showFiles ? "md:grid-cols-[1fr_340px]" : "md:grid-cols-[1fr_0px]"}`}>
+    <div className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-1 ${showFiles || showScreen ? "md:grid-cols-[1fr_340px]" : "md:grid-cols-[1fr_0px]"}`}>
       <div className="flex min-w-0 flex-col">
         <header className="flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border px-6">
-          {data && <EditableTitle sessionId={sessionId!} title={data.session.title} />}
+          <div className="flex min-w-0 items-center gap-2.5">
+            {data?.agent && (
+              <span
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
+                style={{ background: agentColor(data.agent.id) }}
+              >
+                {data.agent.name.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            {data && <EditableTitle sessionId={sessionId!} title={data.session.title} />}
+          </div>
           <div className="flex items-center gap-3">
             {data?.session.kind === "conversation" && (
               <span className="rounded-full bg-bg-sunken px-2.5 py-1 text-[11px] font-medium text-fg-subtle">
@@ -362,12 +375,30 @@ export function SessionPage() {
               </div>
             )}
             <IconButton
+              title="Bot's screen — watch or take over"
+              onClick={() => {
+                setShowScreen((v) => !v);
+                setShowFiles(false);
+              }}
+              className={showScreen ? "bg-bg-hover text-fg" : ""}
+            >
+              <Monitor size={15} />
+            </IconButton>
+            <IconButton
               title="Toggle file browser"
-              onClick={() => setShowFiles((v) => !v)}
+              onClick={() => {
+                setShowFiles((v) => !v);
+                setShowScreen(false);
+              }}
               className={showFiles ? "bg-bg-hover text-fg" : ""}
             >
               <Files size={15} />
             </IconButton>
+            {data?.agent && projectId && (
+              <IconButton title="Bot settings" onClick={() => navigate(`/projects/${projectId}/agents/${data.agent!.id}`)}>
+                <Settings size={15} />
+              </IconButton>
+            )}
           </div>
         </header>
 
@@ -418,6 +449,31 @@ export function SessionPage() {
         </div>
 
         <div className="flex-shrink-0 px-4 pb-4">
+          {data?.pendingTakeover && (
+            <div className="mx-auto mb-3 w-full max-w-3xl px-4">
+              <div className="rounded-2xl border border-border bg-bg-raised p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="rounded-full bg-success-wash px-2 py-0.5 text-[11px] font-semibold text-success">
+                    ⚡ Action needed
+                  </span>
+                  <span className="text-sm font-medium text-fg">Take over the bot's screen</span>
+                </div>
+                <p className="mb-3 text-sm text-fg-muted">{data.pendingTakeover.reason}</p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => void openScreen(data.agent?.id ?? data.session.agentId)}
+                  >
+                    Take over
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => doneTakeover.mutate()}>
+                    I'm done
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
           {data?.pendingQuestion && data.session.status === "awaiting_input" && (
             <form
               onSubmit={submitAnswer}
@@ -461,7 +517,7 @@ export function SessionPage() {
               e.preventDefault();
               void onFiles(e.dataTransfer.files);
             }}
-            className="relative mx-auto max-w-3xl rounded-lg border border-border bg-bg-raised p-2 shadow-sm focus-within:border-border-strong"
+            className="relative mx-auto flex max-w-3xl items-end gap-1 rounded-full border border-border bg-bg-raised py-1.5 pl-2 pr-1.5 shadow-sm focus-within:border-border-strong"
           >
             {showJumpToBottom && (
               <button
@@ -508,9 +564,9 @@ export function SessionPage() {
                       : "Message the agent — drop or paste images, Enter to send, /compact to shrink context"
               }
               rows={1}
-              className="max-h-[200px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle outline-none disabled:opacity-60"
+              className="max-h-[200px] w-full resize-none self-center border-0 bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle outline-none disabled:opacity-60"
             />
-            <div className="flex items-center justify-between px-1 pt-1">
+            <div className="flex items-center gap-1 px-1">
               <div className="flex items-center gap-1">
                 <input
                   type="file"
@@ -524,10 +580,11 @@ export function SessionPage() {
                   <Paperclip size={15} />
                 </IconButton>
               </div>
+              <span className="flex-1" />
               <button
                 type="submit"
                 disabled={!text && images.length === 0}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-accent-fg transition-opacity disabled:opacity-30"
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition-opacity disabled:opacity-30"
               >
                 <ArrowUp size={16} />
               </button>
@@ -535,6 +592,11 @@ export function SessionPage() {
           </form>
         </div>
       </div>
+      {showScreen && agentIdForScreen && (
+        <div className="hidden min-h-0 flex-col overflow-y-auto border-l border-border bg-bg-sidebar md:flex">
+          <ScreenPanel agentId={agentIdForScreen} agentName={data?.agent?.name ?? "Bot"} />
+        </div>
+      )}
       {showFiles && projectId && (
         // A full-screen overlay on mobile (with its own close button — a fixed 340px side
         // column on a phone-width screen squeezed the chat header, including this same
@@ -550,6 +612,88 @@ export function SessionPage() {
             <FileExplorer projectId={projectId} />
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Right-side panel: the bot's live screen (embed) + its routines, Grok-Bot style. */
+function ScreenPanel({ agentId, agentName }: { agentId: string; agentName: string }) {
+  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  const { data: status } = useQuery({
+    queryKey: ["screen", agentId],
+    queryFn: () => api.get<{ running: boolean; tunnelUrl?: string | null }>(`/agents/${agentId}/screen/status`),
+    refetchInterval: 5000,
+  });
+
+  async function openViewer() {
+    const { token } = await api.get<{ token: string }>(`/agents/${agentId}/screen/token`);
+    setIframeUrl(`/screen/${agentId}?t=${encodeURIComponent(token)}`);
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">{agentName}'s screen</p>
+          <Badge tone={status?.running ? "success" : "neutral"}>{status?.running ? "live" : "off"}</Badge>
+        </div>
+        {iframeUrl ? (
+          <iframe title="Agent screen" src={iframeUrl} className="aspect-[16/10] w-full rounded-xl border border-border" />
+        ) : (
+          <button
+            onClick={() => void openViewer()}
+            className="flex aspect-[16/10] w-full items-center justify-center rounded-xl border border-border bg-bg-raised text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
+          >
+            <Monitor size={22} />
+          </button>
+        )}
+        <div className="mt-2 flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => void api.post(`/agents/${agentId}/screen/start`)}>
+            {status?.running ? "Restart stack" : "Start desktop"}
+          </Button>
+          {iframeUrl && (
+            <Button size="sm" variant="ghost" onClick={() => window.open(iframeUrl, "_blank")}>
+              Pop out
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <AgentRoutines agentId={agentId} />
+    </div>
+  );
+}
+
+function AgentRoutines({ agentId }: { agentId: string }) {
+  const { data: sessionData } = useQuery({
+    queryKey: ["session-agent-project"],
+    queryFn: () => api.get<{ session: { projectId: string } }>(`/sessions/${window.location.pathname.split("/").pop()}`),
+  });
+  const projectId = sessionData?.session.projectId;
+  const { data } = useQuery({
+    queryKey: ["routines", projectId],
+    queryFn: () => api.get<{ routines: Array<{ id: string; title: string; schedule: string; enabled: boolean; agentId: string }> }>(`/projects/${projectId}/routines`),
+    enabled: !!projectId,
+  });
+  const mine = (data?.routines ?? []).filter((r) => r.agentId === agentId);
+
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Routines</p>
+      {mine.length === 0 ? (
+        <p className="text-xs text-fg-subtle">Recurring tasks this bot runs on a schedule — just ask it in the chat to set one up.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {mine.map((r) => (
+            <li key={r.id} className="rounded-lg border border-border px-3 py-2">
+              <p className="flex items-center gap-1.5 text-sm text-fg">
+                <Clock size={12} className="text-accent" /> {r.title}
+              </p>
+              <p className="text-xs text-fg-subtle">{r.schedule}</p>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
