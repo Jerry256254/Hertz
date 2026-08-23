@@ -95,6 +95,7 @@ export function createGoogleAdapter(creds: ProviderCredentials): ProviderAdapter
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(buildBody(req)),
+      signal: req.signal,
     });
     if (!res.ok) {
       throw new ProviderError("google", `chat failed: ${await res.text()}`, res.status);
@@ -119,6 +120,7 @@ export function createGoogleAdapter(creds: ProviderCredentials): ProviderAdapter
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(buildBody(req)),
+      signal: req.signal,
     });
     if (!res.ok || !res.body) {
       throw new ProviderError("google", `stream failed: ${await res.text()}`, res.status);

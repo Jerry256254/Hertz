@@ -27,12 +27,14 @@
     "drizzle-orm": "^0.38.0",
     "fastify": "^5.2.0",
     "zod": "^3.24.0",
-    "zod-to-json-schema": "^3.24.0"
+    "zod-to-json-schema": "^3.24.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "drizzle-kit": "^0.30.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "@types/ws": "^8.5.0"
   },
   "license": "SEE LICENSE IN LICENSE",
   "repository": {

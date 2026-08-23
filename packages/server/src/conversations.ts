@@ -3,12 +3,9 @@ import { aliasedTable, or } from "drizzle-orm";
 import type { AgentLoopManager } from "@kuclab-hertz/core";
 import type { Database } from "./db/client.js";
 import { newId } from "./db/client.js";
-import { agents, messages, projectRoots, sessions } from "./db/schema.js";
-import type { SandboxRegistry } from "./sandbox/sandbox-registry.js";
-import type { HertzPaths } from "./paths.js";
-import { employeeDir, ensureEmployeeDirs } from "./paths.js";
-import { buildSystemPrompt } from "./agents/system-prompt.js";
-import { fallbackUserId } from "./tools/org-tools.js";
+import { agents, messages, sessions } from "./db/schema.js";
+import type { JobQueue } from "./queue/job-queue.js";
+import { enqueueAgentRun } from "./runtime/run-jobs.js";
 
 /**
  * A direct agent ↔ agent chat ("conversation") is a session with
@@ -20,9 +17,9 @@ import { fallbackUserId } from "./tools/org-tools.js";
  */
 export interface ConversationDeps {
   db: Database;
-  paths: HertzPaths;
-  sandboxRegistry: SandboxRegistry;
+  /** Lazy — AgentLoopManager doesn't exist yet when tools are constructed. */
   agentLoop: AgentLoopManager;
+  queue: JobQueue;
 }
 
 export async function ensureConversationSession(
@@ -106,8 +103,6 @@ export async function startConversationReplyRun(
   const actor = actorRows[0];
   if (!actor || actor.approvalStatus !== "approved" || actor.status === "terminated") return;
 
-  const resolvedUserId = args.userId ?? (await fallbackUserId(db));
-
   const peerRows = await db
     .select()
     .from(sessions)
@@ -119,34 +114,17 @@ export async function startConversationReplyRun(
   const peerNameRows = peerId
     ? await db.select({ name: agents.name }).from(agents).where(eq(agents.id, peerId)).limit(1)
     : [];
-  const peerName = peerNameRows[0]?.name ?? "a colleague";
-
-  const rootRows = await db.select().from(projectRoots).where(eq(projectRoots.projectId, args.projectId));
-  const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
-  if (!mainRoot) return;
-
-  await ensureEmployeeDirs(deps.paths, args.projectId, actor.id);
-  deps.sandboxRegistry.register(args.sessionId, {
-    [mainRoot.rootId]: mainRoot.absolutePath,
-    self: employeeDir(deps.paths, args.projectId, actor.id),
-  });
+  const conversationPeerName = peerNameRows[0]?.name ?? "a colleague";
 
   try {
-    agentLoop.start(
-      {
-        sessionId: args.sessionId,
-        agentId: actor.id,
-        projectId: args.projectId,
-        userId: resolvedUserId,
-        rootId: mainRoot.rootId,
-        model: actor.model,
-        providerConfigId: actor.providerConfigId,
-        systemPrompt: await buildSystemPrompt(db, actor, { conversationPeerName: peerName }),
-        excludeTools: ["message_employee"],
-        prePersisted: true,
-      },
-      [{ type: "text", text: args.incomingText }],
-    );
+    // The agent_run handler rebuilds prompt/sandbox/roots from the DB and
+    // withholds message_employee for conversation sessions itself.
+    await enqueueAgentRun({ queue: deps.queue }, {
+      sessionId: args.sessionId,
+      userId: args.userId,
+      prePersisted: true,
+      conversationPeerName,
+    });
   } catch {
     // Lost the race to another trigger — that run will answer the message.
   }

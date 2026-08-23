@@ -1,14 +1,14 @@
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
-import type { AgentLoopManager, ProviderPort } from "@kuclab-hertz/core";
+import type { PersistencePort, ProviderPort } from "@kuclab-hertz/core";
 import type { ToolContext, ToolResult } from "@kuclab-hertz/tools";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agentMemory, agents, projectRoots, projects, providerConfigs, sessions, users } from "../db/schema.js";
-import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
-import { buildSystemPrompt } from "../agents/system-prompt.js";
-import { employeeDir, ensureEmployeeDirs, type HertzPaths } from "../paths.js";
+import { agentMemory, agents, projects, providerConfigs, sessions, users } from "../db/schema.js";
+import { ensureEmployeeDirs, type HertzPaths } from "../paths.js";
+import type { JobQueue } from "../queue/job-queue.js";
+import { enqueueAgentRun } from "../runtime/run-jobs.js";
 
 export const AGENT_ROLES = [
   "manager",
@@ -60,9 +60,9 @@ export interface OrgToolDef {
 export interface OrgToolsDeps {
   db: Database;
   paths: HertzPaths;
-  sandboxRegistry: SandboxRegistry;
   providers: ProviderPort;
-  getAgentLoop: () => AgentLoopManager;
+  queue: JobQueue;
+  persistence: PersistencePort;
 }
 
 export async function fallbackUserId(db: Database): Promise<string> {
@@ -77,16 +77,12 @@ async function runDelegatedTask(
   task: string,
   userId: string | undefined,
 ): Promise<string> {
-  const { db, sandboxRegistry, paths } = deps;
+  const { db } = deps;
   const employeeRows = await db.select().from(agents).where(eq(agents.id, employeeAgentId)).limit(1);
   const employee = employeeRows[0];
   if (!employee) return "(employee not found)";
   if (employee.approvalStatus !== "approved") return "(this employee isn't approved yet — the user needs to approve the hire first)";
   if (employee.status === "terminated") return "(this employee has been terminated and can no longer work)";
-
-  const rootRows = await db.select().from(projectRoots).where(eq(projectRoots.projectId, projectId));
-  const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
-  if (!mainRoot) return "(project has no root directory configured)";
 
   const sessionId = newId();
   const now = new Date();
@@ -99,38 +95,31 @@ async function runDelegatedTask(
     createdAt: now,
     updatedAt: now,
   });
+  await ensureEmployeeDirs(deps.paths, projectId, employee.id);
 
-  await ensureEmployeeDirs(paths, projectId, employee.id);
-  sandboxRegistry.register(sessionId, {
-    [mainRoot.rootId]: mainRoot.absolutePath,
-    self: employeeDir(paths, projectId, employee.id),
+  // Durable path: enqueue, block on the job's completion, then read what the
+  // employee produced. The agent_run handler rebuilds prompt/sandbox from the
+  // DB, so nothing else is needed here.
+  const jobId = await enqueueAgentRun({ queue: deps.queue }, {
+    sessionId,
+    userId: userId ?? (await fallbackUserId(db)),
+    mode: "autonomous",
+    userMessage: [{ type: "text", text: task }],
   });
 
-  const content: ContentBlock[] = [{ type: "text", text: task }];
-  const resolvedUserId = userId ?? (await fallbackUserId(db));
-
   try {
-    const finalMessage = await deps.getAgentLoop().runAndWait(
-      {
-        sessionId,
-        agentId: employee.id,
-        projectId,
-        userId: resolvedUserId,
-        rootId: mainRoot.rootId,
-        model: employee.model,
-        providerConfigId: employee.providerConfigId,
-        systemPrompt: await buildSystemPrompt(db, employee),
-      },
-      content,
-    );
-    const text = finalMessage?.content
-      .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
-    return text || "(no text response — check the session for tool activity)";
+    await deps.queue.whenDone(jobId);
   } catch (err) {
     return `(task failed: ${(err as Error).message})`;
   }
+
+  const history = await deps.persistence.listMessages(sessionId);
+  const finalAssistant = [...history].reverse().find((m) => m.role === "assistant");
+  const text = (finalAssistant?.content ?? [])
+    .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
+  return text || "(no text response — check the session for tool activity)";
 }
 
 /**

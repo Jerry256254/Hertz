@@ -19,12 +19,14 @@ export class SandboxRegistry {
     this.artifacts = createFileArtifactStore(paths);
   }
 
-  register(sessionId: string, roots: ProjectRoots): SandboxBundle {
+  register(sessionId: string, roots: ProjectRoots, computer?: SandboxBundle["computer"], browser?: SandboxBundle["browser"]): SandboxBundle {
     const bundle: SandboxBundle = {
       pathGuard: new PathGuard(roots, this.audit),
       shellPolicy: loadDefaultPolicy(),
       audit: this.audit,
       artifacts: this.artifacts,
+      ...(computer ? { computer } : {}),
+      ...(browser ? { browser } : {}),
     };
     this.bundles.set(sessionId, bundle);
     return bundle;

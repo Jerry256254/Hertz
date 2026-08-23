@@ -100,6 +100,10 @@ export interface Agent {
   jobDescription?: string | null;
   approvalStatus: "pending" | "approved" | "rejected";
   pendingTermination: boolean;
+  computerBackend?: "local" | "docker";
+  computerImage?: string | null;
+  heartbeatMinutes?: number;
+  heartbeatPrompt?: string | null;
   createdAt: string;
   homeProjectName?: string;
 }

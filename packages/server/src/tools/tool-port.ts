@@ -1,18 +1,21 @@
-import { eq } from "drizzle-orm";
-import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";import { zodToJsonSchema } from "zod-to-json-schema";
 import { ALL_TOOLS, runTool, toProviderToolDefinitions } from "@kuclab-hertz/tools";
-import type { AgentLoopManager, ProviderPort, ToolPort } from "@kuclab-hertz/core";
+import type { AgentLoopManager, PersistencePort, ProviderPort, ToolPort } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { agents } from "../db/schema.js";
 import { createOrgTools, type OrgToolDef } from "./org-tools.js";
 import { createMemoryTools } from "./memory-tools.js";
 import { createMessagingTools } from "./messaging-tools.js";
 import { createShellTools } from "./shell-tools.js";
+import { createApprovalTools } from "./approval-tools.js";
+import { createSkillTools } from "./skill-tools.js";
+import { createBrowserTools } from "./browser-tools.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
 import { McpRegistry } from "../mcp/mcp-registry.js";
 import type { ShellManager } from "../shells/shell-manager.js";
+import type { JobQueue } from "../queue/job-queue.js";
 
 export interface ToolPortDeps {
   db: Database;
@@ -21,6 +24,8 @@ export interface ToolPortDeps {
   mcpRegistry: McpRegistry;
   shellManager: ShellManager;
   providers: ProviderPort;
+  queue: JobQueue;
+  persistence: PersistencePort;
   /** Lazy: AgentLoopManager depends on ToolPort, so ToolPort can't depend on a concrete instance at construction time. */
   getAgentLoop: () => AgentLoopManager;
 }
@@ -67,18 +72,24 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const memoryTools = createMemoryTools(deps.db, deps.paths);
   const messagingTools = createMessagingTools({
     db: deps.db,
-    paths: deps.paths,
-    sandboxRegistry: deps.sandboxRegistry,
+    queue: deps.queue,
     getAgentLoop: deps.getAgentLoop,
   });
   const shellTools = createShellTools(deps.db, deps.shellManager);
-  const allByName = new Map([...orgTools, ...memoryTools, ...messagingTools, ...shellTools, ASK_USER_DEF].map((t) => [t.name, t]));
+  const approvalTools = createApprovalTools(deps.db);
+  const skillTools = createSkillTools(deps.db, deps.paths);
+  const browserTools = createBrowserTools();
+  const allByName = new Map(
+    [...orgTools, ...memoryTools, ...messagingTools, ...shellTools, ...approvalTools, ...skillTools, ...browserTools, ASK_USER_DEF].map((t) => [t.name, t]),
+  );
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
   const memoryDefs = toDefs(memoryTools);
   const messagingDefs = toDefs(messagingTools);
   const shellDefs = toDefs(shellTools);
   const orgDefs = toDefs(orgTools);
+  const approvalDefs = toDefs(approvalTools);
+  const skillDefs = toDefs(skillTools);
   const askUserDefs = toDefs([ASK_USER_DEF]);
 
   async function isManager(agentId: string): Promise<boolean> {
@@ -86,12 +97,23 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
     return rows[0]?.role === "manager";
   }
 
+  /** Browser tools exist only for agents whose computer is a container. */
+  async function hasDockerComputer(agentId: string): Promise<boolean> {
+    const rows = await deps.db
+      .select({ backend: agents.computerBackend })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.computerBackend, "docker")))
+      .limit(1);
+    return rows.length > 0;
+  }
+
   return {
     async listDefinitions(agentId) {
       const managerRole = await isManager(agentId);
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
       const filteredBaseDefs = managerRole ? baseDefs.filter((d) => !MANAGER_RESTRICTED_TOOLS.has(d.name)) : baseDefs;
-      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...mcpDefs, ...askUserDefs];
+      const browserDefs = (await hasDockerComputer(agentId)) ? toDefs(browserTools) : [];
+      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...browserDefs, ...mcpDefs, ...askUserDefs];
       return managerRole ? [...defs, ...orgDefs] : defs;
     },
     async run(name, input, ctx) {

@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS agents (
   job_description TEXT,
   approval_status TEXT NOT NULL DEFAULT 'approved',
   pending_termination INTEGER NOT NULL DEFAULT 0,
+  computer_backend TEXT NOT NULL DEFAULT 'local',
+  computer_image TEXT,
+  heartbeat_minutes INTEGER NOT NULL DEFAULT 0,
+  heartbeat_prompt TEXT,
+  last_heartbeat_at INTEGER,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
@@ -282,6 +287,57 @@ CREATE TABLE IF NOT EXISTS session_tokens (
   expires_at INTEGER NOT NULL,
   last_used_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  run_at INTEGER NOT NULL,
+  started_at INTEGER,
+  finished_at INTEGER,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_due ON jobs(status, run_at);
+
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  summary TEXT NOT NULL,
+  detail TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  decided_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  decided_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_project ON approvals(project_id);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+
+CREATE TABLE IF NOT EXISTS channel_configs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  label TEXT NOT NULL,
+  encrypted_token TEXT NOT NULL,
+  default_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+  allowed_chats_json TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS channel_bindings (
+  id TEXT PRIMARY KEY,
+  channel_id TEXT NOT NULL REFERENCES channel_configs(id) ON DELETE CASCADE,
+  external_chat_id TEXT NOT NULL,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_bindings_chat ON channel_bindings(channel_id, external_chat_id);
 `;
 
 /**
@@ -299,6 +355,11 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE sessions ADD COLUMN peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
   "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'",
   "ALTER TABLE messages ADD COLUMN sender_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
+  "ALTER TABLE agents ADD COLUMN computer_backend TEXT NOT NULL DEFAULT 'local'",
+  "ALTER TABLE agents ADD COLUMN computer_image TEXT",
+  "ALTER TABLE agents ADD COLUMN heartbeat_minutes INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE agents ADD COLUMN heartbeat_prompt TEXT",
+  "ALTER TABLE agents ADD COLUMN last_heartbeat_at INTEGER",
 ];
 
 /** One row per agent↔agent conversation pair, enforced by a partial unique index — must run after the sessions columns exist, so it lives here rather than in BOOTSTRAP_SQL. */

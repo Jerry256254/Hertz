@@ -2,11 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { agentMemory, agentProjects, agents, projects, sessions } from "../db/schema.js";
+import { agentMemory, agentProjects, agents, projectRoots, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { hasProjectAccess } from "../auth/project-access.js";
 import { AGENT_ROLES, defaultSystemPromptFor } from "../tools/org-tools.js";
+import { employeeDir, ensureEmployeeDirs } from "../paths.js";
+import { skillsIndexFor } from "../tools/skill-tools.js";
 
 const createSchema = z.object({
   projectId: z.string().min(1),
@@ -23,6 +25,11 @@ const approvalSchema = z.object({ approvalStatus: z.enum(["approved", "rejected"
 const updateSchema = z.object({
   model: z.string().min(1).optional(),
   providerConfigId: z.string().min(1).optional(),
+  computerBackend: z.enum(["local", "docker"]).optional(),
+  computerImage: z.string().min(1).nullable().optional(),
+  /** Proactive self-wake interval; 0 disables heartbeats. */
+  heartbeatMinutes: z.number().int().min(0).max(10080).optional(),
+  heartbeatPrompt: z.string().max(4000).nullable().optional(),
 });
 
 const terminationDecisionSchema = z.object({ decision: z.enum(["approved", "rejected"]) });
@@ -101,6 +108,49 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       return { ok: true };
     });
 
+    /** Status of the agent's own computer (docker container) — surfaced on the employee page. */
+    instance.get("/api/agents/:id/computer", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+      const agent = rows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (agent.computerBackend !== "docker") {
+        return { backend: "local", status: "local", image: null as string | null };
+      }
+      const state = await ctx.computer.status(id);
+      return {
+        backend: "docker",
+        status: state,
+        image: agent.computerImage ?? null,
+        containerName: ctx.computer.containerName(id),
+      };
+    });
+
+    /** Restart (recreate) the agent's computer — e.g. after a broken state or to pick up a new image. */
+    instance.post("/api/agents/:id/computer/restart", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+      const agent = rows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (agent.computerBackend !== "docker") {
+        return reply.code(400).send({ error: "This agent runs locally — nothing to restart" });
+      }
+      try {
+        await ctx.computer.destroyContainer(id);
+        const rootRows = await ctx.db.select({ absolutePath: projectRoots.absolutePath }).from(projectRoots).where(eq(projectRoots.projectId, agent.projectId));
+        const mainRoot = rootRows[0]?.absolutePath;
+        await ensureEmployeeDirs(ctx.paths, agent.projectId, agent.id);
+        await ctx.computer.ensureContainer({
+          agentId: agent.id,
+          image: agent.computerImage,
+          mountPaths: mainRoot ? [mainRoot, employeeDir(ctx.paths, agent.projectId, agent.id)] : [employeeDir(ctx.paths, agent.projectId, agent.id)],
+        });
+        return { ok: true };
+      } catch (err) {
+        return reply.code(500).send({ error: (err as Error).message });
+      }
+    });
+
     // The user (CEO) approving or rejecting a manager's fire_employee request.
     instance.patch("/api/agents/:id/termination", async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -118,6 +168,14 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         await ctx.db.update(agents).set({ pendingTermination: false }).where(eq(agents.id, id));
       }
       return { ok: true };
+    });
+
+    /** The agent's personal skill library (index only — full text lives on disk). */
+    instance.get("/api/agents/:id/skills", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const rows = await ctx.db.select({ id: agents.id }).from(agents).where(eq(agents.id, id)).limit(1);
+      if (!rows[0]) return reply.code(404).send({ error: "Agent not found" });
+      return { skills: await skillsIndexFor(ctx.paths, id) };
     });
 
     // All agents company-wide (across every project) — used by the cross-project

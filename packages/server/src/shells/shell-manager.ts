@@ -35,27 +35,48 @@ export interface ShellRunResult {
 export class ShellManager {
   private readonly live = new Map<string, LiveShell>();
 
-  constructor(private readonly audit: AuditSink) {}
+  constructor(
+    private readonly audit: AuditSink,
+    /**
+     * Optional resolver: when an agent's computer is a Docker container, its
+     * persistent shells must run INSIDE that container — the returned argv is
+     * prefixed before `bash` (e.g. ["docker","exec","-w",cwd,"-i","hertz-agent-x"]).
+     */
+    private readonly resolveArgvPrefix?: (ownerAgentId: string, cwd: string) => string[] | undefined | Promise<string[] | undefined>,
+  ) {}
 
   /**
    * Returns the live shell, respawning the bash process if it isn't running
    * (first use, or it previously exited) — but keeping the existing buffer
    * and listeners so the transcript survives a respawn instead of resetting.
    */
-  private ensure(shellId: string, cwd: string): LiveShell {
+  private async ensure(shellId: string, cwd: string, ownerAgentId?: string): Promise<LiveShell> {
     const existing = this.live.get(shellId);
     if (existing && existing.proc.exitCode === null && !existing.proc.killed) return existing;
 
-    const proc = spawn("bash", [], {
-      cwd,
-      env: {
-        PATH: process.env.PATH ?? "",
-        HOME: process.env.HOME ?? "",
-        LANG: process.env.LANG ?? "en_US.UTF-8",
-        TERM: "xterm-256color",
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const prefix = ownerAgentId ? (await this.resolveArgvPrefix?.(ownerAgentId, cwd)) ?? [] : [];
+    const baseCmd = "bash";
+    const proc = prefix.length > 0
+      ? spawn(prefix[0]!, [...prefix.slice(1), baseCmd], {
+          cwd,
+          env: {
+            PATH: process.env.PATH ?? "",
+            HOME: process.env.HOME ?? "",
+            LANG: process.env.LANG ?? "en_US.UTF-8",
+            TERM: "xterm-256color",
+          },
+          stdio: ["pipe", "pipe", "pipe"],
+        })
+      : spawn(baseCmd, [], {
+          cwd,
+          env: {
+            PATH: process.env.PATH ?? "",
+            HOME: process.env.HOME ?? "",
+            LANG: process.env.LANG ?? "en_US.UTF-8",
+            TERM: "xterm-256color",
+          },
+          stdio: ["pipe", "pipe", "pipe"],
+        });
 
     const live: LiveShell = { proc, buffer: existing?.buffer ?? "", listeners: existing?.listeners ?? new Set() };
     const onData = (chunk: Buffer) => {
@@ -79,7 +100,7 @@ export class ShellManager {
 
   /** Runs one command to completion (via a sentinel echo trick to detect the shell's own prompt returning), and returns its output + exit code. */
   async runCommand(shellId: string, cwd: string, command: string, actor: ActorContext, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<ShellRunResult> {
-    const live = this.ensure(shellId, cwd);
+    const live = await this.ensure(shellId, cwd, actor.actorType === "agent" ? actor.actorId : undefined);
     const marker = `__HERTZ_DONE_${randomUUID()}__`;
 
     const result = await new Promise<ShellRunResult>((resolve) => {

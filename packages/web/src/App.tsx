@@ -11,6 +11,8 @@ import { IntegrationsPage } from "./routes/IntegrationsPage";
 import { EmployeeDetailPage } from "./routes/EmployeeDetailPage";
 import { AccountPage } from "./routes/AccountPage";
 import { UsersPage } from "./routes/UsersPage";
+import { ApprovalsPage } from "./routes/ApprovalsPage";
+import { ChannelsPage } from "./routes/ChannelsPage";
 import { AppLayout } from "./components/AppLayout";
 
 export function App() {
@@ -44,6 +46,8 @@ export function App() {
         <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/users" element={<UsersPage />} />
+        <Route path="/approvals" element={<ApprovalsPage />} />
+        <Route path="/channels" element={<ChannelsPage />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/agents/:agentId" element={<EmployeeDetailPage />} />
         <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />

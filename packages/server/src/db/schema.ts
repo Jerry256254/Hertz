@@ -59,6 +59,24 @@ export const agents = sqliteTable("agents", {
   approvalStatus: text("approval_status", { enum: ["pending", "approved", "rejected"] }).notNull().default("approved"),
   /** Set by the manager's fire_employee when the project isn't on auto-approve — the user (CEO) must approve or reject before status can become "terminated". */
   pendingTermination: integer("pending_termination", { mode: "boolean" }).notNull().default(false),
+  /**
+   * Where this agent's "computer" lives: "local" = host processes (original
+   * behavior), "docker" = a dedicated container per agent (Grok-Bot-style own
+   * machine). The container mounts the project root and the agent's personal
+   * directory at their host paths, so tools work unchanged.
+   */
+  computerBackend: text("computer_backend", { enum: ["local", "docker"] }).notNull().default("local"),
+  /** Override of the default computer image for docker-backend agents. */
+  computerImage: text("computer_image"),
+  /**
+   * Proactive heartbeat interval in minutes (0 = off). When enabled, the agent
+   * gets a periodic self-directed turn (OpenClaw-style heartbeat): it can check
+   * its tools, continue stalled work, or message the user — or stay quiet.
+   */
+  heartbeatMinutes: integer("heartbeat_minutes").notNull().default(0),
+  /** Standing instructions consulted at every heartbeat ("check my inbox and summarize anything urgent"). */
+  heartbeatPrompt: text("heartbeat_prompt"),
+  lastHeartbeatAt: integer("last_heartbeat_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -413,4 +431,96 @@ export const sessionTokens = sqliteTable("session_tokens", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
   lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Durable work queue — every agent run (interactive chat, routine, delegated
+ * task, heartbeat, channel message) is a row here before it executes, so work
+ * survives process restarts instead of dying with an in-memory promise.
+ * The worker (queue/job-queue.ts) claims due rows, runs them with bounded
+ * concurrency, and retries failures with backoff; jobs found 'running' after a
+ * crash are requeued at boot (boot reconciliation).
+ */
+export const jobs = sqliteTable("jobs", {
+  id: text("id").primaryKey(),
+  /** Handler discriminator: "agent_run" | "heartbeat" | ... registered in job-queue.ts. */
+  type: text("type").notNull(),
+  /** Handler-specific JSON payload. */
+  payload: text("payload").notNull(),
+  status: text("status", { enum: ["queued", "running", "done", "failed"] }).notNull().default("queued"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  runAt: integer("run_at", { mode: "timestamp_ms" }).notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  lastError: text("last_error"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * A request by an agent for the user (CEO) to approve a sensitive action
+ * before it happens ("Mám poslat tento e-mail?") — Grok-Bot-style human in
+ * the loop. Creating one parks the agent's session in awaiting_input; the
+ * decision (from the WebUI inbox, or later from a chat channel) resumes it.
+ */
+export const approvals = sqliteTable("approvals", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  /** One-line action summary shown in lists ("Send offer e-mail to Novák"). */
+  summary: text("summary").notNull(),
+  /** Longer context: what exactly would be done, to whom, with what content. */
+  detail: text("detail"),
+  status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
+  decidedByUserId: text("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  decidedAt: integer("decided_at", { mode: "timestamp_ms" }),
+});
+
+/**
+ * A chat channel connected to Hertz (Telegram bot, Discord bot) — the
+ * Grok-Bot/OpenClaw "talk to your agent from your phone" surface. One config
+ * per bot token; inbound messages route to a bound session (or the default
+ * agent's new session), and the agent's replies are delivered back into the
+ * same chat. Tokens are encrypted at rest like every other secret.
+ */
+export const channelConfigs = sqliteTable("channel_configs", {
+  id: text("id").primaryKey(),
+  kind: text("kind", { enum: ["telegram", "discord"] }).notNull(),
+  label: text("label").notNull(),
+  /** JSON-serialized {iv, authTag, ciphertext} of the bot token. */
+  encryptedToken: text("encrypted_token").notNull(),
+  /** The bot answers this agent by default when no binding exists yet. */
+  defaultAgentId: text("default_agent_id")
+    .references(() => agents.id, { onDelete: "set null" }),
+  /**
+   * Optional allowlist of external chat/channel ids (JSON array of strings).
+   * Empty = only DMs with the bot's "owner" flag... practically: empty means
+   * every chat that can see the bot may talk to it — prefer setting ids.
+   */
+  allowedChatsJson: text("allowed_chats_json"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/** Maps one external chat (telegram chat id / discord channel id) to a Hertz session thread. */
+export const channelBindings = sqliteTable("channel_bindings", {
+  id: text("id").primaryKey(),
+  channelId: text("channel_id")
+    .notNull()
+    .references(() => channelConfigs.id, { onDelete: "cascade" }),
+  /** External conversation identifier ("telegram:<chatId>" / "discord:<channelId>"). */
+  externalChatId: text("external_chat_id").notNull(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });

@@ -1,13 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { AppContext } from "../context.js";
 import { agentProjects, agents, projectRoots, sessions, taskAssignees, tasks } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
-import { buildSystemPrompt } from "../agents/system-prompt.js";
-import { employeeDir, ensureEmployeeDirs } from "../paths.js";
+import { enqueueAgentRun } from "../runtime/run-jobs.js";
 
 const createTaskSchema = z.object({
   title: z.string().min(1),
@@ -81,27 +79,16 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: AppContext): void 
         });
         await ctx.db.insert(taskAssignees).values({ id: newId(), taskId, agentId: agent.id, sessionId });
 
-        await ensureEmployeeDirs(ctx.paths, projectId, agent.id);
-        ctx.sandboxRegistry.register(sessionId, {
-          [mainRoot.rootId]: mainRoot.absolutePath,
-          self: employeeDir(ctx.paths, projectId, agent.id),
+        // Durable queue entry — the handler registers the sandbox, builds the
+        // prompt, and runs the loop; a restart mid-task resumes it.
+        await enqueueAgentRun(ctx, {
+          sessionId,
+          userId: request.user!.id,
+          mode: "autonomous",
+          userMessage: [
+            { type: "text", text: `You've been assigned a task by the user.\n\n## ${parsed.data.title}\n\n${parsed.data.description}` },
+          ],
         });
-        const content: ContentBlock[] = [
-          { type: "text", text: `You've been assigned a task by the user.\n\n## ${parsed.data.title}\n\n${parsed.data.description}` },
-        ];
-        ctx.agentLoop.start(
-          {
-            sessionId,
-            agentId: agent.id,
-            projectId,
-            userId: request.user!.id,
-            rootId: mainRoot.rootId,
-            model: agent.model,
-            providerConfigId: agent.providerConfigId,
-            systemPrompt: await buildSystemPrompt(ctx.db, agent),
-          },
-          content,
-        );
       }
 
       return reply.code(201).send({ id: taskId });

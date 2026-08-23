@@ -52,6 +52,16 @@ export function employeeSubdirs(paths: HertzPaths, projectId: string, agentId: s
   return { notes: path.join(base, "notes"), materials: path.join(base, "materials"), data: path.join(base, "data") };
 }
 
+/**
+ * An agent's personal skills library — follows the agent across every project
+ * (unlike employeeDir, which is per-project). Each skill is a folder with a
+ * SKILL.md (instructions the agent wrote for itself); optional scripts sit
+ * next to it. Injected into prompts as an index; full text via read_skill.
+ */
+export function agentSkillsDir(paths: HertzPaths, agentId: string): string {
+  return path.join(paths.dataDir, "agents", agentId, "skills");
+}
+
 /** Idempotent — safe to call at hire time and again on every session start ("first access if missing"). */
 export async function ensureEmployeeDirs(paths: HertzPaths, projectId: string, agentId: string): Promise<void> {
   const dirs = employeeSubdirs(paths, projectId, agentId);

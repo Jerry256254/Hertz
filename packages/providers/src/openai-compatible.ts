@@ -128,6 +128,7 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
       method: "POST",
       headers,
       body: JSON.stringify(buildBody(req, false)),
+      signal: req.signal,
     });
     if (!res.ok) {
       throw new ProviderError(opts.id, `chat failed: ${await res.text()}`, res.status);
@@ -157,6 +158,7 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
       method: "POST",
       headers,
       body: JSON.stringify(buildBody(req, true)),
+      signal: req.signal,
     });
     if (!res.ok || !res.body) {
       throw new ProviderError(opts.id, `stream failed: ${await res.text()}`, res.status);

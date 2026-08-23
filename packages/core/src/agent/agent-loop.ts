@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ChatMessage, ChatRequest, ContentBlock, ModelPricing, StopReason, UsageInfo } from "@kuclab-hertz/providers";
+import { ProviderError, type ChatMessage, type ChatRequest, type ContentBlock, type ModelPricing, type StopReason, type UsageInfo } from "@kuclab-hertz/providers";
 import type { ArtifactStore, ToolContext } from "@kuclab-hertz/tools";
 import type { ActorContext, AuditSink, PathGuard, ShellPolicy } from "@kuclab-hertz/sandbox";
 import type { PersistedMessage, PersistencePort, ProviderPort, ToolPort } from "../ports.js";
@@ -10,6 +10,10 @@ export interface SandboxBundle {
   shellPolicy: ShellPolicy;
   audit: AuditSink;
   artifacts: ArtifactStore;
+  /** Set when the agent works inside its own container (docker backend) — shell tools route there. */
+  computer?: import("@kuclab-hertz/tools").ComputerRuntime;
+  /** Playwright daemon controller (docker backend only). */
+  browser?: import("@kuclab-hertz/tools").BrowserController;
 }
 
 export interface AgentLoopConfig {
@@ -22,7 +26,17 @@ export interface AgentLoopConfig {
   model: string;
   providerConfigId: string;
   systemPrompt: string;
+  /**
+   * Model calls per auto-continue chunk. When the budget is exhausted but the
+   * agent is still mid-work (a tool call came back, or new inbound mail is
+   * pending), the loop extends itself by another chunk instead of dying — up
+   * to maxAutoContinuations times, so long autonomous runs can genuinely run
+   * for hours rather than silently stalling at an arbitrary 25-turn wall.
+   */
   maxTurns?: number;
+  /** Output-token cap per single model call (providers clamp to their own maximums). */
+  maxTokens?: number;
+  maxAutoContinuations?: number;
   /** Tools to withhold from the model this run (e.g. message_employee inside a direct conversation, where replies are in-thread instead). */
   excludeTools?: string[];
   /**
@@ -34,7 +48,13 @@ export interface AgentLoopConfig {
   mode?: "plan" | "auto" | "autonomous";
   /** Set when the triggering user/agent message was already persisted by the caller (message_employee into a conversation), so runLoop must not append it again. */
   prePersisted?: boolean;
+  /** Skip the automatic "Was told: X — Y" memory note on termination (used by heartbeats, which would otherwise spam memory every tick). */
+  suppressAutoMemory?: boolean;
 }
+
+export const DEFAULT_MAX_TURNS = 50;
+export const DEFAULT_MAX_TOKENS = 8192;
+export const DEFAULT_MAX_AUTO_CONTINUATIONS = 20;
 
 export type AgentLoopEvent =
   | { type: "text_delta"; text: string }
@@ -43,6 +63,7 @@ export type AgentLoopEvent =
   | { type: "message_saved"; message: PersistedMessage }
   | { type: "status"; status: "running" | "idle" | "error" | "paused" }
   | { type: "awaiting_input"; question: string }
+  | { type: "notice"; message: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -52,6 +73,52 @@ function safeJsonParse(raw: string): unknown {
     return JSON.parse(raw);
   } catch {
     return {};
+  }
+}
+
+function isAbortError(err: unknown): boolean {
+  return !!err && typeof err === "object" && (err as Error).name === "AbortError";
+}
+
+function isTransientProviderError(err: unknown): boolean {
+  if (isAbortError(err)) return false;
+  if (err instanceof ProviderError) {
+    const status = err.status ?? 0;
+    return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+  }
+  // fetch() network-level failures surface as TypeError in Node.
+  return err instanceof TypeError;
+}
+
+const RETRY_DELAYS_MS = [2_000, 5_000, 15_000];
+
+/**
+ * Runs `fn`, retrying up to RETRY_DELAYS_MS.length times on transient provider
+ * errors with exponential backoff. onRetry is only a telemetry hook. Aborts
+ * propagate immediately; the sleep itself also aborts so stop() is responsive.
+ */
+async function retryTransient<T>(fn: () => Promise<T>, onRetry: (attempt: number, err: unknown) => void, signal: AbortSignal): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= RETRY_DELAYS_MS.length || !isTransientProviderError(err)) throw err;
+      onRetry(attempt + 1, err);
+      const delay = RETRY_DELAYS_MS[attempt]!;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, delay);
+        signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            const abortErr = new Error("Aborted");
+            abortErr.name = "AbortError";
+            reject(abortErr);
+          },
+          { once: true },
+        );
+      });
+    }
   }
 }
 
@@ -112,6 +179,10 @@ export class AgentLoopManager {
   private readonly emitters = new Map<string, EventEmitter>();
   private readonly running = new Set<string>();
   private readonly paused = new Map<string, boolean>();
+  /** Resolvers woken by resume() — replaces the old 400 ms busy-poll. */
+  private readonly pauseWaiters = new Map<string, Array<() => void>>();
+  /** Aborting cancels the in-flight provider HTTP call; the loop then finalizes the session as stopped. */
+  private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly deps: {
@@ -141,15 +212,37 @@ export class AgentLoopManager {
 
   async resume(sessionId: string): Promise<boolean> {
     if (!this.running.has(sessionId)) return false;
-    this.paused.delete(sessionId);
+    if (this.paused.delete(sessionId)) {
+      for (const wake of this.pauseWaiters.get(sessionId) ?? []) wake();
+      this.pauseWaiters.delete(sessionId);
+    }
     this.emit(sessionId, { type: "status", status: "running" });
     await this.deps.persistence.updateSessionStatus(sessionId, "active");
     return true;
   }
 
+  /**
+   * Hard-stops a running session: aborts the in-flight provider call and makes
+   * the loop finalize (status completed, memory note) at the next opportunity.
+   * Unlike pause(), work does not resume afterwards.
+   */
+  stop(sessionId: string): boolean {
+    const controller = this.abortControllers.get(sessionId);
+    if (!controller) return false;
+    controller.abort();
+    this.paused.delete(sessionId);
+    for (const wake of this.pauseWaiters.get(sessionId) ?? []) wake();
+    this.pauseWaiters.delete(sessionId);
+    return true;
+  }
+
   private async waitIfPaused(sessionId: string): Promise<void> {
     while (this.paused.get(sessionId)) {
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise<void>((resolve) => {
+        const waiters = this.pauseWaiters.get(sessionId) ?? [];
+        waiters.push(resolve);
+        this.pauseWaiters.set(sessionId, waiters);
+      });
     }
   }
 
@@ -289,28 +382,52 @@ export class AgentLoopManager {
     return saved;
   }
 
-  /** Enqueues a user turn and runs the agent loop to completion (or a tool-free reply) in the background. */
+  /** Fire-and-forget variant of runToCompletion() — kept for interactive callers; the durable queue awaits runToCompletion() instead. */
   start(config: AgentLoopConfig, userMessage: ContentBlock[]): void {
+    if (this.running.has(config.sessionId)) {
+      throw new Error(`Session ${config.sessionId} is already running`);
+    }
+    void this.runToCompletion(config, userMessage).catch(() => {});
+  }
+
+  /**
+   * Runs the agent loop to completion and resolves when it finishes (or rejects
+   * on a fatal error). The durable job queue awaits this so a crash mid-run can
+   * be retried from the DB instead of silently dropping the work.
+   */
+  async runToCompletion(config: AgentLoopConfig, userMessage: ContentBlock[]): Promise<void> {
     if (this.running.has(config.sessionId)) {
       throw new Error(`Session ${config.sessionId} is already running`);
     }
     this.running.add(config.sessionId);
     this.emit(config.sessionId, { type: "status", status: "running" });
 
-    void this.runLoop(config, userMessage)
-      .catch(async (err) => {
+    const controller = new AbortController();
+    this.abortControllers.set(config.sessionId, controller);
+
+    try {
+      await this.runLoop(config, userMessage, controller.signal);
+    } catch (err) {
+      if (isAbortError(err)) {
+        // Deliberate stop(): finalize as completed rather than erroring.
+        await this.deps.persistence.updateSessionStatus(config.sessionId, "completed");
+        await this.deps.persistence.appendMemoryNote(config.agentId, "Run stopped by the user mid-task.");
+        this.emit(config.sessionId, { type: "notice", message: "Run stopped by the user." });
+      } else {
         this.emit(config.sessionId, { type: "error", message: (err as Error).message });
         await this.deps.persistence.updateSessionStatus(config.sessionId, "error");
-      })
-      .finally(() => {
-        this.running.delete(config.sessionId);
-        this.paused.delete(config.sessionId);
-        this.emit(config.sessionId, { type: "status", status: "idle" });
-        this.emit(config.sessionId, { type: "done" });
-      });
+        throw err;
+      }
+    } finally {
+      this.running.delete(config.sessionId);
+      this.paused.delete(config.sessionId);
+      this.abortControllers.delete(config.sessionId);
+      this.emit(config.sessionId, { type: "status", status: "idle" });
+      this.emit(config.sessionId, { type: "done" });
+    }
   }
 
-  private async runLoop(config: AgentLoopConfig, userMessage: ContentBlock[]): Promise<void> {
+  private async runLoop(config: AgentLoopConfig, userMessage: ContentBlock[], signal: AbortSignal): Promise<void> {
     const { persistence, providers, tools } = this.deps;
     const sandbox = this.deps.sandbox(config.sessionId);
     // Tool-triggered runs (an agent replying in a direct conversation) may have no human
@@ -345,11 +462,16 @@ export class AgentLoopManager {
     } else if (mode === "autonomous") {
       toolDefs = toolDefs.filter((def) => def.name !== "ask_user");
     }
-    const maxTurns = config.maxTurns ?? 25;
+    const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
+    const maxAutoContinuations = config.maxAutoContinuations ?? DEFAULT_MAX_AUTO_CONTINUATIONS;
+    const maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
+    let turnsRemaining = maxTurns;
+    let continuationsUsed = 0;
 
-    for (let turn = 0; turn < maxTurns; turn++) {
+    while (true) {
       // Pause takes effect between turns: the current model call / tool finishes first.
       await this.waitIfPaused(config.sessionId);
+      turnsRemaining--;
 
       const history = await persistence.listMessages(config.sessionId);
       const chatMessages = toChatMessages(history);
@@ -360,39 +482,62 @@ export class AgentLoopManager {
         system: config.systemPrompt,
         messages: chatMessages,
         tools: toolDefs,
-        maxTokens: 4096,
+        maxTokens,
         cachePrefixMessageCount: planCachePrefix(adapter, chatMessages.length),
+        signal,
       };
 
-      let assistantText = "";
-      const toolUses: PendingToolUse[] = [];
-      let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 };
-      let stopReason: StopReason = "end_turn";
-
-      for await (const evt of adapter.stream(req)) {
-        switch (evt.type) {
-          case "text_delta":
-            assistantText += evt.text;
-            this.emit(config.sessionId, { type: "text_delta", text: evt.text });
-            break;
-          case "tool_use_start":
-            toolUses.push({ id: evt.id, name: evt.name, inputRaw: "" });
-            break;
-          case "tool_use_delta": {
-            const pending = toolUses.find((t) => t.id === evt.id);
-            if (pending) pending.inputRaw += evt.inputDelta;
-            break;
+      // A model call that dies on a transient provider hiccup (rate limit, 5xx,
+      // dropped connection) is retried with exponential backoff instead of failing
+      // the whole session — long autonomous runs must survive provider flakiness.
+      const consumeStream = async (): Promise<{
+        assistantText: string;
+        toolUses: PendingToolUse[];
+        usage: UsageInfo;
+        stopReason: StopReason;
+      }> => {
+        let assistantText = "";
+        const toolUses: PendingToolUse[] = [];
+        let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 };
+        let stopReason: StopReason = "end_turn";
+        for await (const evt of adapter.stream(req)) {
+          switch (evt.type) {
+            case "text_delta":
+              assistantText += evt.text;
+              this.emit(config.sessionId, { type: "text_delta", text: evt.text });
+              break;
+            case "tool_use_start":
+              toolUses.push({ id: evt.id, name: evt.name, inputRaw: "" });
+              break;
+            case "tool_use_delta": {
+              const pending = toolUses.find((t) => t.id === evt.id);
+              if (pending) pending.inputRaw += evt.inputDelta;
+              break;
+            }
+            case "tool_use_end":
+              break;
+            case "message_end":
+              usage = evt.usage;
+              stopReason = evt.stopReason;
+              break;
+            case "error":
+              throw new Error(evt.message);
           }
-          case "tool_use_end":
-            break;
-          case "message_end":
-            usage = evt.usage;
-            stopReason = evt.stopReason;
-            break;
-          case "error":
-            throw new Error(evt.message);
         }
-      }
+        return { assistantText, toolUses, usage, stopReason };
+      };
+
+      const { assistantText, toolUses, usage, stopReason } = await retryTransient(
+        () => consumeStream(),
+        (attempt, err) => {
+          this.emit(config.sessionId, {
+            type: "notice",
+            message: `Provider call failed (${(err as Error).message}) — retrying in a moment (attempt ${attempt}).`,
+          });
+        },
+        signal,
+      );
+      let pendingAwait: { question: string } | undefined;
 
       const assistantBlocks: ContentBlock[] = [];
       if (assistantText) assistantBlocks.push({ type: "text", text: assistantText });
@@ -438,10 +583,12 @@ export class AgentLoopManager {
         // Auto-captured, in addition to whatever the agent chose to remember itself via
         // the remember tool — the point is every exchange leaves *something* behind,
         // not just the ones the model happened to judge worth a deliberate note.
-        await persistence.appendMemoryNote(
-          config.agentId,
-          `Was told: ${extractTextSummary(userMessage, 200)} — ${statusLine}`,
-        );
+        if (!config.suppressAutoMemory) {
+          await persistence.appendMemoryNote(
+            config.agentId,
+            `Was told: ${extractTextSummary(userMessage, 200)} — ${statusLine}`,
+          );
+        }
         return;
       }
 
@@ -514,6 +661,8 @@ export class AgentLoopManager {
           shellPolicy: sandbox.shellPolicy,
           audit: sandbox.audit,
           artifacts: sandbox.artifacts,
+          ...(sandbox.computer ? { computer: sandbox.computer } : {}),
+          ...(sandbox.browser ? { browser: sandbox.browser } : {}),
         };
 
         const result = await tools.run(t.name, input, ctx);
@@ -530,6 +679,9 @@ export class AgentLoopManager {
           summary: result.summary,
           isError: result.isError,
         });
+        if (result.awaitUser && !pendingAwait) {
+          pendingAwait = { question: result.awaitUser.question };
+        }
       }
 
       // Only append a tool-result turn when tools actually ran — continuing the
@@ -548,9 +700,44 @@ export class AgentLoopManager {
           purpose: "agent_turn",
         });
       }
+
+      // A human-in-the-loop gate (request_approval): park the session until the
+      // decision arrives via the approvals inbox, a chat answer, or a channel.
+      if (pendingAwait) {
+        const meta = (await persistence.getSessionMetadata(config.sessionId)) ?? {};
+        await persistence.setSessionMetadata(config.sessionId, { ...meta, pendingQuestion: pendingAwait.question });
+        await persistence.updateSessionStatus(config.sessionId, "awaiting_input");
+        this.emit(config.sessionId, { type: "awaiting_input", question: pendingAwait.question });
+        return;
+      }
+
+      // Chunk boundary: reaching it while still mid-work extends the run instead
+      // of ending it — up to maxAutoContinuations extensions, then finalize with
+      // an honest note rather than leaving the session as a zombie "active".
+      if (turnsRemaining <= 0) {
+        if (continuationsUsed >= maxAutoContinuations) {
+          const ceiling = maxTurns * (maxAutoContinuations + 1);
+          await persistence.updateSessionStatus(config.sessionId, "completed");
+          await persistence.appendMemoryNote(
+            config.agentId,
+            `Hit the ${ceiling}-turn safety ceiling mid-task — paused for direction. Continue with a follow-up message.`,
+          );
+          this.emit(config.sessionId, {
+            type: "notice",
+            message: `Turn ceiling (${ceiling} turns) reached — run finalized. Send another message to continue.`,
+          });
+          return;
+        }
+        continuationsUsed++;
+        turnsRemaining = maxTurns;
+        this.emit(config.sessionId, {
+          type: "notice",
+          message: `Still working after ${continuationsUsed * maxTurns} turns — extending this run automatically.`,
+        });
+      }
     }
 
-    await persistence.updateSessionStatus(config.sessionId, "active");
+    await persistence.updateSessionStatus(config.sessionId, "completed");
   }
 
   /** True when any new human/colleague message (real text or image, not tool-result plumbing) landed after the given snapshot message id. */
@@ -563,4 +750,50 @@ export class AgentLoopManager {
     }
     return false;
   }
+}
+
+/**
+ * Closes a crash left open: when a process died mid-tool, the session history
+ * ends with an assistant tool_use that never received its tool_result — a state
+ * every provider rejects on the next call. Appends synthetic "interrupted"
+ * results so the history is valid again and the run can be resumed. Idempotent:
+ * a repaired history passes through unchanged.
+ */
+export async function repairSessionHistory(persistence: PersistencePort, sessionId: string): Promise<boolean> {
+  const history = await persistence.listMessages(sessionId);
+  const last = history[history.length - 1];
+  if (!last || last.role !== "assistant") return false;
+
+  const toolUseIds = last.content
+    .filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use")
+    .map((b) => b.id);
+  if (toolUseIds.length === 0) return false;
+
+  const covered = new Set<string>();
+  for (const message of history.slice(history.indexOf(last) + 1)) {
+    for (const block of message.content) {
+      if (block.type === "tool_result") covered.add(block.toolUseId);
+    }
+  }
+
+  const missing = toolUseIds.filter((id) => !covered.has(id));
+  if (missing.length === 0) return false;
+
+  await persistence.appendMessage({
+    sessionId,
+    role: "user",
+    content: missing.map((id) => ({
+      type: "tool_result" as const,
+      toolUseId: id,
+      content: "[Interrupted — the agent was restarted before this tool could run.]",
+      isError: true,
+    })),
+    senderAgentId: null,
+    tokensIn: 0,
+    tokensOut: 0,
+    cachedTokensIn: 0,
+    cost: 0,
+    purpose: "agent_turn",
+  });
+  return true;
 }

@@ -11,6 +11,8 @@ import {
   Pause,
   Plug,
   Plus,
+  Radio,
+  ShieldCheck,
   Users,
   X,
 } from "lucide-react";
@@ -78,7 +80,6 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
     <aside className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border bg-bg-sidebar">
       <div className="flex h-14 flex-shrink-0 items-center gap-3 px-4">
         <span className="text-base font-semibold tracking-tight text-fg">Hertz Jobs</span>
-      </div>
         {onClose && (
           <button
             onClick={onClose}
@@ -183,6 +184,22 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
       </nav>
 
       <div className="flex-shrink-0 border-t border-border p-2">
+        <Link
+          to="/approvals"
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
+        >
+          <ShieldCheck size={15} />
+          Schválení
+        </Link>
+        {user?.role === "admin" && (
+          <Link
+            to="/channels"
+            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
+          >
+            <Radio size={15} />
+            Kanály
+          </Link>
+        )}
         <Link
           to="/integrations"
           className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"

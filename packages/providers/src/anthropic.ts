@@ -103,6 +103,7 @@ export function createAnthropicAdapter(creds: ProviderCredentials): ProviderAdap
       method: "POST",
       headers,
       body: JSON.stringify(buildBody(req)),
+      signal: req.signal,
     });
     if (!res.ok) {
       throw new ProviderError("anthropic", `chat failed: ${await res.text()}`, res.status);
@@ -126,6 +127,7 @@ export function createAnthropicAdapter(creds: ProviderCredentials): ProviderAdap
       method: "POST",
       headers,
       body: JSON.stringify({ ...buildBody(req), stream: true }),
+      signal: req.signal,
     });
     if (!res.ok || !res.body) {
       throw new ProviderError("anthropic", `stream failed: ${await res.text()}`, res.status);

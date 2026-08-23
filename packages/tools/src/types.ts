@@ -8,6 +8,28 @@ export interface ArtifactStore {
   get(sessionId: string, artifactId: string): Promise<string | undefined>;
 }
 
+/**
+ * The agent's "own computer" — when an agent runs in an isolated backend
+ * (a Docker container), shell commands execute THERE instead of on the host.
+ * Paths are identical on both sides because project/employee directories are
+ * bind-mounted at their host-absolute locations, so the PathGuard-resolved cwd
+ * is valid inside the container unchanged.
+ */
+export interface ComputerRuntime {
+  exec(input: { command: string; args: string[]; cwd: string; timeoutMs?: number }): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    timedOut: boolean;
+    truncated: boolean;
+  }>;
+}
+
+/** Drives the persistent Playwright daemon inside the agent's container. */
+export interface BrowserController {
+  act(action: string, params?: Record<string, unknown>): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+}
+
 export interface ToolContext {
   actor: ActorContext;
   rootId: string;
@@ -15,6 +37,10 @@ export interface ToolContext {
   shellPolicy: ShellPolicy;
   audit: AuditSink;
   artifacts: ArtifactStore;
+  /** Present when the agent works inside its own container — shell tools route there. */
+  computer?: ComputerRuntime;
+  /** Present when the agent has a browser daemon available (docker backend). */
+  browser?: BrowserController;
 }
 
 export interface ToolResult {
@@ -22,6 +48,13 @@ export interface ToolResult {
   summary: string;
   artifactId?: string;
   isError?: boolean;
+  /**
+   * Set by tools that park the run until the human decides (e.g.
+   * request_approval). The loop stores the question on the session, flips it
+   * to awaiting_input, and a later decision/answer resumes the run. Works in
+   * autonomous mode too — that's the point of a human-in-the-loop gate.
+   */
+  awaitUser?: { question: string };
 }
 
 export interface ToolDef<TInput = any> {

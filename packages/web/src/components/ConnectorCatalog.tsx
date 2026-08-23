@@ -94,7 +94,7 @@ function ConnectDialog({
 }
 
 interface OAuthApp {
-  service: "google" | "slack";
+  service: "google" | "slack" | "grok";
   clientId: string;
   secretHint: string;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Files, Paperclip, Pause, Play, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Files, Paperclip, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Budget, HertzSession, PersistedMessage } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
@@ -329,6 +329,14 @@ export function SessionPage() {
             {isPaused && (
               <IconButton title="Resume the agent's work" onClick={() => pauseResume.mutate("resume")}>
                 <Play size={15} />
+              </IconButton>
+            )}
+            {isRunning && (
+              <IconButton
+                title="Hard-stop this run (aborts the current call and finishes the session)"
+                onClick={() => api.post(`/sessions/${sessionId}/stop`)}
+              >
+                <Square size={15} />
               </IconButton>
             )}
             {budget && budget.used > 0 && (

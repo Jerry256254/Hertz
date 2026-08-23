@@ -56,6 +56,16 @@ function checkCommandAllowed(policy: ShellPolicy, command: string): void {
   }
 }
 
+/** Non-throwing variant for callers that only need the verdict (e.g. routing into an agent's container). */
+export function isCommandAllowed(policy: ShellPolicy, command: string): boolean {
+  try {
+    checkCommandAllowed(policy, command);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Runs a command with no shell interpreter in between (argv array, `shell: false`),
  * which structurally rules out shell injection/chaining rather than trying to

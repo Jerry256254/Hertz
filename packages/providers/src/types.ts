@@ -29,6 +29,8 @@ export interface ChatRequest {
    * consumed by adapters whose cacheStrategy is 'anthropic-breakpoints'.
    */
   cachePrefixMessageCount?: number;
+  /** Aborts the in-flight HTTP request (stop/pause/cancel of a session run). */
+  signal?: AbortSignal;
 }
 
 export interface UsageInfo {

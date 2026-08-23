@@ -2,6 +2,8 @@ import { desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { agentMemory, agents } from "../db/schema.js";
 import { recentConversationMessagesFor } from "../conversations.js";
+import { skillsIndexFor, type SkillIndexEntry } from "../tools/skill-tools.js";
+import type { HertzPaths } from "../paths.js";
 
 const RECENT_MESSAGE_COUNT = 5;
 /** Notes now auto-accumulate every turn (see agent-loop.ts), not just when an agent deliberately calls remember — capped here so the prompt itself doesn't grow unbounded; the full history is still visible via list_memory and the memory dialog in the UI. */
@@ -22,7 +24,7 @@ const RECENT_MEMORY_COUNT = 40;
 export async function buildSystemPrompt(
   db: Database,
   agent: { id: string; systemPrompt: string | null },
-  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous" } = {},
+  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous"; paths?: HertzPaths } = {},
 ): Promise<string> {
   const recentNotesDesc = await db
     .select()
@@ -33,6 +35,14 @@ export async function buildSystemPrompt(
   const notes = [...recentNotesDesc].reverse();
 
   let prompt = agent.systemPrompt ?? "";
+
+  if (opts.paths) {
+    const skills: SkillIndexEntry[] = await skillsIndexFor(opts.paths, agent.id);
+    if (skills.length > 0) {
+      const skillBlock = skills.map((s) => `- ${s.name} — ${s.description}`).join("\n");
+      prompt += `\n\n## Your skills\nProcedures you saved from earlier work. Before doing anything that matches one of these, call read_skill and follow it instead of improvising. After you complete a new repeatable procedure, offer or just save_skill it.\n${skillBlock}`;
+    }
+  }
 
   if (notes.length > 0) {
     const memoryBlock = notes.map((n) => `- ${n.note}`).join("\n");

@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import type { Agent, ProviderConfig } from "../lib/types";
 import { ROLE_LABEL } from "../lib/types";
 import { agentColor } from "../lib/agent-color";
-import { Avatar, Badge, Button, Card, Label } from "../components/ui";
+import { Avatar, Badge, Button, Card, Input, Label, Textarea } from "../components/ui";
 import { FileExplorer } from "../components/FileExplorer";
 import { ConnectorCatalog } from "../components/ConnectorCatalog";
 import { ShellsPanel } from "../components/ShellsPanel";
@@ -167,6 +167,12 @@ export function EmployeeDetailPage() {
                 {updateModel.isPending && <p className="text-xs text-fg-subtle">Saving…</p>}
               </div>
             </Card>
+
+            <ComputerCard agentId={agent.id} backend={agent.computerBackend ?? "local"} />
+
+            <HeartbeatCard agentId={agent.id} minutes={agent.heartbeatMinutes ?? 0} prompt={agent.heartbeatPrompt ?? ""} />
+
+            <SkillsCard agentId={agentId!} />
           </div>
         )}
         {tab === "files" && agentId && projectId && (
@@ -190,5 +196,148 @@ export function EmployeeDetailPage() {
         <AgentMemoryDialog open={showMemory} onOpenChange={setShowMemory} agentId={agent.id} agentName={agent.name} />
       )}
     </div>
+  );
+}
+
+type ComputerStatus = { backend: "local" | "docker"; status: string; image: string | null; containerName?: string };
+
+function ComputerCard({ agentId, backend }: { agentId: string; backend: "local" | "docker" }) {
+  const queryClient = useQueryClient();
+  const [image, setImage] = useState("");
+  const { data } = useQuery({
+    queryKey: ["computer", agentId],
+    queryFn: () => api.get<ComputerStatus>(`/agents/${agentId}/computer`),
+    refetchInterval: 10_000,
+  });
+
+  const patch = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.patch(`/agents/${agentId}`, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["agent", agentId] });
+      void queryClient.invalidateQueries({ queryKey: ["computer", agentId] });
+    },
+  });
+  const restart = useMutation({
+    mutationFn: () => api.post(`/agents/${agentId}/computer/restart`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["computer", agentId] }),
+  });
+  const effectiveBackend = data?.backend ?? backend;
+
+  return (
+    <Card className="p-4">
+      <p className="text-sm font-medium text-fg">Počítač bota</p>
+      <p className="mb-3 text-xs text-fg-subtle">
+        Docker = izolovaný kontejner s vlastním filesystémem, shellem a browserem (vyžaduje image kuclab-hertz-computer).
+      </p>
+      <div className="flex items-center gap-2">
+        <select
+          value={effectiveBackend}
+          onChange={(e) => patch.mutate({ computerBackend: e.target.value })}
+          className="h-9 flex-1 rounded-md border border-border bg-bg-raised px-3 text-sm text-fg outline-none focus:border-accent"
+        >
+          <option value="local">local — přímo na serveru</option>
+          <option value="docker">docker — vlastní kontejner</option>
+        </select>
+        <Badge tone={effectiveBackend === "docker" ? (data?.status === "running" ? "success" : "warning") : "neutral"}>
+          {effectiveBackend === "docker" ? data?.status ?? "?" : "local"}
+        </Badge>
+      </div>
+      {effectiveBackend === "docker" && (
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-2">
+            <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="kuclab-hertz-computer:latest" className="h-8 text-xs" />
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                patch.mutate({ computerImage: image.trim() || null });
+                restart.mutate();
+              }}
+            >
+              Restartovat
+            </Button>
+          </div>
+          {data?.containerName && <p className="mono truncate text-xs text-fg-subtle">{data.containerName}</p>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function HeartbeatCard({ agentId, minutes, prompt }: { agentId: string; minutes: number; prompt: string }) {
+  const queryClient = useQueryClient();
+  const [mins, setMins] = useState(String(minutes));
+  const [text, setText] = useState(prompt);
+  const save = useMutation({
+    mutationFn: () =>
+      api.patch(`/agents/${agentId}`, {
+        heartbeatMinutes: Math.max(0, Number(mins) || 0),
+        heartbeatPrompt: text.trim() || null,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["agent", agentId] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+
+  return (
+    <Card className="p-4">
+      <p className="text-sm font-medium text-fg">Heartbeat</p>
+      <p className="mb-3 text-xs text-fg-subtle">
+        Agent se pravidelně sám probudí, zkontroluje, co má na starost, a případně se ozve. 0 = vypnuto.
+      </p>
+      <div className="space-y-3">
+        <div>
+          <Label>Interval (minuty)</Label>
+          <Input value={mins} onChange={(e) => setMins(e.target.value)} inputMode="numeric" className="h-8 w-28 text-xs" />
+        </div>
+        <div>
+          <Label>Stálé instrukce pro heartbeat</Label>
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Např.: Zkontroluj můj e-mail a shrň důležité. Nic naléhavého? Odpověz jen (idle)."
+            rows={3}
+          />
+        </div>
+        <Button size="sm" variant="secondary" onClick={() => save.mutate()} disabled={save.isPending}>
+          Uložit
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+interface SkillEntry {
+  name: string;
+  description: string;
+}
+
+function SkillsCard({ agentId }: { agentId: string }) {
+  const { data } = useQuery({
+    queryKey: ["skills", agentId],
+    queryFn: () => api.get<{ skills: SkillEntry[] }>(`/agents/${agentId}/skills`),
+    refetchInterval: 15_000,
+  });
+  const skills = data?.skills ?? [];
+  return (
+    <Card className="p-4">
+      <p className="text-sm font-medium text-fg">Skills</p>
+      <p className="mb-2 text-xs text-fg-subtle">
+        Postupy, které se bot naučil a uložil si je pro opakované použití (save_skill / read_skill).
+      </p>
+      {skills.length === 0 ? (
+        <p className="text-xs text-fg-subtle">Zatím žádné — objeví se, jakmile bot nějaký postup uloží.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {skills.map((s) => (
+            <li key={s.name} className="rounded-md bg-bg-raised px-2.5 py-1.5">
+              <span className="mono text-xs text-accent">{s.name}</span>
+              <span className="ml-2 text-xs text-fg-muted">{s.description}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

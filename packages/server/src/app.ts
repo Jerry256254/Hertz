@@ -21,6 +21,8 @@ import { registerRoutineRoutes } from "./routes/routines.js";
 import { registerShellRoutes } from "./routes/shells.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerUserRoutes } from "./routes/users.js";
+import { registerApprovalRoutes } from "./routes/approvals.js";
+import { registerChannelRoutes } from "./routes/channels.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
 import { registerMeetingWebsocket } from "./ws/meeting-hub.js";
 
@@ -56,6 +58,8 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerShellRoutes(app, ctx);
   registerOAuthRoutes(app, ctx);
   registerUserRoutes(app, ctx);
+  registerApprovalRoutes(app, ctx);
+  registerChannelRoutes(app, ctx);
   registerSessionWebsocket(app, ctx);
   registerMeetingWebsocket(app, ctx);
 

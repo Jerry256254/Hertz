@@ -8,9 +8,8 @@ import { agentProjects, agents, projectRoots, projects, sessions } from "../db/s
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
-import { buildSystemPrompt } from "../agents/system-prompt.js";
-import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 import { listConversations, pickConversationActor } from "../conversations.js";
+import { enqueueAgentRun } from "../runtime/run-jobs.js";
 
 const DEFAULT_TITLE = "New chat";
 
@@ -44,11 +43,11 @@ function deriveTitle(text: string): string {
   return oneLine.length > 60 ? `${oneLine.slice(0, 60)}…` : oneLine;
 }
 
-/** Starts a fresh run on a session (user message already persisted, or prePersisted for tool-triggered runs). */
+/** Enqueues a fresh run on a session (user message already persisted, or prePersisted for tool-triggered runs). The handler in run-jobs.ts rebuilds everything else from the DB. */
 async function startSessionRun(
   ctx: AppContext,
   session: { id: string; projectId: string; agentId: string; kind: string; mode: string | null },
-  agent: { id: string; model: string; providerConfigId: string; systemPrompt: string | null },
+  _agent: { id: string; model: string; providerConfigId: string; systemPrompt: string | null },
   content: ContentBlock[],
   opts: { userId: string; prePersisted?: boolean; conversationPeerName?: string; excludeTools?: string[] },
 ): Promise<void> {
@@ -57,37 +56,15 @@ async function startSessionRun(
     | "auto"
     | "autonomous";
 
-  const systemPrompt = await buildSystemPrompt(ctx.db, agent, {
+  await enqueueAgentRun(ctx, {
+    sessionId: session.id,
+    userId: opts.userId,
+    mode,
+    excludeTools: opts.excludeTools,
+    prePersisted: opts.prePersisted,
+    userMessage: content,
     conversationPeerName: opts.conversationPeerName,
-    mode: session.kind === "conversation" ? undefined : mode,
   });
-
-  const rootRows = await ctx.db.select().from(projectRoots).where(eq(projectRoots.projectId, session.projectId));
-  const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
-  if (!mainRoot) throw new Error("Project has no roots configured");
-
-  await ensureEmployeeDirs(ctx.paths, session.projectId, agent.id);
-  ctx.sandboxRegistry.register(session.id, {
-    [mainRoot.rootId]: mainRoot.absolutePath,
-    self: employeeDir(ctx.paths, session.projectId, agent.id),
-  });
-
-  ctx.agentLoop.start(
-    {
-      sessionId: session.id,
-      agentId: agent.id,
-      projectId: session.projectId,
-      userId: opts.userId,
-      rootId: mainRoot.rootId,
-      model: agent.model,
-      providerConfigId: agent.providerConfigId,
-      systemPrompt,
-      mode,
-      excludeTools: opts.excludeTools,
-      prePersisted: opts.prePersisted,
-    },
-    content,
-  );
 }
 
 export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -211,8 +188,25 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   instance.post("/api/sessions/:id/resume", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const ok = await ctx.agentLoop.resume(id);
-    if (!ok) return reply.code(409).send({ error: "Session isn't running" });
+    if (!(await ctx.agentLoop.resume(id))) {
+      // Not live in memory — either not running, or paused before a server
+      // restart. Durable resume: a persisted 'paused' session restarts via the
+      // queue, which is what makes pause survive reboots.
+      const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
+      const session = sessionRows[0];
+      if (!session) return reply.code(404).send({ error: "Session not found" });
+      if (session.status !== "paused") return reply.code(409).send({ error: "Session isn't running" });
+      await ctx.db.update(sessions).set({ status: "active", updatedAt: new Date() }).where(eq(sessions.id, id));
+      await enqueueAgentRun(ctx, { sessionId: id, prePersisted: true }, { maxAttempts: 2 });
+    }
+    return { ok: true };
+  });
+
+  /** Hard-stops the current run: aborts the in-flight model call and finalizes the session. */
+  instance.post("/api/sessions/:id/stop", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!ctx.agentLoop.isRunning(id)) return reply.code(409).send({ error: "Session isn't running" });
+    ctx.agentLoop.stop(id);
     return { ok: true };
   });
 

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { z } from "zod";
+import z from "zod";
 import type { AgentLoopManager } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { agents, agentProjects } from "../db/schema.js";
@@ -10,8 +10,7 @@ import {
   startConversationReplyRun,
   type ConversationDeps,
 } from "../conversations.js";
-import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
-import type { HertzPaths } from "../paths.js";
+import type { JobQueue } from "../queue/job-queue.js";
 
 const messageSchema = z.object({
   colleague: z
@@ -32,16 +31,14 @@ const messageSchema = z.object({
  */
 export function createMessagingTools(deps: {
   db: Database;
-  paths: HertzPaths;
-  sandboxRegistry: SandboxRegistry;
   /** Lazy — AgentLoopManager doesn't exist yet when the tool port is constructed. */
   getAgentLoop: () => AgentLoopManager;
+  queue: JobQueue;
 }): OrgToolDef[] {
   const loopDeps = (): ConversationDeps => ({
     db: deps.db,
-    paths: deps.paths,
-    sandboxRegistry: deps.sandboxRegistry,
     agentLoop: deps.getAgentLoop(),
+    queue: deps.queue,
   });
 
   const messageEmployee: OrgToolDef = {
