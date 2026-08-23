@@ -21,6 +21,7 @@ interface SessionDetail {
   agent?: { id: string; name: string; role: string } | null;
   peerAgent?: { id: string; name: string; role: string } | null;
   participants?: Array<{ id: string; name: string; role: string }>;
+  pendingTakeover?: { reason?: string } | null;
 }
 
 
@@ -215,6 +216,18 @@ export function SessionPage() {
     onError: (err) => setRunError(err instanceof ApiError ? err.message : "Couldn't update the run state"),
   });
 
+  const agentIdForScreen = data?.agent?.id ?? data?.session.agentId ?? "";
+
+  async function openScreen(agentId: string) {
+    const { token } = await api.get<{ token: string }>(`/agents/${agentId}/screen/token`);
+    window.open(`/screen/${agentId}?t=${encodeURIComponent(token)}`, "_blank", "width=1280,height=820");
+  }
+
+  const doneTakeover = useMutation({
+    mutationFn: () => api.post(`/agents/${data!.session.agentId}/takeover/done`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }),
+  });
+
   const answerQuestion = useMutation({
     mutationFn: (answer: string) => api.post(`/sessions/${sessionId}/answer`, { text: answer }),
     onSuccess: () => {
@@ -300,6 +313,23 @@ export function SessionPage() {
             {isPaused && (
               <span className="rounded-full bg-bg-sunken px-2.5 py-1 text-[11px] font-medium text-fg-muted">
                 Paused
+              </span>
+            )}
+            {data?.pendingTakeover && (
+              <span className="flex items-center gap-2 rounded-full border border-accent bg-accent-wash px-3 py-1 text-[11px] font-medium text-accent">
+                Take-over requested
+                <button
+                  className="underline"
+                  onClick={() => void openScreen(data.agent?.id ?? data.session.agentId)}
+                >
+                  Open screen
+                </button>
+                <button
+                  className="rounded-full bg-accent px-2 py-0.5 text-accent-fg"
+                  onClick={() => doneTakeover.mutate()}
+                >
+                  I'm done
+                </button>
               </span>
             )}
             {isRunning && (

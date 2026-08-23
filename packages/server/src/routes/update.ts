@@ -30,6 +30,42 @@ export function registerUpdateRoutes(app: FastifyInstance, _ctx?: unknown): void
       return { running: lines[lines.length - 1]?.includes("update started") === true, log: lines.slice(-60).join("\n") };
     });
 
+    /** Current vs latest available version — powers the Update dialog. */
+    instance.get("/api/update/version", async (request, reply) => {
+      if (request.user?.role !== "admin") return reply.code(403).send({ error: "Admin only" });
+
+      const { execFile } = await import("node:child_process");
+      const sha = await new Promise<string>((resolve) => {
+        execFile("git", ["rev-parse", "--short", "HEAD"], { cwd: process.cwd() }, (err, stdout) =>
+          resolve(err ? "" : stdout.trim()),
+        );
+      });
+
+      let version = "";
+      try {
+        const pkgUrl = new URL("../../../cli/package.json", import.meta.url);
+        version = (JSON.parse(await fs.readFile(pkgUrl, "utf8")) as { version: string }).version;
+      } catch {
+        /* ignore */
+      }
+
+      let latest: { tag: string; url: string } | null = null;
+      try {
+        const res = await fetch("https://api.github.com/repos/Jerry256254/Hertz/releases/latest", {
+          headers: { "user-agent": "kuclab-hertz" },
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (res.ok) {
+          const body = (await res.json()) as { tag_name?: string; html_url?: string };
+          if (body.tag_name) latest = { tag: body.tag_name, url: body.html_url ?? "" };
+        }
+      } catch {
+        latest = null; // offline / rate-limited — button still works
+      }
+
+      return { current: { version, sha }, latest };
+    });
+
     instance.post("/api/update", async (request, reply) => {
       if (request.user?.role !== "admin") return reply.code(403).send({ error: "Admin only" });
 

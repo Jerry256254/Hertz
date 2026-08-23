@@ -23,7 +23,6 @@ const createSessionSchema = z.object({
 
 const renameSessionSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  mode: z.enum(["plan", "auto", "autonomous"]).optional(),
 });
 
 const sendMessageSchema = z.object({
@@ -32,8 +31,6 @@ const sendMessageSchema = z.object({
     .array(z.object({ mimeType: z.string(), data: z.string() }))
     .optional()
     .default([]),
-  /** plan = think/answer only, no tools; auto (default) = full tools, may ask; autonomous = never asks, works until done. */
-  mode: z.enum(["plan", "auto", "autonomous"]).optional(),
 });
 
 const answerSchema = z.object({
@@ -204,6 +201,9 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       paused: ctx.agentLoop.isPaused(id),
       pendingQuestion: session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null,
       pendingQuestionAgentId: session.metadata ? (JSON.parse(session.metadata).pendingQuestionAgentId as string | undefined) ?? null : null,
+      pendingTakeover: session.metadata
+        ? ((JSON.parse(session.metadata).pendingTakeover as { reason?: string } | undefined) ?? null)
+        : null,
       agent,
       peerAgent,
       participants,
@@ -253,7 +253,6 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       .update(sessions)
       .set({
         ...(parsed.data.title ? { title: parsed.data.title } : {}),
-        ...(parsed.data.mode ? { mode: parsed.data.mode } : {}),
         updatedAt: new Date(),
       })
       .where(eq(sessions.id, id));
@@ -363,15 +362,6 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
           .set({ status: "active", metadata: null, updatedAt: new Date() })
           .where(eq(sessions.id, id));
       }
-    }
-
-    // Persist the chosen mode on the session (the UI sends it with each message).
-    if (parsed.data.mode && parsed.data.mode !== session.mode) {
-      await ctx.db
-        .update(sessions)
-        .set({ mode: parsed.data.mode, updatedAt: new Date() })
-        .where(eq(sessions.id, id));
-      session.mode = parsed.data.mode;
     }
 
     if (session.kind !== "conversation" && session.title === DEFAULT_TITLE && parsed.data.text) {

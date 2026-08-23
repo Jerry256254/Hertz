@@ -55,6 +55,13 @@ export interface ToolResult {
    * autonomous mode too — that's the point of a human-in-the-loop gate.
    */
   awaitUser?: { question: string };
+  /**
+   * Images (base64) produced by the tool (screenshots from browser/desktop).
+   * The loop appends them as image blocks right after the tool result — but
+   * ONLY when the run's model supports vision; otherwise they're dropped and
+   * the summary alone stands.
+   */
+  attachments?: Array<{ mimeType: string; data: string }>;
 }
 
 export interface ToolDef<TInput = any> {

@@ -11,6 +11,8 @@ import { createShellTools } from "./shell-tools.js";
 import { createApprovalTools } from "./approval-tools.js";
 import { createSkillTools } from "./skill-tools.js";
 import { createBrowserTools } from "./browser-tools.js";
+import { createDesktopTools } from "./desktop-tools.js";
+import type { DesktopManager } from "../computer/desktop-manager.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
 import { McpRegistry } from "../mcp/mcp-registry.js";
@@ -26,6 +28,8 @@ export interface ToolPortDeps {
   providers: ProviderPort;
   queue: JobQueue;
   persistence: PersistencePort;
+  masterKey: Buffer;
+  desktop: DesktopManager;
   /** Lazy: AgentLoopManager depends on ToolPort, so ToolPort can't depend on a concrete instance at construction time. */
   getAgentLoop: () => AgentLoopManager;
 }
@@ -79,8 +83,9 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const approvalTools = createApprovalTools(deps.db);
   const skillTools = createSkillTools(deps.db, deps.paths);
   const browserTools = createBrowserTools();
+  const desktopTools = createDesktopTools(deps.db, deps.masterKey, deps.desktop);
   const allByName = new Map(
-    [...orgTools, ...memoryTools, ...messagingTools, ...shellTools, ...approvalTools, ...skillTools, ...browserTools, ASK_USER_DEF].map((t) => [t.name, t]),
+    [...orgTools, ...memoryTools, ...messagingTools, ...shellTools, ...approvalTools, ...skillTools, ...browserTools, ...desktopTools, ASK_USER_DEF].map((t) => [t.name, t]),
   );
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
@@ -112,8 +117,8 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
       const managerRole = await isManager(agentId);
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
       const filteredBaseDefs = managerRole ? baseDefs.filter((d) => !MANAGER_RESTRICTED_TOOLS.has(d.name)) : baseDefs;
-      const browserDefs = (await hasDockerComputer(agentId)) ? toDefs(browserTools) : [];
-      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...browserDefs, ...mcpDefs, ...askUserDefs];
+      const dockerDefs = (await hasDockerComputer(agentId)) ? [...toDefs(browserTools), ...toDefs(desktopTools)] : [];
+      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...dockerDefs, ...mcpDefs, ...askUserDefs];
       return managerRole ? [...defs, ...orgDefs] : defs;
     },
     async run(name, input, ctx) {

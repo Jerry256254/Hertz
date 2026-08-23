@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { AgentLoopManager, PersistencePort } from "@kuclab-hertz/core";
+import type { AgentLoopManager, PersistencePort, ProviderPort } from "@kuclab-hertz/core";
 import { repairSessionHistory } from "@kuclab-hertz/core";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { Database } from "../db/client.js";
@@ -60,8 +60,28 @@ export interface AgentRunJobPayload {
   respondAsAgentId?: string;
 }
 
+/** Per (providerConfigId, model) → supportsVision cache; providers are asked once. */
+const visionCache = new Map<string, boolean>();
+
+async function modelSupportsVision(deps: RunJobsDeps, providerConfigId: string, model: string): Promise<boolean> {
+  const key = `${providerConfigId}::${model}`;
+  const cached = visionCache.get(key);
+  if (cached !== undefined) return cached;
+  let value = false;
+  try {
+    const adapter = await deps.providers.getAdapter(providerConfigId);
+    const models = await adapter.listModels();
+    value = models.find((m) => m.id === model)?.supportsVision ?? false;
+  } catch {
+    value = false;
+  }
+  visionCache.set(key, value);
+  return value;
+}
+
 export interface RunJobsDeps {
   db: Database;
+  providers: ProviderPort;
   paths: HertzPaths;
   sandboxRegistry: SandboxRegistry;
   persistence: PersistencePort;
@@ -195,6 +215,7 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
         excludeTools: excludeTools.length > 0 ? excludeTools : undefined,
         prePersisted: prePersisted || !payload.userMessage,
         suppressAutoMemory: payload.suppressAutoMemory,
+        supportsVision: await modelSupportsVision(deps, agent.providerConfigId, agent.model),
       },
       payload.userMessage ?? [],
     );

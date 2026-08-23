@@ -96,6 +96,10 @@ export class ComputerManager {
       "512",
       "--security-opt",
       "no-new-privileges",
+      // The agent's desktop (noVNC websocket). Published to localhost only —
+      // the server proxies authenticated connections to it.
+      "-p",
+      "127.0.0.1::6080",
     ];
     for (const p of spec.mountPaths) args.push("-v", `${p}:${p}`);
     args.push(image, "sleep", "infinity");
@@ -114,12 +118,34 @@ export class ComputerManager {
   }
 
   /** Copies the Playwright daemon into the container (/opt/hertz/browser.mjs). Idempotent per container start. */
+  /** Copies arbitrary text content into the container (used for bootstrap scripts). */  async writeFileInto(agentId: string, containerPath: string, content: string): Promise<void> {
+    const tmp = path.join(os.tmpdir(), `hertz-cp-${agentId}-${path.basename(containerPath)}`);
+    await fs.writeFile(tmp, content, "utf8");
+    await this.run(["docker", "exec", this.containerName(agentId), "mkdir", "-p", path.posix.dirname(containerPath)]);
+    await this.run(["docker", "cp", tmp, `${this.containerName(agentId)}:${containerPath}`]);
+    await fs.rm(tmp, { force: true });
+  }
+
+  /** Low-level docker runner shared with DesktopManager. */
+  run(argv: string[]): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(argv[0]!, argv.slice(1), { stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (b: Buffer) => {
+        stdout += b.toString("utf8");
+      });
+      child.stderr.on("data", (b: Buffer) => {
+        stderr += b.toString("utf8");
+      });
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ exitCode: code, stdout, stderr }));
+    });
+  }
+
   private async installBrowserDaemon(agentId: string): Promise<void> {
     try {
-      const tmp = path.join(os.tmpdir(), `hertz-browser-${agentId}.mjs`);
-      await fs.writeFile(tmp, BROWSER_DAEMON_SOURCE, "utf8");
-      await this.run(["docker", "cp", tmp, `${this.containerName(agentId)}:/opt/hertz/browser.mjs`]);
-      await fs.rm(tmp, { force: true });
+      await this.writeFileInto(agentId, "/opt/hertz/browser.mjs", BROWSER_DAEMON_SOURCE);
     } catch {
       // Browser automation is optional — shell/fs work fine without it.
     }
@@ -129,8 +155,10 @@ export class ComputerManager {
   browserSession(agentId: string): BrowserSession {
     let session = this.browsers.get(agentId);
     if (!session) {
+      // Chromium runs HEADED on the container's visible display (:99) so the
+      // streamed desktop shows exactly what the browser is doing.
       session = new BrowserSession(
-        () => ["docker", "exec", "-i", "-w", "/workspace", this.containerName(agentId)],
+        () => ["docker", "exec", "-i", "-w", "/workspace", "-e", "DISPLAY=:99", this.containerName(agentId)],
         () => this.browsers.delete(agentId),
       );
       this.browsers.set(agentId, session);
@@ -196,22 +224,6 @@ export class ComputerManager {
         clearTimeout(timer);
         resolve({ exitCode: code, stdout, stderr, truncated, timedOut });
       });
-    });
-  }
-
-  private run(argv: string[]): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(argv[0]!, argv.slice(1), { stdio: ["ignore", "pipe", "pipe"] });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (b: Buffer) => {
-        stdout += b.toString("utf8");
-      });
-      child.stderr.on("data", (b: Buffer) => {
-        stderr += b.toString("utf8");
-      });
-      child.on("error", reject);
-      child.on("close", (code) => resolve({ exitCode: code, stdout, stderr }));
     });
   }
 

@@ -19,6 +19,7 @@ import { JobQueue } from "./queue/job-queue.js";
 import { createAgentRunHandler, type RunJobsDeps } from "./runtime/run-jobs.js";
 import { reconcileOnBoot } from "./runtime/reconcile.js";
 import { ComputerManager } from "./computer/computer-manager.js";
+import { DesktopManager } from "./computer/desktop-manager.js";
 import { HeartbeatScheduler } from "./heartbeats/heartbeat-scheduler.js";
 import { ChannelManager } from "./channels/channel-manager.js";
 import { decryptSecret } from "./secrets/key-encryption.js";
@@ -37,6 +38,7 @@ export interface AppContext {
   shellManager: ShellManager;
   queue: JobQueue;
   computer: ComputerManager;
+  desktop: DesktopManager;
   heartbeatScheduler: HeartbeatScheduler;
   channelManager: ChannelManager;
 }
@@ -56,6 +58,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const providers = createProviderRegistry(db, masterKey);
   const mcpRegistry = new McpRegistry(db, masterKey);
   const computer = new ComputerManager(audit);
+  const desktop = new DesktopManager(computer, audit);
   const shellPrefixResolver = async (ownerAgentId: string, cwd: string): Promise<string[] | undefined> => {
     const rows = await db.select({ backend: agents.computerBackend }).from(agents).where(eq(agents.id, ownerAgentId)).limit(1);
     if (rows[0]?.backend !== "docker") return undefined;
@@ -77,6 +80,8 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     providers,
     queue,
     persistence,
+    masterKey,
+    desktop,
     getAgentLoop: () => {
       if (!agentLoopRef) throw new Error("AgentLoopManager not initialized yet");
       return agentLoopRef;
@@ -98,6 +103,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
 
   const runJobsDeps: RunJobsDeps = {
     db,
+    providers,
     paths,
     sandboxRegistry,
     persistence,
@@ -153,6 +159,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     shellManager,
     queue,
     computer,
+    desktop,
     heartbeatScheduler,
     channelManager,
   };

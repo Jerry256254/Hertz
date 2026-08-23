@@ -241,6 +241,12 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
 function UpdateButton() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const { data: versions } = useQuery({
+    queryKey: ["update-version"],
+    queryFn: () => api.get<{ current: { version: string; sha: string }; latest: { tag: string; url: string } | null }>("/update/version"),
+    enabled: open,
+  });
+  const updateAvailable = !!versions?.latest && !`v${versions.current.version}`.startsWith(versions.latest.tag.replace(/\.0$/, "")) && `v${versions.current.version}` !== versions.latest.tag;
   const { data } = useQuery({
     queryKey: ["update-status"],
     queryFn: () => api.get<{ running: boolean; log: string }>("/update/status"),
@@ -264,14 +270,29 @@ function UpdateButton() {
       >
         <RefreshCw size={15} className={data?.running ? "animate-spin" : ""} />
         Update Hertz
+        {updateAvailable && <span className="ml-auto h-2 w-2 rounded-full bg-accent" />}
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !data?.running && setOpen(false)}>
           <div className="w-full max-w-lg rounded-xl border border-border bg-bg-raised p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center gap-2">
               <RefreshCw size={15} className={data?.running ? "animate-spin text-accent" : "text-accent"} />
-              <span className="text-sm font-medium text-fg">{data?.running ? "Updating Hertz…" : "Up to date — last update log:"}</span>
+              <span className="text-sm font-medium text-fg">{data?.running ? "Updating Hertz…" : "Update Hertz"}</span>
             </div>
+            {versions && (
+              <div className="mb-3 rounded-md bg-bg-sunken px-3 py-2 text-xs text-fg-muted">
+                Installed: <span className="mono text-fg">v{versions.current.version}</span> ({versions.current.sha || "?"})
+                {versions.latest && (
+                  <>
+                    {" · "}Latest release:{" "}
+                    <a href={versions.latest.url} target="_blank" rel="noreferrer" className="text-accent underline">
+                      {versions.latest.tag}
+                    </a>
+                    {updateAvailable && <span className="ml-1 font-medium text-warning">— update available</span>}
+                  </>
+                )}
+              </div>
+            )}
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-bg-sunken p-3 text-[11px] text-fg-muted">
               {data?.log || "Starting…"}
             </pre>

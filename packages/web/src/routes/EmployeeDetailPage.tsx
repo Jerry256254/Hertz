@@ -33,11 +33,6 @@ export function EmployeeDetailPage() {
     queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
   });
 
-  const decideHire = useMutation({
-    mutationFn: (approvalStatus: "approved" | "rejected") => api.patch(`/agents/${agentId}/approval`, { approvalStatus }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent", agentId] }),
-  });
-
   const decideTermination = useMutation({
     mutationFn: (decision: "approved" | "rejected") => api.patch(`/agents/${agentId}/termination`, { decision }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent", agentId] }),
@@ -83,16 +78,7 @@ export function EmployeeDetailPage() {
               <p className="mono mt-0.5 text-xs text-fg-subtle">{agent.model}</p>
             </div>
           </div>
-          {agent.approvalStatus === "pending" && (
-            <div className="flex flex-shrink-0 items-center gap-1.5">
-              <Button variant="primary" size="sm" onClick={() => decideHire.mutate("approved")} disabled={decideHire.isPending}>
-                Approve
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => decideHire.mutate("rejected")} disabled={decideHire.isPending}>
-                Reject
-              </Button>
-            </div>
-          )}
+
           {agent.pendingTermination && (
             <div className="flex flex-shrink-0 items-center gap-1.5">
               <Button variant="danger" size="sm" onClick={() => decideTermination.mutate("approved")} disabled={decideTermination.isPending}>
@@ -169,6 +155,8 @@ export function EmployeeDetailPage() {
             </Card>
 
             <ComputerCard agentId={agent.id} backend={agent.computerBackend ?? "local"} />
+
+            <ScreenCard agentId={agent.id} />
 
             <HeartbeatCard agentId={agent.id} minutes={agent.heartbeatMinutes ?? 0} prompt={agent.heartbeatPrompt ?? ""} />
 
@@ -337,6 +325,71 @@ function SkillsCard({ agentId }: { agentId: string }) {
             </li>
           ))}
         </ul>
+      )}
+    </Card>
+  );
+}
+
+
+function ScreenCard({ agentId }: { agentId: string }) {
+  const [open, setOpen] = useState(false);
+  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  const { data: status } = useQuery({
+    queryKey: ["screen", agentId],
+    queryFn: () => api.get<{ running: boolean; tunnelUrl?: string | null }>("/agents/" + agentId + "/screen/status"),
+    enabled: open,
+    refetchInterval: open ? 5000 : false,
+  });
+
+  async function openViewer() {
+    const { token } = await api.get<{ token: string }>("/agents/" + agentId + "/screen/token");
+    setIframeUrl(`/screen/${agentId}?t=${encodeURIComponent(token)}`);
+  }
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-fg">Screen</p>
+        <Badge tone={status?.running ? "success" : "neutral"}>{status?.running ? "live" : "off"}</Badge>
+      </div>
+      <p className="mb-3 text-xs text-fg-subtle">
+        The bot's visible desktop (Xfce) inside its container — watch what it does, take over to log in, or install apps.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" onClick={() => void api.post(`/agents/${agentId}/screen/start`)}>
+          Start desktop
+        </Button>
+        <Button size="sm" variant="primary" onClick={() => { setOpen(true); void openViewer(); }}>
+          Open screen
+        </Button>
+        {status?.running && (
+          <Button size="sm" variant="ghost" onClick={() => void api.post(`/agents/${agentId}/screen/start`)}>
+            Restart stack
+          </Button>
+        )}
+      </div>
+      {status?.tunnelUrl && (
+        <p className="mt-2 break-all text-xs text-fg-muted">
+          Public link:{" "}
+          <a className="text-accent underline" href={status.tunnelUrl} target="_blank" rel="noreferrer">
+            {status.tunnelUrl}
+          </a>{" "}
+          <button
+            className="ml-1 text-fg-subtle underline"
+            onClick={() => {
+              void navigator.clipboard?.writeText(status.tunnelUrl!);
+            }}
+          >
+            copy
+          </button>
+        </p>
+      )}
+      {open && iframeUrl && (
+        <iframe
+          title="Agent screen"
+          src={iframeUrl}
+          className="mt-3 aspect-[16/10] w-full rounded-lg border border-border"
+        />
       )}
     </Card>
   );

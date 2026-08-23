@@ -50,6 +50,8 @@ export interface AgentLoopConfig {
   prePersisted?: boolean;
   /** Skip the automatic "Was told: X — Y" memory note on termination (used by heartbeats, which would otherwise spam memory every tick). */
   suppressAutoMemory?: boolean;
+  /** Model can read images — tool screenshot attachments are delivered as image blocks. */
+  supportsVision?: boolean;
 }
 
 export const DEFAULT_MAX_TURNS = 50;
@@ -538,6 +540,7 @@ export class AgentLoopManager {
         signal,
       );
       let pendingAwait: { question: string } | undefined;
+      const visionAttachments: Array<{ tool: string; mimeType: string; data: string }> = [];
 
       const assistantBlocks: ContentBlock[] = [];
       if (assistantText) assistantBlocks.push({ type: "text", text: assistantText });
@@ -663,6 +666,9 @@ export class AgentLoopManager {
           content: result.summary,
           isError: result.isError,
         });
+        if (result.attachments && result.attachments.length > 0) {
+          visionAttachments.push(...result.attachments.map((a) => ({ tool: t.name, ...a })));
+        }
         this.emit(config.sessionId, {
           type: "tool_result",
           id: t.id,
@@ -690,6 +696,31 @@ export class AgentLoopManager {
           cost: 0,
           purpose: "agent_turn",
         });
+      }
+
+      // Vision models get screenshots as real image blocks right after the
+      // tool result — non-vision models never receive them.
+      if (visionAttachments.length > 0 && config.supportsVision) {
+        const imageBlocks: ContentBlock[] = visionAttachments.slice(0, 3).map((a) => ({
+          type: "image" as const,
+          mimeType: a.mimeType,
+          data: a.data,
+        }));
+        await persistence.appendMessage({
+          sessionId: config.sessionId,
+          role: "user",
+          content: [
+            { type: "text", text: "[Screenshots captured by tools — read them visually]" },
+            ...imageBlocks,
+          ],
+          senderAgentId: null,
+          tokensIn: 0,
+          tokensOut: 0,
+          cachedTokensIn: 0,
+          cost: 0,
+          purpose: "agent_turn",
+        });
+        visionAttachments.length = 0;
       }
 
       // A human-in-the-loop gate (request_approval): park the session until the

@@ -211,14 +211,7 @@ export function ProjectPage() {
   const agents = agentsData?.agents ?? [];
   const manager = agents.find((a) => a.role === "manager");
   const employees = agents.filter((a) => a.role !== "manager" && a.approvalStatus === "approved");
-  const pendingHires = agents.filter((a) => a.role !== "manager" && a.approvalStatus === "pending");
   const pendingTerminations = agents.filter((a) => a.pendingTermination);
-
-  const decideHire = useMutation({
-    mutationFn: ({ id, approvalStatus }: { id: string; approvalStatus: "approved" | "rejected" }) =>
-      api.patch(`/agents/${id}/approval`, { approvalStatus }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agents", projectId] }),
-  });
 
   const decideTermination = useMutation({
     mutationFn: ({ id, decision }: { id: string; decision: "approved" | "rejected" }) =>
@@ -327,51 +320,6 @@ export function ProjectPage() {
                 <DeleteButton title="Remove manager" onDelete={() => deleteAgent.mutate(manager.id)} />
               </div>
             </Card>
-          </div>
-        )}
-
-        {pendingHires.length > 0 && (
-          <div className="mb-6">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-              Pending approval · {pendingHires.length}
-            </h2>
-            <ul className="space-y-2">
-              {pendingHires.map((a) => (
-                <li key={a.id}>
-                  <Card className="p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <Avatar label={a.name} color={agentColor(a.id)} />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-fg">
-                            {a.name} <span className="font-normal text-fg-subtle">· {ROLE_LABEL[a.role]}</span>
-                          </p>
-                          {a.jobDescription && <p className="mt-0.5 text-xs text-fg-muted">{a.jobDescription}</p>}
-                        </div>
-                      </div>
-                      <div className="flex flex-shrink-0 items-center gap-1.5">
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => decideHire.mutate({ id: a.id, approvalStatus: "approved" })}
-                          disabled={decideHire.isPending}
-                        >
-                          Approve
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => decideHire.mutate({ id: a.id, approvalStatus: "rejected" })}
-                          disabled={decideHire.isPending}
-                        >
-                          Reject
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                </li>
-              ))}
-            </ul>
           </div>
         )}
 
@@ -686,6 +634,7 @@ function TaskCard({
   onCycleStatus: () => void;
   onDelete: () => void;
 }) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const { data: detail } = useQuery({
     queryKey: ["task", task.id],
@@ -726,28 +675,43 @@ function TaskCard({
             <pre className="whitespace-pre-wrap rounded-md bg-bg-sunken p-3 text-xs text-fg-muted">{d.description}</pre>
           </div>
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Assignees & their work</p>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Timeline</p>
+            <p className="text-xs text-fg-subtle">
+              Started {new Date(d.createdAt).toLocaleString()} · updated {new Date(d.updatedAt).toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Assignees & live work log</p>
             {d.assignees.length === 0 ? (
               <p className="text-xs text-fg-subtle">No assignees.</p>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-2.5">
                 {d.assignees.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5">
-                    <span className="flex min-w-0 items-center gap-2 text-xs text-fg">
-                      <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-bg-sunken text-[10px] font-semibold text-fg-muted">
-                        {a.agentName.slice(0, 1).toUpperCase()}
+                  <li key={a.id} className="rounded-md border border-border px-2.5 py-2">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-2 text-xs text-fg">
+                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-bg-sunken text-[10px] font-semibold text-fg-muted">
+                          {a.agentName.slice(0, 1).toUpperCase()}
+                        </span>
+                        <span className="truncate">{a.agentName}</span>
+                        <span className="flex-shrink-0 text-fg-subtle">· {a.agentRole}</span>
                       </span>
-                      <span className="truncate">{a.agentName}</span>
-                      <span className="flex-shrink-0 text-fg-subtle">· {a.agentRole}</span>
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={!a.sessionId}
-                      onClick={() => a.sessionId && window.open(`/projects/${projectId}/sessions/${a.sessionId}`, "_self")}
-                    >
-                      Open work session
-                    </Button>
+                      <span className="flex flex-shrink-0 items-center gap-1.5">
+                        {a.sessionId && (
+                          <>
+                            <SessionActions sessionId={a.sessionId} />
+                            <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId}/sessions/${a.sessionId}`)}>
+                              Open chat
+                            </Button>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    {a.sessionId ? (
+                      <SessionActivity sessionId={a.sessionId} />
+                    ) : (
+                      <p className="text-xs text-fg-subtle">Not started yet.</p>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -756,6 +720,72 @@ function TaskCard({
         </div>
       )}
     </Card>
+  );
+}
+
+interface SessionSnapshot {
+  session: { status: string; createdAt: string; updatedAt: string };
+  running: boolean;
+  messages: Array<{ id: string; role: string; senderAgentId: string | null; content: Array<{ type: string; text?: string; name?: string }> }>;
+}
+
+/** Live step log for one assignee's work session: tool calls/results + latest text, polled while expanded. */
+function SessionActivity({ sessionId }: { sessionId: string }) {
+  const { data } = useQuery({
+    queryKey: ["task-session", sessionId],
+    queryFn: () => api.get<SessionSnapshot>(`/sessions/${sessionId}`),
+    refetchInterval: 4000,
+  });
+  if (!data) return <p className="text-xs text-fg-subtle">Loading activity…</p>;
+
+  const events: string[] = [];
+  for (const m of [...data.messages].reverse()) {
+    for (const b of m.content ?? []) {
+      if (b.type === "tool_use" && b.name) events.push(`→ ${b.name}`);
+      else if (b.type === "tool_result") events.push(`   ${(b as unknown as { content?: string }).content?.slice(0, 90) ?? ""}`);
+      else if (b.type === "text" && m.role === "assistant" && b.text) events.push(`✓ ${b.text.replace(/\s+/g, " ").slice(0, 110)}`);
+    }
+    if (events.length >= 14) break;
+  }
+
+  return (
+    <div>
+      <p className="mb-1 text-[11px] text-fg-subtle">
+        status: <span className="text-fg">{data.running ? "running" : data.session.status}</span> · started{" "}
+        {new Date(data.session.createdAt).toLocaleTimeString()} · last activity {new Date(data.session.updatedAt).toLocaleTimeString()}
+      </p>
+      <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-bg-sunken p-2 text-[11px] leading-relaxed text-fg-muted">
+{events.length > 0 ? events.join("\n") : "(no steps yet)"}
+      </pre>
+    </div>
+  );
+}
+
+function SessionActions({ sessionId }: { sessionId: string }) {
+  const queryClient = useQueryClient();
+  const act = useMutation({
+    mutationFn: ({ action }: { action: string }) => api.post(`/sessions/${sessionId}/${action}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["task-session", sessionId] });
+    },
+  });
+  return (
+    <>
+      <IconButton title="Pause this agent" onClick={() => act.mutate({ action: "pause" })}>
+        ⏸
+      </IconButton>
+      <IconButton title="Stop the current run" onClick={() => act.mutate({ action: "stop" })}>
+        ■
+      </IconButton>
+      <IconButton
+        title="Nudge to continue working"
+        onClick={() =>
+          api.post(`/sessions/${sessionId}/messages`, { text: "[Continue working on your assigned task until it is fully done.]" })
+        }
+      >
+        ▶
+      </IconButton>
+    </>
   );
 }
 

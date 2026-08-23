@@ -42,6 +42,8 @@ export function lanAddresses(): string[] {
 }
 
 export async function startServer(ctx: AppContext, config: HertzConfig): Promise<void> {
+  // Tools (take-over links) read the public port from the environment.
+  process.env.HERTZ_PORT = String(config.port);
   const webDistDir = resolveWebDistDir();
   if (!webDistDir) {
     console.log(kleur.yellow("No built WebUI found — running API-only. Run `pnpm --filter @kuclab-hertz/web build` first."));

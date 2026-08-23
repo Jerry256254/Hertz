@@ -24,7 +24,8 @@ if (!pw) {
 }
 
 const { chromium } = pw;
-const browser = await chromium.launch({ args: ["--no-sandbox"] });
+const headless = !process.env.DISPLAY; // with DISPLAY set, run headed on the visible desktop
+const browser = await chromium.launch({ headless, args: ["--no-sandbox"] });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "cs-CZ" });
 const page = await context.newPage();
 
