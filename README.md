@@ -1,8 +1,8 @@
 # Hertz Jobs
 
-Self-hosted autonomous agent platform — one command starts a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you can talk to them from Telegram or Discord.
+Self-hosted autonomous agent platform — a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you can talk to them from Telegram or Discord.
 
-**➡️ Quick start:** `npx kuclab-hertz` — installs everything, opens a setup wizard, and starts a local server with a web interface. No registration, no cloud account, nothing leaves your machine.
+**Quick start:** clone this repository, run two commands, open the browser. No registration, no cloud account, nothing leaves your machine.
 
 ---
 
@@ -10,8 +10,8 @@ Self-hosted autonomous agent platform — one command starts a server with a Web
 
 1. [What is this?](#1-what-is-this)
 2. [What you need before installing](#2-what-you-need-before-installing)
-3. [Installing Node.js](#3-installing-nodejs)
-4. [Starting Hertz Jobs](#4-starting-hertz-jobs)
+3. [Installing Node.js and pnpm](#3-installing-nodejs-and-pnpm)
+4. [Installing Hertz Jobs (git clone)](#4-installing-hertz-jobs-git-clone)
 5. [First run — the setup wizard](#5-first-run--the-setup-wizard)
 6. [Your first project and your first bot](#6-your-first-project-and-your-first-bot)
 7. [Making bots autonomous (the Grok-Bot features)](#7-making-bots-autonomous-the-grok-bot-features)
@@ -19,7 +19,6 @@ Self-hosted autonomous agent platform — one command starts a server with a Web
 9. [Updating](#9-updating)
 10. [Where your data lives](#10-where-your-data-lives)
 11. [Troubleshooting](#11-troubleshooting)
-12. [For developers: build from source](#12-for-developers-build-from-source)
 
 ---
 
@@ -43,8 +42,9 @@ Typical things people ask their team to do:
 |---|---|---|
 | Operating system | Linux, macOS, or Windows | Windows works best through [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) |
 | RAM | 4 GB free | More = more parallel bots |
-| Disk | ~500 MB + your projects | The database grows slowly over time |
+| Disk | ~1 GB + your projects | The database grows slowly over time |
 | Internet | Required | Bots call AI providers and fetch web pages |
+| Git | Any recent version | To clone this repository ([download](https://git-scm.com/downloads)) |
 | An AI API key | Any ONE of: Anthropic, OpenAI, Google, xAI, Mistral, DeepSeek, OpenRouter… or a local Ollama | This pays the AI provider directly for what the bots think |
 
 > **Where do I get an API key?**
@@ -56,17 +56,21 @@ Optional extras (all set up later, none required to start):
 
 ---
 
-## 3. Installing Node.js
+## 3. Installing Node.js and pnpm
 
-Hertz needs **Node.js version 20 or newer**. Check whether you already have it:
+Hertz needs **Node.js version 20 or newer** and the **pnpm** package manager.
+
+### Check what you already have
 
 ```bash
 node --version
+pnpm --version
 ```
 
-If you see `v20.` or higher (e.g. `v22.11.0`) — skip to step 4.
+- If `node` prints **v20 or higher** (e.g. `v22.11.0`) and `pnpm` prints a number — skip to step 4.
+- If either prints "command not found" — continue below.
 
-**Don't have it, or too old?** Install the current LTS version:
+### Install Node.js
 
 - **Windows:** download the LTS installer from <https://nodejs.org>, run it, click Next until done. (Or use WSL2 and follow the Linux steps inside it.)
 - **macOS:** download the LTS installer from <https://nodejs.org>, or run `brew install node` if you use Homebrew.
@@ -77,25 +81,54 @@ If you see `v20.` or higher (e.g. `v22.11.0`) — skip to step 4.
   ```
 - **Linux (Fedora/RHEL):** `sudo dnf install nodejs`
 
-Then verify again: `node --version` should print v20+.
+### Install pnpm
+
+```bash
+corepack enable
+```
+
+(`corepack` ships with Node.js. If that fails, fall back to: `npm install -g pnpm`.)
+
+Verify both again:
+
+```bash
+node --version   # v20+ expected
+pnpm --version   # any 9+ version is fine
+```
 
 ---
 
-## 4. Starting Hertz Jobs
+## 4. Installing Hertz Jobs (git clone)
 
-Open a terminal and run **one command**:
+Open a terminal, pick a folder where you want the app to live, and run:
 
 ```bash
-npx kuclab-hertz
+git clone https://github.com/Jerry256254/Hertz.git
+cd Hertz
+pnpm install     # downloads dependencies (~1–2 minutes)
+pnpm build       # compiles everything (~1 minute)
 ```
 
-What happens the first time:
-1. `npx` downloads the package (takes a minute),
-2. a small setup wizard asks two network questions — just press **Enter** twice to accept the defaults (`127.0.0.1`, port `3000`),
-   - choose `0.0.0.0` only if you deliberately want other devices on your network to reach the server,
-3. the server starts and prints something like `KucLab Hertz is running at http://127.0.0.1:3000`.
+Now do the one-time network setup (asks where the server should listen — just press **Enter** twice to accept the defaults):
 
-Now open that address (**http://127.0.0.1:3000**) in your browser. That's the whole product — there is no desktop app.
+```bash
+pnpm setup
+```
+
+And start the server:
+
+```bash
+pnpm start
+```
+
+You'll see something like `KucLab Hertz is running at http://127.0.0.1:3000`. Open that address (**http://127.0.0.1:3000**) in your browser. That's the whole product — there is no desktop app.
+
+Everyday routine from now on is just:
+
+```bash
+cd Hertz
+pnpm start
+```
 
 > Keep this terminal window open! Closing it stops the server (see [section 8](#8-running-247-so-work-survives-closing-the-terminal) for running it permanently).
 
@@ -198,7 +231,8 @@ The server keeps working as long as its process lives — but closing the termin
 ```bash
 sudo apt install tmux        # Debian/Ubuntu    (Fedora: sudo dnf install tmux)
 tmux new -s hertz            # create a background workspace named "hertz"
-npx kuclab-hertz             # start the server inside it
+cd /path/to/Hertz            # wherever you cloned the repository
+pnpm start                   # start the server inside tmux
 ```
 
 Detach (leave it running): press **Ctrl-B**, then **D**. You're back in a normal terminal; the server lives on.
@@ -212,10 +246,13 @@ And because of the durable job queue, even a crash or reboot isn't a problem: on
 ## 9. Updating
 
 ```bash
-npx kuclab-hertz@latest
+cd /path/to/Hertz
+git pull
+pnpm install
+pnpm build
 ```
 
-That's all — database migrations run automatically on boot, your data stays.
+Restart the server afterwards (`pnpm start`). Database migrations run automatically on boot, your data stays.
 
 ---
 
@@ -238,37 +275,28 @@ Everything is local, in `~/.kuclab-hertz/`:
 
 | Problem | Fix |
 |---|---|
-| `npx kuclab-hertz` says "command not found" or Node errors | Node.js missing or too old — see [section 3](#3-installing-nodejs) |
+| `pnpm: command not found` | pnpm missing — see [section 3](#3-installing-nodejs-and-pnpm) (`corepack enable`) |
+| `node: command not found` or old version | Node.js missing or too old — see [section 3](#3-installing-nodejs-and-pnpm) |
+| `pnpm install` fails on a native module (argon2) | Install build tools: Debian/Ubuntu `sudo apt install -y build-essential python3`, macOS `xcode-select --install` |
 | Browser shows nothing at localhost:3000 | Check the terminal for the exact address/port; make sure the server is still running |
-| Forgot password | Delete is drastic — for now ask on the project's issues page; future versions get a reset CLI |
+| Forgot password | For now ask on the project's issues page; future versions get a reset CLI |
 | Provider scan finds no models | Double-check the API key and that the provider isn't blocked by a firewall/proxy |
 | A bot seems stuck | Open its session and press **Stop**, then send a new message; the durable queue never loses the work |
 | Session shows `active` after a crash | Rebooting the server auto-resumes it (look for `[hertz] recovered after restart` in the log) |
 | Docker backend badge says `unavailable` | Docker isn't running on the host — start Docker Desktop/the daemon |
 | Browser tools say a computer is required | Switch that bot to the `docker` backend (section 7.1) |
 | Discord bot ignores messages | Enable MESSAGE CONTENT INTENT in the Developer Portal |
-| Port already in use | Start with another port: rerun `pnpm setup` / the wizard, or edit `~/.kuclab-hertz/config.json` |
+| Port already in use | Rerun `pnpm setup`, or edit `~/.kuclab-hertz/config.json` |
 
 Found a bug? Please [open an issue](https://github.com/Jerry256254/Hertz/issues).
 
 ---
 
-## 12. For developers: build from source
+## Monorepo layout (for contributors)
 
-Requires Node.js ≥ 20 and [pnpm](https://pnpm.io).
+Requires Node.js ≥ 20 and pnpm (see above); `git clone && pnpm install && pnpm build` is all you need.
 
-```bash
-git clone https://github.com/Jerry256254/Hertz.git
-cd Hertz
-pnpm install
-pnpm build
-pnpm setup   # first run only — creates the network config
-pnpm start   # starts the server + WebUI (or: pnpm hertz)
-```
-
-`pnpm hertz` passes through to the CLI, so `pnpm hertz setup` / `pnpm hertz start` work too. Monorepo layout: `packages/{cli,core,tools,sandbox,providers,mcp,mcp-google,server,standard,web}`.
-
-A smoke test against built packages lives in `.smoke-test/` (fake LLM provider + scripted end-to-end checks).
+Packages: `packages/{cli,core,tools,sandbox,providers,mcp,mcp-google,server,standard,web}`. Useful scripts: `pnpm dev` (watch builds), `pnpm typecheck`, `pnpm lint`, `pnpm test`. A smoke test against built packages lives in `.smoke-test/` (fake LLM provider + scripted end-to-end checks).
 
 ## Stack
 
