@@ -1,8 +1,16 @@
 # Hertz Jobs
 
-Self-hosted autonomous agent platform — a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you can talk to them from Telegram or Discord.
+Self-hosted autonomous agent platform — a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you can talk to them from Telegram or the WebUI.
 
-**Quick start:** clone this repository, run two commands, open the browser. No registration, no cloud account, nothing leaves your machine.
+**Quick start (Linux server, recommended):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jerry256254/Hertz/main/install.sh | bash
+```
+
+That single command installs everything (Node.js if missing), builds Hertz, registers it as a **systemd service that starts on boot**, binds it to all interfaces so it is reachable over your LAN or Tailscale, and prints the address to open. Re-run the exact same command anytime to **update in place** — your data is never reset.
+
+Prefer manual control? [Clone and run it yourself](#4-installing-hertz-jobs-git-clone).
 
 ---
 
@@ -52,7 +60,7 @@ Typical things people ask their team to do:
 
 Optional extras (all set up later, none required to start):
 - **Docker** — gives each bot its own isolated container ("its own computer") and enables browser automation,
-- a **Telegram** or **Discord** bot token — so you can message your bots from your phone.
+- a **Telegram** bot token — so you can message your bots from your phone.
 
 ---
 
@@ -162,7 +170,7 @@ That's it — you land on the dashboard.
    > *"Hire an implementer and have them build a simple landing page in index.html."*
    
    The manager hires an employee (picking a suitable model), assigns the task, and reports back when it's done. You watch everything transparently — including agent-to-agent chats.
-4. Useful controls while a bot works: **Pause** (it finishes its current step and waits), **Stop** (hard-stop now), mode switcher per message — *Plan* (think only), *Auto* (may ask you questions), *Autonomous* (never asks, works until done).
+4. Useful controls while a bot works: **Pause** (it finishes its current step and waits) and **Stop** (hard-stop now). Every bot runs autonomously by default — it works until done and only asks when input can come only from you; hiring is instant too, and new employees automatically start on the manager's model (change it anytime on their page).
 
 From here you can add the autonomy features below whenever you want them.
 
@@ -207,16 +215,18 @@ Before sending an e-mail on your behalf, spending money, publishing or deleting 
 
 When a bot figures out something repeatable (a weekly report, a deployment dance), tell it: *"save this as a skill"*. Next time it follows its own saved recipe (`save_skill` / `read_skill`). Skills appear on the employee page and follow the bot across projects.
 
-### 7.6 Talk to your bots from your phone (Telegram / Discord)
+### 7.6 Talk to your bots from your phone (Telegram)
 
 **Telegram (easiest):**
 1. In Telegram, message [@BotFather](https://t.me/BotFather): `/newbot`, follow prompts, copy the token.
 2. Hertz sidebar → **Channels** (admin) → **Connect a bot** → paste token → pick a default agent.
 3. Message your bot on Telegram. Replies come back to the same chat.
 
-**Discord:** create an app in the [Developer Portal](https://discord.com/developers/applications), enable **MESSAGE CONTENT INTENT** (Bot tab), invite the bot, paste its token on the Channels page.
-
 Set the "allowed chats" field to your own chat/channel IDs so only you can talk to the bots.
+
+### 7.5.1 Group chats (messenger style)
+
+Project → Team → **New group chat**: pick two or more bots and they share one thread with you — like a messenger group. Every participant answers in turn and sees what the others said; type `@Name your request` to address a specific bot. The same thread also works over Telegram if you bind it there.
 
 ### 7.7 Routines, tasks, MCP integrations
 
@@ -288,7 +298,6 @@ Everything is local, in `~/.kuclab-hertz/`:
 | Session shows `active` after a crash | Rebooting the server auto-resumes it (look for `[hertz] recovered after restart` in the log) |
 | Docker backend badge says `unavailable` | Docker isn't running on the host — start Docker Desktop/the daemon |
 | Browser tools say a computer is required | Switch that bot to the `docker` backend (section 7.1) |
-| Discord bot ignores messages | Enable MESSAGE CONTENT INTENT in the Developer Portal |
 | Port already in use | Rerun `pnpm setup`, or edit `~/.kuclab-hertz/config.json` |
 
 Found a bug? Please [open an issue](https://github.com/Jerry256254/Hertz/issues).
@@ -307,8 +316,4 @@ Node.js + TypeScript, Fastify + WebSocket, SQLite (libSQL) + Drizzle ORM, React 
 
 ## License
 
-[Hertz License](LICENSE) — personal use is free, but production, commercial,
-or distributed use (including modified versions) requires prior written
-consent from KucLab, obtainable via [kuclab.org/podpora](https://kuclab.org/podpora).
-You may not remove the copyright notices or present this software (or a
-modified version of it) as your own work.
+Licensed under the **Apache License, Version 2.0** — see [LICENSE](LICENSE). You are free to use, modify, and distribute this software (including commercially) under the terms of that license.

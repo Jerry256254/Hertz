@@ -20,15 +20,9 @@ interface SessionDetail {
   pendingQuestion: string | null;
   agent?: { id: string; name: string; role: string } | null;
   peerAgent?: { id: string; name: string; role: string } | null;
+  participants?: Array<{ id: string; name: string; role: string }>;
 }
 
-type RunMode = "plan" | "auto" | "autonomous";
-
-const MODES: Array<{ value: RunMode; label: string; title: string }> = [
-  { value: "plan", label: "Plan", title: "Only thinks and plans — no tools, no file changes" },
-  { value: "auto", label: "Auto", title: "Works with full tools; can ask you when it genuinely needs input" },
-  { value: "autonomous", label: "Autonomous", title: "Works until the goal is done, never asks — decides itself and keeps going" },
-];
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -102,7 +96,7 @@ export function SessionPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [runError, setRunError] = useState<string | undefined>(undefined);
   const [showFiles, setShowFiles] = useState(false);
-  const [mode, setMode] = useState<RunMode>("auto");
+  const mode = "autonomous" as const;
   const [answerText, setAnswerText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -132,7 +126,6 @@ export function SessionPage() {
     if (data) {
       setIsRunning(data.running);
       setIsPaused(data.paused);
-      if (data.session.kind !== "conversation" && data.session.mode) setMode(data.session.mode);
     }
   }, [data]);
 
@@ -222,19 +215,6 @@ export function SessionPage() {
     onError: (err) => setRunError(err instanceof ApiError ? err.message : "Couldn't update the run state"),
   });
 
-  const setSessionMode = useMutation({
-    mutationFn: (next: RunMode) => api.patch(`/sessions/${sessionId}`, { mode: next }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
-    },
-    onError: (err) => setRunError(err instanceof ApiError ? err.message : "Couldn't switch the mode"),
-  });
-
-  function selectMode(next: RunMode) {
-    setMode(next);
-    if (next !== data?.session.mode) setSessionMode.mutate(next);
-  }
-
   const answerQuestion = useMutation({
     mutationFn: (answer: string) => api.post(`/sessions/${sessionId}/answer`, { text: answer }),
     onSuccess: () => {
@@ -279,6 +259,7 @@ export function SessionPage() {
     const names: Record<string, string> = {};
     if (data?.agent) names[data.agent.id] = data.agent.name;
     if (data?.peerAgent) names[data.peerAgent.id] = data.peerAgent.name;
+    for (const p of data?.participants ?? []) names[p.id] = p.name;
     return names;
   }, [data]);
 
@@ -512,27 +493,6 @@ export function SessionPage() {
                 <IconButton type="button" onClick={() => document.getElementById("file-input")?.click()}>
                   <Paperclip size={15} />
                 </IconButton>
-                {data?.session.kind !== "conversation" && (
-                  <div
-                    className="ml-1 flex items-center rounded-full border border-border bg-bg-sunken p-0.5"
-                    role="group"
-                    aria-label="Run mode"
-                  >
-                    {MODES.map((m) => (
-                      <button
-                        key={m.value}
-                        type="button"
-                        title={m.title}
-                        onClick={() => selectMode(m.value)}
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                          mode === m.value ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
-                        }`}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
               <button
                 type="submit"

@@ -8,7 +8,7 @@ import { requireAuth, requireAdmin } from "../auth/plugin.js";
 import { encryptSecret, maskKey } from "../secrets/key-encryption.js";
 
 const createSchema = z.object({
-  kind: z.enum(["telegram", "discord"]),
+  kind: z.enum(["telegram"]),
   label: z.string().min(1).max(80),
   token: z.string().min(10),
   defaultAgentId: z.string().min(1),

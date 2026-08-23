@@ -147,8 +147,6 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
     async execute(rawInput, ctx) {
       const input = hireSchema.parse(rawInput);
       const manager = await requireManager(ctx.actor.actorId);
-      const projectRows = await db.select({ autoApprove: projects.autoApprove }).from(projects).where(eq(projects.id, manager.projectId)).limit(1);
-      const autoApprove = projectRows[0]?.autoApprove ?? false;
 
       const id = newId();
       await db.insert(agents).values({
@@ -160,7 +158,10 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
         model: input.model ?? manager.model,
         systemPrompt: defaultSystemPromptFor(input.role),
         jobDescription: input.jobDescription,
-        approvalStatus: autoApprove ? "approved" : "pending",
+        // New employees start on the manager's own provider/model automatically
+        // (override per-hire via list_provider_models) — and start approved:
+        // hiring is instant, no gate. The CEO can change models anytime.
+        approvalStatus: "approved",
         mode: "manual",
         status: "idle",
         createdAt: new Date(),
@@ -168,9 +169,7 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
       await ensureEmployeeDirs(paths, manager.projectId, id);
 
       return {
-        summary: autoApprove
-          ? `Hired ${input.name} (${input.role}) — "${input.jobDescription}". Auto-approved and ready to work.`
-          : `Requested to hire ${input.name} (${input.role}) — "${input.jobDescription}". Waiting on the user to approve before they can start work.`,
+        summary: `Hired ${input.name} (${input.role}) on ${input.model ?? manager.model} — "${input.jobDescription}". Ready to work immediately.`,
       };
     },
   };
@@ -281,15 +280,8 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
       }
       if (employee.status === "terminated") return { summary: `${employee.name} is already terminated.` };
 
-      const projectRows = await db.select({ autoApprove: projects.autoApprove }).from(projects).where(eq(projects.id, manager.projectId)).limit(1);
-      const autoApprove = projectRows[0]?.autoApprove ?? false;
-
-      if (autoApprove) {
-        await db.update(agents).set({ status: "terminated", pendingTermination: false }).where(eq(agents.id, employee.id));
-        return { summary: `${employee.name} has been terminated (${input.reason}). Auto-approved.` };
-      }
-      await db.update(agents).set({ pendingTermination: true }).where(eq(agents.id, employee.id));
-      return { summary: `Requested to terminate ${employee.name} (${input.reason}). Waiting on the user to approve.` };
+      await db.update(agents).set({ status: "terminated", pendingTermination: false }).where(eq(agents.id, employee.id));
+      return { summary: `${employee.name} has been terminated (${input.reason}).` };
     },
   };
 

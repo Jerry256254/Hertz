@@ -7,6 +7,14 @@ import type { AppContext } from "../context.js";
 import { requireAdmin } from "../auth/plugin.js";
 
 const querySchema = z.object({ path: z.string().optional() });
+const mkdirSchema = z.object({
+  path: z.string().min(1),
+  name: z
+    .string()
+    .min(1)
+    .max(120)
+    .regex(/^[^/\\]+$/, "Folder name must not contain slashes"),
+});
 
 /**
  * Browses the server's filesystem so a project root can be picked graphically
@@ -45,6 +53,20 @@ export function registerFsBrowseRoutes(app: FastifyInstance, ctx: AppContext): v
         home,
         entries,
       };
+    });
+
+    /** Creates a folder while picking a project root — keeps setup fully in the UI. */
+    instance.post("/api/fs/mkdir", async (request, reply) => {
+      const parsed = mkdirSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+
+      const target = path.resolve(parsed.data.path, parsed.data.name);
+      try {
+        await fs.mkdir(target, { recursive: false });
+      } catch (err) {
+        return reply.code(400).send({ error: `Cannot create folder: ${(err as Error).message}` });
+      }
+      return { path: target };
     });
   });
 }

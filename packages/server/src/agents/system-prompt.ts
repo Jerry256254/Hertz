@@ -6,8 +6,52 @@ import { skillsIndexFor, type SkillIndexEntry } from "../tools/skill-tools.js";
 import type { HertzPaths } from "../paths.js";
 
 const RECENT_MESSAGE_COUNT = 5;
-/** Notes now auto-accumulate every turn (see agent-loop.ts), not just when an agent deliberately calls remember — capped here so the prompt itself doesn't grow unbounded; the full history is still visible via list_memory and the memory dialog in the UI. */
-const RECENT_MEMORY_COUNT = 40;
+/** Max memory entries injected into the prompt (selected by relevance, not recency). */
+const MEMORY_PROMPT_LIMIT = 30;
+
+/**
+ * Layered-memory retrieval: scores every entry by importance, recency decay,
+ * and keyword overlap with the current conversation tail, then injects the
+ * top matches. Episodes ("was told X — did Y") age out fast; deliberate facts
+ * and preferences stay competitive much longer. Also refreshes lastUsedAt for
+ * what was injected so the user can see what memory is actually being used.
+ */
+function selectRelevantMemories(
+  rows: Array<typeof agentMemory.$inferSelect>,
+  contextText: string,
+  limit = MEMORY_PROMPT_LIMIT,
+): Array<typeof agentMemory.$inferSelect> {
+  const now = Date.now();
+  const contextWords = new Set(
+    contextText
+      .toLowerCase()
+      .split(/[^a-z0-9ěščřžýáíéúů]+/)
+      .filter((w) => w.length >= 4),
+  );
+
+  const scored = rows.map((row) => {
+    const ageDays = Math.max(0, (now - row.createdAt.getTime()) / 86_400_000);
+    // Half-life: episodes fade in ~3 days, facts/preferences in ~30.
+    const halfLifeDays = row.kind === "episode" ? 3 : row.kind === "preference" ? 120 : 30;
+    const recency = Math.pow(0.5, ageDays / halfLifeDays);
+
+    let keywordBoost = 0;
+    if (contextWords.size > 0 && row.keywords) {
+      for (const kw of row.keywords.split(",")) {
+        if (kw && contextWords.has(kw)) keywordBoost += 1;
+      }
+      keywordBoost = Math.min(keywordBoost, 4) / 2; // up to +2.0
+    }
+
+    return { row, score: row.importance * 0.8 + recency * 2 + keywordBoost };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .sort((a, b) => a.row.createdAt.getTime() - b.row.createdAt.getTime())
+    .map((s) => s.row);
+}
 
 /**
  * Combines an agent's static role prompt with its live persistent memory and
@@ -24,15 +68,18 @@ const RECENT_MEMORY_COUNT = 40;
 export async function buildSystemPrompt(
   db: Database,
   agent: { id: string; systemPrompt: string | null },
-  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous"; paths?: HertzPaths } = {},
+  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous"; paths?: HertzPaths; conversationContext?: string } = {},
 ): Promise<string> {
-  const recentNotesDesc = await db
+  const allNotesDesc = await db
     .select()
     .from(agentMemory)
     .where(eq(agentMemory.agentId, agent.id))
     .orderBy(desc(agentMemory.createdAt))
-    .limit(RECENT_MEMORY_COUNT);
-  const notes = [...recentNotesDesc].reverse();
+    .limit(400);
+  // Relevance-ranked injection: importance + recency + keyword overlap with
+  // the current conversation, instead of blindly appending the last 40 rows.
+  const contextTail = (opts.conversationContext ?? "").slice(-4_000);
+  const notes = selectRelevantMemories([...allNotesDesc].reverse(), contextTail);
 
   let prompt = agent.systemPrompt ?? "";
 
@@ -52,9 +99,9 @@ export async function buildSystemPrompt(
   if (opts.mode) {
     const modeBlock: Record<"plan" | "auto" | "autonomous", string> = {
       plan: "## Mode: Plan\nYou are in PLAN mode: do NOT call any tools and do NOT touch any files. Think the request through and return a concrete plan — what you would do, in what order, with which tools and team members — or the answer itself if the request is a question. No execution.",
-      auto: "## Mode: Auto\nYou work on the task with full tool access. If you genuinely need input that only the user can give (a preference, a decision, missing information), call ask_user and stop — the question appears in the UI and you continue when they answer. For anything you can decide or look up yourself, don't ask: decide and proceed.",
+      auto: "## How you work\nWork on the task with full tool access until it is actually done. If you genuinely need input that only the user can give (a preference, a decision, a login), call ask_user once, concretely — they'll answer and you continue. For anything you can decide or look up yourself, don't ask: decide and proceed.",
       autonomous:
-        "## Mode: Autonomous (goal mode)\nWork autonomously until the goal is complete: no questions, no check-ins, no status reports mid-work. ask_user is not available to you. When something is ambiguous or unspecified, decide yourself from context, state your assumption, and keep going. You stop only when the task is actually done, or when you hit an explicit limit (a stop instruction, a hard deadline, or something genuinely impossible — report that instead of pretending).",
+        "## How you work (autonomous)\nWork autonomously until the goal is complete: no check-ins, no status reports mid-work, no giving up. When something is ambiguous but decidable, decide yourself from context, state your assumption, and keep going. When input can only come from the user (a preference only they have, credentials for a login), call ask_user with one concrete question — they answer and you continue. You stop only when the task is actually done, or when you hit an explicit limit (a stop instruction, a hard deadline, or something genuinely impossible — report that instead of pretending).",
     };
     prompt += `\n\n${modeBlock[opts.mode]}`;
   }

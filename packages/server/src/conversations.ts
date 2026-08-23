@@ -124,6 +124,7 @@ export async function startConversationReplyRun(
       userId: args.userId,
       prePersisted: true,
       conversationPeerName,
+      respondAsAgentId: args.actorAgentId,
     });
   } catch {
     // Lost the race to another trigger — that run will answer the message.

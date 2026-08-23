@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BrainCircuit, Bot, Clock, FolderGit2, ListTodo, MessageSquarePlus, Plus, UserPlus, Video } from "lucide-react";
+import { BrainCircuit, Bot, ChevronDown, Clock, FolderGit2, ListTodo, MessageSquarePlus, Plus, UserPlus, Users, Video } from "lucide-react";
 import { api } from "../lib/api";
 import type {
   Agent,
@@ -140,6 +141,7 @@ export function ProjectPage() {
   const [showManagerForm, setShowManagerForm] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showGroupDialog, setShowGroupDialog] = useState(false);
   const [showRoutineDialog, setShowRoutineDialog] = useState(false);
   const [routineNotice, setRoutineNotice] = useState<string | undefined>(undefined);
   const [showAttachDialog, setShowAttachDialog] = useState(false);
@@ -422,6 +424,13 @@ export function ProjectPage() {
           <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Team</h2>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setShowGroupDialog(true)}
+              disabled={agents.length < 1}
+              className="flex items-center gap-1 text-xs text-accent hover:text-fg disabled:opacity-40"
+            >
+              <Users size={13} /> New group chat
+            </button>
+            <button
               onClick={() => setShowAttachDialog(true)}
               className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
             >
@@ -540,40 +549,7 @@ export function ProjectPage() {
           <ul className="space-y-2">
             {tasks.map((t) => (
               <li key={t.id}>
-                <Card className="p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-2.5">
-                      <ListTodo size={14} className="mt-0.5 flex-shrink-0 text-accent" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-fg">{t.title}</p>
-                        <p className="mt-0.5 line-clamp-2 text-xs text-fg-subtle">{t.description}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-shrink-0 items-center gap-2">
-                      <button onClick={() => cycleTaskStatus.mutate({ id: t.id, status: NEXT_TASK_STATUS[t.status] })}>
-                        <Badge tone={TASK_STATUS_TONE[t.status]}>{TASK_STATUS_LABEL[t.status]}</Badge>
-                      </button>
-                      <DeleteButton title="Delete task" onDelete={() => deleteTask.mutate(t.id)} />
-                    </div>
-                  </div>
-                  {t.assignees.length > 0 && (
-                    <div className="mt-2.5 flex flex-wrap gap-1.5 pl-6">
-                      {t.assignees.map((a) => (
-                        <button
-                          key={a.id}
-                          disabled={!a.sessionId}
-                          onClick={() => a.sessionId && navigate(`/projects/${projectId}/sessions/${a.sessionId}`)}
-                          className="flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-50"
-                        >
-                          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-bg-sunken text-[9px] font-semibold text-fg-muted">
-                            {a.agentName.slice(0, 1).toUpperCase()}
-                          </span>
-                          {a.agentName}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </Card>
+                <TaskCard projectId={projectId!} task={t} onDelete={() => deleteTask.mutate(t.id)} onCycleStatus={() => cycleTaskStatus.mutate({ id: t.id, status: NEXT_TASK_STATUS[t.status] })} />
               </li>
             ))}
           </ul>
@@ -664,6 +640,7 @@ export function ProjectPage() {
           onCreated={(meetingId) => navigate(`/projects/${projectId}/meetings/${meetingId}`)}
         />
         <NewTaskDialog open={showTaskDialog} onOpenChange={setShowTaskDialog} projectId={projectId!} agents={agents} />
+        <NewGroupChatDialog open={showGroupDialog} onOpenChange={setShowGroupDialog} projectId={projectId!} agents={agents} />
         <NewRoutineDialog
           open={showRoutineDialog}
           onOpenChange={setShowRoutineDialog}
@@ -695,5 +672,173 @@ export function ProjectPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function TaskCard({
+  projectId,
+  task,
+  onCycleStatus,
+  onDelete,
+}: {
+  projectId: string;
+  task: HertzTask;
+  onCycleStatus: () => void;
+  onDelete: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { data: detail } = useQuery({
+    queryKey: ["task", task.id],
+    queryFn: () => api.get<HertzTask>(`/tasks/${task.id}`),
+    enabled: expanded,
+  });
+  const d = detail ?? task;
+
+  return (
+    <Card className="p-3">
+      <div
+        className="flex cursor-pointer items-start justify-between gap-3"
+        onClick={() => setExpanded((v) => !v)}
+        role="button"
+        aria-expanded={expanded}
+      >
+        <div className="flex min-w-0 items-start gap-2.5">
+          <ListTodo size={14} className="mt-0.5 flex-shrink-0 text-accent" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-fg">{task.title}</p>
+            {!expanded && <p className="mt-0.5 line-clamp-2 text-xs text-fg-subtle">{task.description}</p>}
+            {expanded && <p className="text-xs text-fg-subtle">{new Date(task.createdAt).toLocaleString()}</p>}
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <button onClick={onCycleStatus}>
+            <Badge tone={TASK_STATUS_TONE[task.status]}>{TASK_STATUS_LABEL[task.status]}</Badge>
+          </button>
+          <DeleteButton title="Delete task" onDelete={onDelete} />
+          <ChevronDown size={14} className={`text-fg-subtle transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 space-y-3 border-t border-border pt-3 pl-6">
+          <div>
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Brief</p>
+            <pre className="whitespace-pre-wrap rounded-md bg-bg-sunken p-3 text-xs text-fg-muted">{d.description}</pre>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Assignees & their work</p>
+            {d.assignees.length === 0 ? (
+              <p className="text-xs text-fg-subtle">No assignees.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {d.assignees.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5">
+                    <span className="flex min-w-0 items-center gap-2 text-xs text-fg">
+                      <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-bg-sunken text-[10px] font-semibold text-fg-muted">
+                        {a.agentName.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="truncate">{a.agentName}</span>
+                      <span className="flex-shrink-0 text-fg-subtle">· {a.agentRole}</span>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={!a.sessionId}
+                      onClick={() => a.sessionId && window.open(`/projects/${projectId}/sessions/${a.sessionId}`, "_self")}
+                    >
+                      Open work session
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function NewGroupChatDialog({
+  open,
+  onOpenChange,
+  projectId,
+  agents,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  agents: Agent[];
+}) {
+  const navigate = useNavigate();
+  const [title, setTitle] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
+
+  const create = useMutation({
+    mutationFn: () => api.post<{ id: string }>(`/projects/${projectId}/group-chats`, { title: title.trim() || "Group chat", agentIds: [...selected] }),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      onOpenChange(false);
+      setTitle("");
+      setSelected(new Set());
+      navigate(`/projects/${projectId}/sessions/${created.id}`);
+    },
+  });
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-bg-raised p-5 shadow-popover">
+          <Dialog.Title className="mb-1 text-sm font-semibold text-fg">New group chat</Dialog.Title>
+          <Dialog.Description className="mb-4 text-xs text-fg-subtle">
+            Pick the bots that should share one messenger-style thread — they answer together, @mention to address one.
+          </Dialog.Description>
+
+          <Label>Title</Label>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Launch crew" />
+
+          <p className="mb-2 mt-4 text-xs font-medium text-fg-muted">Participants ({selected.size})</p>
+          <ul className="max-h-56 space-y-1 overflow-y-auto">
+            {agents.map((a) => (
+              <li key={a.id}>
+                <button
+                  onClick={() => toggle(a.id)}
+                  className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors ${
+                    selected.has(a.id) ? "border-accent bg-accent-wash" : "border-border hover:bg-bg-hover"
+                  }`}
+                >
+                  <Avatar label={a.name} color={agentColor(a.id)} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-fg">{a.name}</span>
+                    <span className="block truncate text-xs text-fg-subtle">{ROLE_LABEL[a.role]}</span>
+                  </span>
+                  {selected.has(a.id) && <Badge tone="accent">in</Badge>}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" disabled={selected.size === 0 || create.isPending} onClick={() => create.mutate()}>
+              Create group chat
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

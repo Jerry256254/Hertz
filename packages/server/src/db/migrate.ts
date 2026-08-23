@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS agent_memory (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   note TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'fact',
+  importance INTEGER NOT NULL DEFAULT 2,
+  keywords TEXT,
+  last_used_at INTEGER,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_memory_agent ON agent_memory(agent_id);
@@ -338,6 +342,15 @@ CREATE TABLE IF NOT EXISTS channel_bindings (
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_bindings_chat ON channel_bindings(channel_id, external_chat_id);
+
+CREATE TABLE IF NOT EXISTS session_participants (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_participants_session ON session_participants(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_participants_agent ON session_participants(agent_id);
 `;
 
 /**
@@ -360,6 +373,10 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agents ADD COLUMN heartbeat_minutes INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE agents ADD COLUMN heartbeat_prompt TEXT",
   "ALTER TABLE agents ADD COLUMN last_heartbeat_at INTEGER",
+  "ALTER TABLE agent_memory ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'",
+  "ALTER TABLE agent_memory ADD COLUMN importance INTEGER NOT NULL DEFAULT 2",
+  "ALTER TABLE agent_memory ADD COLUMN keywords TEXT",
+  "ALTER TABLE agent_memory ADD COLUMN last_used_at INTEGER",
 ];
 
 /** One row per agent↔agent conversation pair, enforced by a partial unique index — must run after the sessions columns exist, so it lives here rather than in BOOTSTRAP_SQL. */

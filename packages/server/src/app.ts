@@ -23,6 +23,7 @@ import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerUserRoutes } from "./routes/users.js";
 import { registerApprovalRoutes } from "./routes/approvals.js";
 import { registerChannelRoutes } from "./routes/channels.js";
+import { registerUpdateRoutes } from "./routes/update.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
 import { registerMeetingWebsocket } from "./ws/meeting-hub.js";
 
@@ -60,6 +61,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerUserRoutes(app, ctx);
   registerApprovalRoutes(app, ctx);
   registerChannelRoutes(app, ctx);
+  registerUpdateRoutes(app, ctx);
   registerSessionWebsocket(app, ctx);
   registerMeetingWebsocket(app, ctx);
 

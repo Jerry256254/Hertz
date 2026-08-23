@@ -8,7 +8,6 @@ import { createPersistenceAdapter } from "../persistence/persistence-adapter.js"
 import type { JobQueue } from "../queue/job-queue.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import { TelegramGateway } from "./telegram-gateway.js";
-import { DiscordGateway } from "./discord-gateway.js";
 
 export interface ChannelManagerDeps {
   db: Database;
@@ -89,11 +88,9 @@ export class ChannelManager {
       void gateway.runLoop();
       stop = () => gateway.stop();
     } else {
-      const gateway = new DiscordGateway(token, logger, async (ctx) => {
-        await this.handleInbound(config.id, `discord:${ctx.channelId}`, ctx.text, (replyText) => ctx.reply(replyText));
-      });
-      void gateway.runLoop();
-      stop = () => gateway.stop();
+      // Discord was removed — configs left over from older versions are ignored.
+      logger.warn(`channel kind "${config.kind}" is not supported anymore; skipping`);
+      return;
     }
 
     this.running.set(configId, { configId, stop });

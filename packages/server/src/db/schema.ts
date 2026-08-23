@@ -102,12 +102,27 @@ export const agentProjects = sqliteTable("agent_projects", {
  * project, or meeting it's in — this is what makes memory survive across all of
  * them rather than living inside one session's message history.
  */
+/**
+ * An agent's layered persistent memory (agentmemory-style):
+ * - kind "fact"       — deliberate, durable knowledge (the remember tool)
+ * - kind "episode"    — auto-captured "was told X, did Y" per-run notes (low value)
+ * - kind "preference" — user preferences the agent should always honor
+ * Retrieval is scored by importance + recency + keyword relevance to the
+ * current conversation, not just "last N rows", so the prompt carries what
+ * actually matters.
+ */
 export const agentMemory = sqliteTable("agent_memory", {
   id: text("id").primaryKey(),
   agentId: text("agent_id")
     .notNull()
     .references(() => agents.id, { onDelete: "cascade" }),
   note: text("note").notNull(),
+  kind: text("kind", { enum: ["fact", "episode", "preference"] }).notNull().default("fact"),
+  /** 1–5; episodes default 1, deliberate facts 3, user-stated preferences 4. */
+  importance: integer("importance").notNull().default(2),
+  /** Comma-separated lowercase keywords for relevance matching. */
+  keywords: text("keywords"),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -120,8 +135,8 @@ export const sessions = sqliteTable("sessions", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
-  /** "chat" = human ↔ agent thread; "conversation" = a direct agent ↔ agent chat (peerAgentId set). */
-  kind: text("kind", { enum: ["chat", "conversation"] }).notNull().default("chat"),
+  /** "chat" = human ↔ agent thread; "conversation" = a direct agent ↔ agent chat (peerAgentId set); "group" = a messenger-style group with multiple bot participants (session_participants). */
+  kind: text("kind", { enum: ["chat", "conversation", "group"] }).notNull().default("chat"),
   /** For kind = "conversation": the other agent in the pair. Stored as the lexicographically larger id so each pair has exactly one session. */
   peerAgentId: text("peer_agent_id").references(() => agents.id, { onDelete: "cascade" }),
   /** How the agent works in this session: "plan" = think/answer only, no tools; "auto" = full tools, may ask the user; "autonomous" = never asks, works until the goal is done. */
@@ -522,5 +537,22 @@ export const channelBindings = sqliteTable("channel_bindings", {
   sessionId: text("session_id")
     .notNull()
     .references(() => sessions.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Participants of a group chat (sessions.kind = "group"): multiple bots share
+ * one thread the user can also write into. When the user posts, every
+ * participant answers in turn (or only those @mentioned by name) — like a
+ * messenger group where your bots work together and you watch it happen.
+ */
+export const sessionParticipants = sqliteTable("session_participants", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });

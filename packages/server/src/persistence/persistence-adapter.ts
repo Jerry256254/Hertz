@@ -93,8 +93,16 @@ export function createPersistenceAdapter(db: Database): PersistencePort {
       await db.update(agents).set({ lastStatus: status }).where(eq(agents.id, agentId));
     },
 
-    async appendMemoryNote(agentId, note) {
-      await db.insert(agentMemory).values({ id: newId(), agentId, note, createdAt: new Date() });
+    async appendMemoryNote(agentId, note, meta) {
+      await db.insert(agentMemory).values({
+        id: newId(),
+        agentId,
+        note,
+        kind: meta?.kind ?? "fact",
+        importance: meta?.importance ?? 2,
+        keywords: meta?.keywords ?? null,
+        createdAt: new Date(),
+      });
     },
   };
 }

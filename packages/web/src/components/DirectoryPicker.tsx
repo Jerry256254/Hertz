@@ -1,7 +1,7 @@
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronUp, Folder, FolderOpen, House, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronUp, Folder, FolderOpen, FolderPlus, House, X } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "./ui";
 
@@ -23,12 +23,25 @@ export function DirectoryPicker({
   onSelect: (path: string) => void;
   initialPath?: string;
 }) {
+  const queryClient = useQueryClient();
   const [path, setPath] = useState(initialPath ?? "");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [showNewFolder, setShowNewFolder] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["fs-browse", path],
     queryFn: () => api.get<BrowseResult>(`/fs/browse?path=${encodeURIComponent(path)}`),
     enabled: open,
+  });
+
+  const createFolder = useMutation({
+    mutationFn: (name: string) => api.post<{ path: string }>("/fs/mkdir", { path: data?.path ?? "", name }),
+    onSuccess: (created) => {
+      setShowNewFolder(false);
+      setNewFolderName("");
+      void queryClient.invalidateQueries({ queryKey: ["fs-browse"] });
+      setPath(created.path);
+    },
   });
 
   return (
@@ -59,8 +72,37 @@ export function DirectoryPicker({
             >
               <ChevronUp size={12} /> Up
             </button>
-            <span className="mono min-w-0 flex-1 truncate px-1.5 text-xs text-fg-subtle">{data?.path ?? path}</span>
+            <button
+              onClick={() => setShowNewFolder((v) => !v)}
+              disabled={!data}
+              className="ml-auto flex items-center gap-1 rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-hover disabled:opacity-30"
+            >
+              <FolderPlus size={12} /> New folder
+            </button>
+            <span className="mono min-w-0 max-w-[40%] flex-shrink truncate px-1.5 text-xs text-fg-subtle">{data?.path ?? path}</span>
           </div>
+
+          {showNewFolder && (
+            <form
+              className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-bg-sunken px-3 py-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (newFolderName.trim()) createFolder.mutate(newFolderName.trim());
+              }}
+            >
+              <FolderPlus size={13} className="flex-shrink-0 text-fg-subtle" />
+              <input
+                autoFocus
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="New folder name"
+                className="h-7 min-w-0 flex-1 rounded-md border border-border bg-bg-raised px-2 text-xs text-fg outline-none focus:border-accent"
+              />
+              <Button type="submit" size="sm" variant="primary" disabled={!newFolderName.trim() || createFolder.isPending}>
+                Create
+              </Button>
+            </form>
+          )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {isLoading && <p className="p-3 text-xs text-fg-muted">Loading…</p>}

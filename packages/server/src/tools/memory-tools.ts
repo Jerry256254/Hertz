@@ -8,7 +8,15 @@ import { agentMemory } from "../db/schema.js";
 import type { OrgToolDef } from "./org-tools.js";
 import { employeeDir, ensureEmployeeDirs, type HertzPaths } from "../paths.js";
 
-const rememberSchema = z.object({ note: z.string().min(1) });
+const rememberSchema = z.object({
+  note: z.string().min(1),
+  kind: z
+    .enum(["fact", "preference"])
+    .optional()
+    .default("fact")
+    .describe("'fact' = durable knowledge about the project/world; 'preference' = how the user wants you to behave (always honored)"),
+  importance: z.number().int().min(1).max(5).optional().default(3).describe("1 = minor detail, 3 = useful, 5 = critical, always-relevant"),
+});
 const forgetSchema = z.object({ noteId: z.string().min(1) });
 const saveNoteSchema = z.object({
   filename: z.string().min(1).describe("e.g. 'meeting-summary.md' — saved under your notes/ folder"),
@@ -30,12 +38,26 @@ export function createMemoryTools(db: Database, paths: HertzPaths): OrgToolDef[]
   const remember: OrgToolDef = {
     name: "remember",
     description:
-      "Save a note to your own persistent memory. It will show up in every future chat, project, and meeting you're part of, and the user can review (and delete) it too.",
+      "Save a note to your own persistent memory. Facts and preferences surface in future chats ranked by importance and relevance; episodes of what you did are auto-captured too. The user can review (and delete) everything.",
     inputSchema: rememberSchema,
     async execute(rawInput, ctx) {
       const input = rememberSchema.parse(rawInput);
-      await db.insert(agentMemory).values({ id: newId(), agentId: ctx.actor.actorId, note: input.note, createdAt: new Date() });
-      return { summary: `Remembered: ${input.note}` };
+      const keywords = input.note
+        .toLowerCase()
+        .split(/[^a-z0-9ěščřžýáíéúů]+/)
+        .filter((w) => w.length >= 3)
+        .slice(0, 12)
+        .join(",");
+      await db.insert(agentMemory).values({
+        id: newId(),
+        agentId: ctx.actor.actorId,
+        note: input.note,
+        kind: input.kind,
+        importance: input.importance,
+        keywords,
+        createdAt: new Date(),
+      });
+      return { summary: `Remembered (${input.kind}, importance ${input.importance}): ${input.note}` };
     },
   };
 

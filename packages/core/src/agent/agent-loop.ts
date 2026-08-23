@@ -456,12 +456,12 @@ export class AgentLoopManager {
     if (config.excludeTools?.length) {
       toolDefs = toolDefs.filter((def) => !config.excludeTools!.includes(def.name));
     }
-    const mode = config.mode ?? "auto";
+    const mode = config.mode ?? "autonomous";
     if (mode === "plan") {
       toolDefs = [];
-    } else if (mode === "autonomous") {
-      toolDefs = toolDefs.filter((def) => def.name !== "ask_user");
     }
+    // Note: ask_user stays available in autonomous mode — Grok-Bot-style bots
+    // ask clarifying questions when they genuinely need them, then continue.
     const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
     const maxAutoContinuations = config.maxAutoContinuations ?? DEFAULT_MAX_AUTO_CONTINUATIONS;
     const maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
@@ -587,6 +587,7 @@ export class AgentLoopManager {
           await persistence.appendMemoryNote(
             config.agentId,
             `Was told: ${extractTextSummary(userMessage, 200)} — ${statusLine}`,
+            { kind: "episode", importance: 1 },
           );
         }
         return;
@@ -601,20 +602,6 @@ export class AgentLoopManager {
         // run. A stub tool_result is appended so the history stays valid for
         // the provider (a tool_use must be followed by a tool_result).
         if (t.name === "ask_user") {
-          if (mode === "autonomous") {
-            // Defensive: the tool isn't offered in this mode, but if the model
-            // calls it anyway, nudge it back to deciding for itself instead of
-            // stopping for user input.
-            this.emit(config.sessionId, { type: "tool_call", id: t.id, name: t.name, input });
-            resultBlocks.push({
-              type: "tool_result",
-              toolUseId: t.id,
-              content:
-                "You're in autonomous mode: asking the user is not allowed. Decide from context yourself, state your assumption, and keep working.",
-              isError: true,
-            });
-            continue;
-          }
           const raw = input as { question?: unknown };
           const question =
             typeof raw?.question === "string" && raw.question.trim()
@@ -640,7 +627,11 @@ export class AgentLoopManager {
             purpose: "agent_turn",
           });
           const meta = (await persistence.getSessionMetadata(config.sessionId)) ?? {};
-          await persistence.setSessionMetadata(config.sessionId, { ...meta, pendingQuestion: question });
+          await persistence.setSessionMetadata(config.sessionId, {
+            ...meta,
+            pendingQuestion: question,
+            pendingQuestionAgentId: config.agentId,
+          });
           await persistence.updateSessionStatus(config.sessionId, "awaiting_input");
           this.emit(config.sessionId, { type: "awaiting_input", question });
           return;

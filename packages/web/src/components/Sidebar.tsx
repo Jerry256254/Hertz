@@ -12,11 +12,11 @@ import {
   Plug,
   Plus,
   Radio,
+  RefreshCw,
   ShieldCheck,
   Users,
   X,
-} from "lucide-react";
-import { api } from "../lib/api";
+} from "lucide-react";import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { HertzSession, Project } from "../lib/types";
 import { Avatar, IconButton } from "./ui";
@@ -191,6 +191,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
           <ShieldCheck size={15} />
           Approvals
         </Link>
+        {user?.role === "admin" && <UpdateButton />}
         {user?.role === "admin" && (
           <Link
             to="/channels"
@@ -234,5 +235,57 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
         </div>
       </div>
     </aside>
+  );
+}
+
+function UpdateButton() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const { data } = useQuery({
+    queryKey: ["update-status"],
+    queryFn: () => api.get<{ running: boolean; log: string }>("/update/status"),
+    enabled: open,
+    refetchInterval: open ? 3000 : false,
+  });
+
+  const startUpdate = useMutation({
+    mutationFn: () => api.post("/update"),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["update-status"] }),
+  });
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          if (!startUpdate.isPending) startUpdate.mutate();
+          setOpen(true);
+        }}
+        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors disabled:opacity-50"
+      >
+        <RefreshCw size={15} className={data?.running ? "animate-spin" : ""} />
+        Update Hertz
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !data?.running && setOpen(false)}>
+          <div className="w-full max-w-lg rounded-xl border border-border bg-bg-raised p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-2">
+              <RefreshCw size={15} className={data?.running ? "animate-spin text-accent" : "text-accent"} />
+              <span className="text-sm font-medium text-fg">{data?.running ? "Updating Hertz…" : "Up to date — last update log:"}</span>
+            </div>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-bg-sunken p-3 text-[11px] text-fg-muted">
+              {data?.log || "Starting…"}
+            </pre>
+            <div className="mt-3 text-right">
+              <button
+                className="rounded-md px-3 py-1.5 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg"
+                onClick={() => setOpen(false)}
+              >
+                {data?.running ? "Hide" : "Close"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

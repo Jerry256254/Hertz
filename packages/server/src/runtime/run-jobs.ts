@@ -10,6 +10,26 @@ import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
 import type { JobQueue, JobHandler } from "../queue/job-queue.js";
 import type { ComputerManager } from "../computer/computer-manager.js";
+import { runGroupTurn } from "../groups.js";
+
+/** Text of the most recent real (non-tool-result) user message — the group trigger. */
+async function extractLastUserText(deps: RunJobsDeps, sessionId: string): Promise<string> {
+  try {
+    const history = await deps.persistence.listMessages(sessionId);
+    for (let i = history.length - 1; i >= 0; i--) {
+      const message = history[i]!;
+      if (message.role !== "user" || message.senderAgentId) continue;
+      const text = message.content
+        .filter((b): b is Extract<import("@kuclab-hertz/providers").ContentBlock, { type: "text" }> => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+      if (text.trim()) return text;
+    }
+  } catch {
+    /* fall through */
+  }
+  return "";
+}
 
 /**
  * The one way work gets done: every agent run — human chat, colleague reply,
@@ -34,6 +54,10 @@ export interface AgentRunJobPayload {
   conversationPeerName?: string;
   /** Skip the loop's automatic memory note (heartbeats — they'd spam memory every tick). */
   suppressAutoMemory?: boolean;
+  /** Group chats: answer only as this participant (e.g. the agent who asked a pending question). */
+  forceAgentId?: string;
+  /** Conversation threads: which agent of the pair answers this turn (defaults to session.agentId). */
+  respondAsAgentId?: string;
 }
 
 export interface RunJobsDeps {
@@ -68,8 +92,10 @@ async function prepareComputer(deps: RunJobsDeps, agent: typeof agents.$inferSel
   }
 }
 
-export function normalizeSessionMode(mode: string): "plan" | "auto" | "autonomous" {
-  return mode === "plan" || mode === "autonomous" ? mode : "auto";
+export function normalizeSessionMode(_mode: string): "autonomous" {
+  // Hertz is autonomous-first: every run works until the goal is done and may
+  // ask the user only through explicit gates (ask_user / request_approval).
+  return "autonomous";
 }
 
 /** Enqueues an agent run; resolves immediately with the durable job id. */
@@ -89,7 +115,19 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
     const session = sessionRows[0];
     if (!session || session.status === "archived") return;
 
-    const agentRows = await deps.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1);
+    // Group chats fan out inside the same thread: every participant answers in
+    // turn (or only the @mentioned ones), sharing one history.
+    if (session.kind === "group") {
+      const triggerText = await extractLastUserText(deps, session.id);
+      await runGroupTurn(deps, session.id, triggerText, payload.forceAgentId);
+      return;
+    }
+
+    const agentRows = await deps.db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, payload.respondAsAgentId ?? session.agentId))
+      .limit(1);
     const agent = agentRows[0];
     if (!agent || agent.approvalStatus !== "approved" || agent.status === "terminated") return;
 

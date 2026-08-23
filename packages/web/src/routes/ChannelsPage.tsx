@@ -7,7 +7,7 @@ import { Badge, Button, Card, CardDescription, CardHeader, CardTitle, EmptyState
 
 interface ChannelItem {
   id: string;
-  kind: "telegram" | "discord";
+  kind: "telegram";
   label: string;
   defaultAgentId: string | null;
   agentName: string | null;
@@ -18,7 +18,7 @@ interface ChannelItem {
 
 export function ChannelsPage() {
   const queryClient = useQueryClient();
-  const [kind, setKind] = useState<"telegram" | "discord">("telegram");
+  const kind = "telegram" as const;
   const [label, setLabel] = useState("");
   const [token, setToken] = useState("");
   const [defaultAgentId, setDefaultAgentId] = useState("");
@@ -67,38 +67,23 @@ export function ChannelsPage() {
         <h1 className="text-base font-semibold text-fg">Channels</h1>
       </div>
       <p className="mb-6 text-sm text-fg-muted">
-        Connect a Telegram or Discord bot and message your agents from your phone — a message wakes them anywhere.
+        Connect a Telegram bot and message your agents from your phone — a message wakes them anywhere.
       </p>
 
       <Card className="mb-8">
         <CardHeader>
           <CardTitle className="text-sm">Connect a bot</CardTitle>
-          <CardDescription>Create a Telegram bot (BotFather) or a Discord bot (Developer Portal) and paste its token.</CardDescription>
+          <CardDescription>Create a Telegram bot via @BotFather and paste its token here.</CardDescription>
         </CardHeader>
         <div className="space-y-3 px-4 pb-4">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setKind("telegram")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-xs transition-colors ${kind === "telegram" ? "border-accent text-accent" : "border-border text-fg-muted"}`}
-            >
-              Telegram
-            </button>
-            <button
-              type="button"
-              onClick={() => setKind("discord")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-xs transition-colors ${kind === "discord" ? "border-accent text-accent" : "border-border text-fg-muted"}`}
-            >
-              Discord
-            </button>
-          </div>
+          <input type="hidden" value={kind} />
           <div>
             <Label>Label</Label>
             <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My bot" />
           </div>
           <div>
             <Label>Bot token</Label>
-            <Input value={token} onChange={(e) => setToken(e.target.value)} placeholder={kind === "telegram" ? "123456:ABC-DEF..." : "MTIzNDU2..."} />
+            <Input value={token} onChange={(e) => setToken(e.target.value)} placeholder="123456:ABC-DEF..." />
           </div>
           <div>
             <Label>Default agent</Label>

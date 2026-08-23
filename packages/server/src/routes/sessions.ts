@@ -4,12 +4,14 @@ import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
 import type { AppContext } from "../context.js";
-import { agentProjects, agents, projectRoots, projects, sessions } from "../db/schema.js";
+import { agentProjects, agents, projectRoots, projects, sessionParticipants, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
 import { listConversations, pickConversationActor } from "../conversations.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
+import { createGroupSession, listGroupParticipants } from "../groups.js";
+import { hasProjectAccess } from "../auth/project-access.js";
 
 const DEFAULT_TITLE = "New chat";
 
@@ -38,6 +40,11 @@ const answerSchema = z.object({
   text: z.string().min(1).max(20_000),
 });
 
+const createGroupSchema = z.object({
+  title: z.string().min(1).max(120),
+  agentIds: z.array(z.string().min(1)).min(1).max(12),
+});
+
 function deriveTitle(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length > 60 ? `${oneLine.slice(0, 60)}…` : oneLine;
@@ -49,7 +56,7 @@ async function startSessionRun(
   session: { id: string; projectId: string; agentId: string; kind: string; mode: string | null },
   _agent: { id: string; model: string; providerConfigId: string; systemPrompt: string | null },
   content: ContentBlock[],
-  opts: { userId: string; prePersisted?: boolean; conversationPeerName?: string; excludeTools?: string[] },
+  opts: { userId: string; prePersisted?: boolean; conversationPeerName?: string; excludeTools?: string[]; respondAsAgentId?: string },
 ): Promise<void> {
   const mode = (session.mode === "plan" || session.mode === "autonomous" ? session.mode : "auto") as
     | "plan"
@@ -64,6 +71,7 @@ async function startSessionRun(
     prePersisted: opts.prePersisted,
     userMessage: content,
     conversationPeerName: opts.conversationPeerName,
+    respondAsAgentId: opts.respondAsAgentId,
   });
 }
 
@@ -144,6 +152,19 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     return { sessions: rows };
   });
 
+  /** Messenger-style group chat: multiple bots share one thread with you. */
+  instance.post("/api/projects/:projectId/group-chats", async (request, reply) => {
+    const { projectId } = request.params as { projectId: string };
+    const parsed = createGroupSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) {
+      return reply.code(403).send({ error: "No access to this project" });
+    }
+
+    const sessionId = await createGroupSession(ctx, { projectId, title: parsed.data.title, agentIds: parsed.data.agentIds });
+    return reply.code(201).send({ id: sessionId });
+  });
+
   /** Direct agent ↔ agent chats — a conversation is a session with kind = "conversation", so this is a thin list wrapper. */
   instance.get("/api/projects/:projectId/conversations", async (request) => {
     const { projectId } = request.params as { projectId: string };
@@ -167,6 +188,14 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       ? (await ctx.db.select({ id: agents.id, name: agents.name, role: agents.role }).from(agents).where(eq(agents.id, session.peerAgentId)).limit(1))[0]
       : undefined;
 
+    const participants = session.kind === "group"
+      ? await ctx.db
+          .select({ id: agents.id, name: agents.name, role: agents.role })
+          .from(sessionParticipants)
+          .innerJoin(agents, eq(sessionParticipants.agentId, agents.id))
+          .where(eq(sessionParticipants.sessionId, id))
+      : [];
+
     return {
       session,
       messages,
@@ -174,8 +203,10 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       running: ctx.agentLoop.isRunning(id),
       paused: ctx.agentLoop.isPaused(id),
       pendingQuestion: session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null,
+      pendingQuestionAgentId: session.metadata ? (JSON.parse(session.metadata).pendingQuestionAgentId as string | undefined) ?? null : null,
       agent,
       peerAgent,
+      participants,
     };
   });
 
@@ -294,6 +325,14 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       return reply.code(202).send({ ok: true });
     }
 
+    // Group chats: persist the message, then one job fans the turn out across
+    // participants (@mention someone by name to narrow who answers).
+    if (session.kind === "group") {
+      await ctx.agentLoop.appendInbound(id, content);
+      await enqueueAgentRun(ctx, { sessionId: id, userId: request.user!.id, prePersisted: true }, { maxAttempts: 2 });
+      return reply.code(202).send({ ok: true });
+    }
+
     // Pick the agent that answers: direct conversations go to whoever didn't
     // speak last, with message_employee and ask_user withheld so replies stay
     // in-thread instead of re-sending to the peer / stopping for user input.
@@ -347,6 +386,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         userId: request.user!.id,
         conversationPeerName,
         excludeTools,
+        respondAsAgentId: session.kind === "conversation" ? agent.id : undefined,
       });
     } catch (err) {
       return reply.code(400).send({ error: (err as Error).message });
@@ -371,21 +411,34 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       return reply.code(409).send({ error: "The agent is still working — wait for it to ask" });
     }
 
-    const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1);
-    const agent = agentRows[0];
-    if (!agent) return reply.code(404).send({ error: "Agent not found" });
-
     await ctx.agentLoop.appendInbound(id, [{ type: "text", text: parsed.data.text }]);
+
+    // Remember which agent asked (group chats) so only it resumes; clear the gate.
+    let pendingQuestionAgentId: string | undefined;
+    if (session.metadata) {
+      try {
+        const meta = JSON.parse(session.metadata) as { pendingQuestionAgentId?: string };
+        pendingQuestionAgentId = meta.pendingQuestionAgentId;
+      } catch {
+        /* ignore */
+      }
+    }
     await ctx.db
       .update(sessions)
       .set({ status: "active", metadata: null, updatedAt: new Date() })
       .where(eq(sessions.id, id));
 
     try {
-      await startSessionRun(ctx, session, agent, [{ type: "text", text: parsed.data.text }], {
-        userId: request.user!.id,
-        prePersisted: true,
-      });
+      await enqueueAgentRun(
+        ctx,
+        {
+          sessionId: id,
+          userId: request.user!.id,
+          prePersisted: true,
+          ...(session.kind === "group" && pendingQuestionAgentId ? { forceAgentId: pendingQuestionAgentId } : {}),
+        },
+        { maxAttempts: 2 },
+      );
     } catch (err) {
       return reply.code(400).send({ error: (err as Error).message });
     }

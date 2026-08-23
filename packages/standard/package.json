@@ -16,7 +16,7 @@
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
   },
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Jerry256254/Hertz.git"
