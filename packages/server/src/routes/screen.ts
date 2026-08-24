@@ -120,6 +120,20 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
     return reply.send(fsSync.createReadStream(filePath));
   });
 
+  // core/decoders/* import "../../vendor/pako/…" — from the browser that is
+  // /vendor/* (OUTSIDE /novnc). Without this the SPA fallback returned
+  // index.html for those files and the whole module graph died silently.
+  app.get("/vendor/*", async (request, reply) => {
+    if (!novncPkgDir) return reply.code(404).send("noVNC assets unavailable");
+    const rest = (request.params as { "*": string })["*"] ?? "";
+    const filePath = path.join(novncPkgDir, "vendor", rest);
+    if (!filePath.startsWith(novncPkgDir) || !fsSync.existsSync(filePath) || !fsSync.statSync(filePath).isFile()) {
+      return reply.code(404).send("not found");
+    }
+    reply.type(rest.endsWith(".js") ? "text/javascript" : "application/octet-stream");
+    return reply.send(fsSync.createReadStream(filePath));
+  });
+
   // --- public-with-token endpoints (take-over links) ------------------------
   app.get("/screen/:agentId", async (request, reply) => {
     const { agentId } = request.params as { agentId: string };
@@ -250,28 +264,43 @@ function viewerHtml(agentId: string, token: string): string {
 <span style="flex:1"></span><button id="done">I'm done — hand back to the agent</button></header>
 <main><div id="screen"></div></main>
 <script type="module">
-  import RFB from "/novnc/rfb.js";
+  const statusEl = document.getElementById("status");
+  const show = (msg, color) => {
+    statusEl.textContent = msg;
+    if (color) document.getElementById("dot").style.background = color;
+  };
+  window.addEventListener("error", (e) => show("Error: " + (e.message || e.type), "#ef4444"));
+
+  let RFB;
+  try {
+    ({ default: RFB } = await import("/novnc/rfb.js"));
+  } catch (err) {
+    show("Failed to load the VNC client: " + err.message, "#ef4444");
+    throw err;
+  }
+
   const AGENT_ID = ${JSON.stringify(agentId)};
   const TOKEN = ${JSON.stringify(token)};
   document.getElementById("done").addEventListener("click", async () => {
     try {
       await fetch("/api/agents/" + AGENT_ID + "/takeover/done", { method: "POST", credentials: "include" });
     } catch (e) { /* link-only viewers just close */ }
-    document.getElementById("status").textContent = "Handed back to the agent — you can close this tab.";
+    show("Handed back to the agent — you can close this tab.", "#22c55e");
     try { window.rfb && window.rfb.disconnect(); } catch (e) {}
   });
+
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const url = proto + "//" + location.host + "/ws/agents/" + AGENT_ID + "/screen?t=" + encodeURIComponent(TOKEN);
   const rfb = new RFB(document.getElementById("screen"), url, { scaleViewport: true, resizeSession: false });
   window.rfb = rfb;
-  rfb.addEventListener("connect", () => {
-    document.getElementById("dot").style.background = "#22c55e";
-    document.getElementById("status").textContent = "Live — you are controlling the agent desktop";
+  rfb.addEventListener("connect", () => show("Live — you are controlling the agent desktop", "#22c55e"));
+  rfb.addEventListener("disconnect", (e) => {
+    const detail = e.detail ? " (code " + e.detail.code + ")" : "";
+    show("Disconnected" + detail + " — refresh to reconnect", "#ef4444");
   });
-  rfb.addEventListener("disconnect", () => {
-    document.getElementById("dot").style.background = "#ef4444";
-    document.getElementById("status").textContent = "Disconnected — refresh to reconnect";
-  });
+  setTimeout(() => {
+    if (statusEl.textContent === "Connecting…") show("Still connecting — is the desktop running? (employee page → Start desktop)", "#f59e0b");
+  }, 8000);
 </script>
 </body></html>`;
 }
