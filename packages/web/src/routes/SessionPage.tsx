@@ -315,10 +315,17 @@ export function SessionPage() {
       <div className="flex min-w-0 flex-col">
         <header className="flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border px-6">
           <div className="flex min-w-0 items-center gap-2.5">
-            {data?.agent && (
-              <Avatar label={data.agent.name} mascot={data.agent.mascot} animate={isRunning} />
+            {data?.agent ? (
+              <>
+                <Avatar label={data.agent.name} mascot={data.agent.mascot} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-fg">{data.agent.name}</p>
+                  <p className="truncate text-[11px] text-fg-subtle">{isRunning ? "working…" : data.session.status === "awaiting_input" ? "waiting for you" : "online"}</p>
+                </div>
+              </>
+            ) : (
+              data && <EditableTitle sessionId={sessionId!} title={data.session.title} />
             )}
-            {data && <EditableTitle sessionId={sessionId!} title={data.session.title} />}
           </div>
           <div className="flex items-center gap-3">
             {data?.session.kind === "conversation" && (

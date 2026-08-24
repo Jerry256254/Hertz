@@ -7,7 +7,7 @@ import type { Database } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { sessions } from "../db/schema.js";
 import { signScreenToken } from "../secrets/screen-token.js";
-import { startTakeoverTunnel, takeoverMessageText } from "../routes/screen.js";
+import { takeoverMessageText } from "../routes/screen.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
 
 /**
@@ -164,7 +164,6 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
 
       // Make sure the visible desktop (and its noVNC port) is up before handing out links.
       let lanUrl: string | null = null;
-      let tunnelUrl: string | null = null;
       try {
         const started = await desktop.start(ctx.actor.actorId);
         if (started.hostPort) {
@@ -176,7 +175,6 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
             const token = signScreenToken(masterKey, { agentId: ctx.actor.actorId, exp: Date.now() + 6 * 3600_000 });
             lanUrl = `http://${lanIp}:${port}/screen/${ctx.actor.actorId}?t=${token}`;
           }
-          tunnelUrl = await startTakeoverTunnel(ctx.actor.actorId, started.hostPort);
         }
       } catch {
         /* links optional — the WebUI Screen panel always works */
@@ -195,14 +193,13 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
       meta.pendingQuestion = `Take over my screen: ${input.reason}`;
       meta.pendingQuestionAgentId = ctx.actor.actorId;
       meta.pendingTakeover = { reason: input.reason };
-      if (tunnelUrl) meta.takeoverTunnelUrl = tunnelUrl;
       await db
         .update(sessions)
         .set({ metadata: JSON.stringify(meta), updatedAt: new Date() })
         .where(eq(sessions.id, sessionId));
 
       return {
-        summary: takeoverMessageText(input.reason, lanUrl, tunnelUrl),
+        summary: takeoverMessageText(input.reason, lanUrl),
         awaitUser: { question: `Take over my screen: ${input.reason}` },
       };
     },

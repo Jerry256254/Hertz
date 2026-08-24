@@ -28,6 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Playwright browsers are baked into the base image at /ms-playwright.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
+# The matching playwright npm library, globally — so the browser daemon
+# resolves it out of the box (no per-agent self-repair needed).
+RUN npm i -g playwright@1.49.0 --no-audit --no-fund
+
 WORKDIR /workspace
 
 # Long-lived "computer": the server exec's into it; the entrypoint just idles.

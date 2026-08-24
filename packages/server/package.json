@@ -28,7 +28,8 @@
     "fastify": "^5.2.0",
     "zod": "^3.24.0",
     "zod-to-json-schema": "^3.24.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@novnc/novnc": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

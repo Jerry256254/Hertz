@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { eq } from "drizzle-orm";
 import WebSocket from "ws";
-import { spawn, type ChildProcess } from "node:child_process";
+import fsSync from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
 import { hasProjectAccess } from "../auth/project-access.js";
 import { requireAuth } from "../auth/plugin.js";
 import { signScreenToken, verifyScreenToken } from "../secrets/screen-token.js";
@@ -11,15 +13,13 @@ import { enqueueAgentRun } from "../runtime/run-jobs.js";
 
 const TOKEN_TTL_MS = 6 * 60 * 60 * 1000; // take-over links live max 6h
 
-/** Live tunnel URL per agent (cloudflared), managed by request_takeover/done. */
-const activeTunnels = new Map<string, { proc: ChildProcess; url: string }>();
-
 /**
  * The agent's screen, end to end:
  * - status/start manage the Xvfb+x11vnc+noVNC stack inside the container,
  * - a signed token unlocks the viewer page and the WS proxy for ONE agent,
  * - the proxy pipes the browser's WebSocket straight into the container's
- *   websockify (localhost-published port) — access control stays in Hertz.
+ *   websockify (localhost-published port) — access control stays in Hertz,
+ * - noVNC client assets are served from our own node_modules (no CDN).
  */
 export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
@@ -29,7 +29,7 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
       const { id } = request.params as { id: string };
       if (!(await canAccess(ctx, request, id))) return reply.code(403).send({ error: "No access" });
       const status = await ctx.desktop.status(id);
-      return { ...status, tunnelUrl: activeTunnels.get(id)?.url ?? null };
+      return { ...status };
     });
 
     instance.post("/api/agents/:id/screen/start", async (request, reply) => {
@@ -66,15 +66,12 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
       const { id } = request.params as { id: string };
       if (!(await canAccess(ctx, request, id))) return reply.code(403).send({ error: "No access" });
 
-      await stopTakeoverTunnel(id);
-
       const pending = await findPendingTakeoverSession(ctx, id);
       if (pending) {
         const meta = { ...pending.metadata };
         delete meta.pendingQuestion;
         delete meta.pendingQuestionAgentId;
         delete meta.pendingTakeover;
-        delete meta.takeoverTunnelUrl;
         await ctx.db
           .update(sessionsTable)
           .set({ status: "active", metadata: JSON.stringify(meta), updatedAt: new Date() })
@@ -95,6 +92,32 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
 
       return { ok: true };
     });
+  });
+
+  // --- noVNC client assets, served from our own node_modules (no CDN) -------
+  // (resolve via the package entry — its exports map hides package.json)
+  let novncPkgDir: string | null = null;
+  try {
+    const entry = createRequire(import.meta.url).resolve("@novnc/novnc"); // …/novnc/core/rfb.js
+    novncPkgDir = path.dirname(path.dirname(entry));
+  } catch {
+    novncPkgDir = null; // dependency missing — /novnc/* will 404, everything else works
+  }
+  app.get("/novnc/*", async (request, reply) => {
+    const rest = (request.params as { "*": string })["*"] ?? "";
+    const rel =
+      rest === "rfb.js"
+        ? path.join("core", "rfb.js")
+        : rest.startsWith("vendor/")
+          ? rest
+          : path.join("core", rest);
+    if (!novncPkgDir) return reply.code(404).send("noVNC assets unavailable");
+    const filePath = path.join(novncPkgDir, rel);
+    if (!filePath.startsWith(novncPkgDir) || !fsSync.existsSync(filePath) || !fsSync.statSync(filePath).isFile()) {
+      return reply.code(404).send("not found");
+    }
+    reply.type(rest.endsWith(".js") ? "text/javascript" : "application/octet-stream");
+    return reply.send(fsSync.createReadStream(filePath));
   });
 
   // --- public-with-token endpoints (take-over links) ------------------------
@@ -177,57 +200,11 @@ export async function findPendingTakeoverSession(
   return undefined;
 }
 
-/** Starts (or reuses) an ephemeral trycloudflare tunnel to the desktop's local port. */
-export async function startTakeoverTunnel(agentId: string, hostPort: number): Promise<string | null> {
-  const existing = activeTunnels.get(agentId);
-  if (existing) return existing.url;
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const proc = spawn("cloudflared", ["tunnel", "--url", `http://127.0.0.1:${hostPort}`, "--no-autoupdate"], {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    const finish = (url: string | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(url);
-    };
-    const timer = setTimeout(() => {
-      proc.kill();
-      finish(null); // cloudflared missing or too slow — LAN link still works
-    }, 15_000);
-
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      const match = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i.exec(chunk.toString());
-      if (match) {
-        activeTunnels.set(agentId, { proc, url: match[0] });
-        finish(match[0]);
-      }
-    });
-    proc.on("exit", () => {
-      activeTunnels.delete(agentId);
-      finish(null);
-    });
-  });
+export function takeoverMessageText(reason: string, lanUrl: string | null): string {
+  return `I need you to take over my screen and complete this step for me: ${reason}\nOpen my screen here${lanUrl ? `:\n${lanUrl}` : " from the WebUI (employee page → Screen)."}`;
 }
-
-export async function stopTakeoverTunnel(agentId: string): Promise<void> {
-  const tunnel = activeTunnels.get(agentId);
-  if (tunnel) {
-    tunnel.proc.kill();
-    activeTunnels.delete(agentId);
-  }
-}
-
-export function takeoverMessageText(reason: string, lanUrl: string | null, tunnelUrl: string | null): string {
-  const links = [tunnelUrl, lanUrl].filter(Boolean).join("\n");
-  return `I need you to take over my screen and complete this step for me: ${reason}\nOpen my screen here${links ? `:\n${links}` : " from the WebUI (employee page → Screen)."}`;
-}
-
 
 function viewerHtml(agentId: string, token: string): string {
-  const wsProto = "wss:";
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Hertz — agent screen</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -242,27 +219,31 @@ function viewerHtml(agentId: string, token: string): string {
 </style></head>
 <body>
 <header><span class="dot" id="dot"></span><span id="status">Connecting…</span>
-<span style="flex:1"></span><button onclick="finish()">I'm done — hand back to the agent</button></header>
+<span style="flex:1"></span><button id="done">I'm done — hand back to the agent</button></header>
 <main><div id="screen"></div></main>
-<script src="https://unpkg.com/@novnc/novnc@1.4.0/lib/rfb.js"><\/script>
-<script>
+<script type="module">
+  import RFB from "/novnc/rfb.js";
   const AGENT_ID = ${JSON.stringify(agentId)};
   const TOKEN = ${JSON.stringify(token)};
-  async function finish(){
-    try{
-      await fetch('/api/agents/' + AGENT_ID + '/takeover/done', {method:'POST', credentials:'include'});
-    }catch(e){ /* link-only viewers just close */ }
-    document.getElementById('status').textContent = 'Handed back to the agent — you can close this tab.';
-    try{ window.rfb && window.rfb.disconnect(); }catch(e){}
-  }
-  (function connect(){
-    const proto = location.protocol === 'https:' ? '${wsProto}' : 'ws:';
-    const url = proto + '//' + location.host + '/ws/agents/' + AGENT_ID + '/screen?t=' + encodeURIComponent(TOKEN);
-    const rfb = new window.RFB(document.getElementById('screen'), url, { scaleViewport: true, resizeSession: false });
-    window.rfb = rfb;
-    rfb.addEventListener('connect', ()=>{ document.getElementById('dot').style.background='#22c55e'; document.getElementById('status').textContent='Live — you are controlling the agent desktop'; });
-    rfb.addEventListener('disconnect', ()=>{ document.getElementById('dot').style.background='#ef4444'; document.getElementById('status').textContent='Disconnected'; });
-  })();
+  document.getElementById("done").addEventListener("click", async () => {
+    try {
+      await fetch("/api/agents/" + AGENT_ID + "/takeover/done", { method: "POST", credentials: "include" });
+    } catch (e) { /* link-only viewers just close */ }
+    document.getElementById("status").textContent = "Handed back to the agent — you can close this tab.";
+    try { window.rfb && window.rfb.disconnect(); } catch (e) {}
+  });
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const url = proto + "//" + location.host + "/ws/agents/" + AGENT_ID + "/screen?t=" + encodeURIComponent(TOKEN);
+  const rfb = new RFB(document.getElementById("screen"), url, { scaleViewport: true, resizeSession: false });
+  window.rfb = rfb;
+  rfb.addEventListener("connect", () => {
+    document.getElementById("dot").style.background = "#22c55e";
+    document.getElementById("status").textContent = "Live — you are controlling the agent desktop";
+  });
+  rfb.addEventListener("disconnect", () => {
+    document.getElementById("dot").style.background = "#ef4444";
+    document.getElementById("status").textContent = "Disconnected — refresh to reconnect";
+  });
 </script>
 </body></html>`;
 }

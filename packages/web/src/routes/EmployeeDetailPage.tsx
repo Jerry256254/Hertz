@@ -323,7 +323,7 @@ function ScreenCard({ agentId }: { agentId: string }) {
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const { data: status } = useQuery({
     queryKey: ["screen", agentId],
-    queryFn: () => api.get<{ running: boolean; tunnelUrl?: string | null }>("/agents/" + agentId + "/screen/status"),
+    queryFn: () => api.get<{ running: boolean }>("/agents/" + agentId + "/screen/status"),
     enabled: open,
     refetchInterval: open ? 5000 : false,
   });
@@ -372,22 +372,6 @@ function ScreenCard({ agentId }: { agentId: string }) {
         )}
       </div>
       {error && <p className="mt-2 rounded-md bg-danger-wash p-2 text-xs text-danger">{error}</p>}
-      {status?.tunnelUrl && (
-        <p className="mt-2 break-all text-xs text-fg-muted">
-          Public link:{" "}
-          <a className="text-accent underline" href={status.tunnelUrl} target="_blank" rel="noreferrer">
-            {status.tunnelUrl}
-          </a>{" "}
-          <button
-            className="ml-1 text-fg-subtle underline"
-            onClick={() => {
-              void navigator.clipboard?.writeText(status.tunnelUrl!);
-            }}
-          >
-            copy
-          </button>
-        </p>
-      )}
       {open && iframeUrl && (
         <iframe
           title="Agent screen"

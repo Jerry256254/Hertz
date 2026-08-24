@@ -161,7 +161,7 @@ export class ComputerManager {
       // Chromium runs HEADED on the container's visible display (:99) so the
       // streamed desktop shows exactly what the browser is doing.
       session = new BrowserSession(
-        () => ["docker", "exec", "-i", "-w", "/workspace", "-e", "DISPLAY=:99", this.containerName(agentId)],
+        () => ["docker", "exec", "-i", "-w", "/workspace", "-e", "DISPLAY=:99", "-e", "NODE_PATH=/usr/lib/node_modules:/ms-playwright-agent/node_modules", this.containerName(agentId)],
         () => this.browsers.delete(agentId),
       );
       this.browsers.set(agentId, session);

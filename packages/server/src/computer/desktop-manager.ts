@@ -48,10 +48,11 @@ export class DesktopManager {
         "Docker isn't accessible to the Hertz service. Re-run the installer (curl -fsSL https://raw.githubusercontent.com/Jerry256254/Hertz/main/install.sh | bash) — it adds the service user to the docker group and restarts the service.",
       );
     }
+    // Missing or stopped container: bring it up right here — starting the
+    // desktop should never require the user to trigger a run first.
     if (state !== "running") {
-      throw new Error(
-        "The agent's container isn't running yet — it starts automatically on the agent's next run. Trigger any message first, then retry.",
-      );
+      const ctxInfo = (await this.resolveContext?.(agentId)) ?? { image: null, mountPaths: [] };
+      await this.computer.ensureContainer({ agentId, image: ctxInfo.image, mountPaths: ctxInfo.mountPaths });
     }
 
     // Old containers predate the desktop port publish — recreate once so the
