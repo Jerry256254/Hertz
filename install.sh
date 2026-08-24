@@ -30,24 +30,45 @@ fi
 as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else $SUDO "$@"; fi; }
 
 # --- 1. prerequisites --------------------------------------------------------
-need_node=1
-if command -v node >/dev/null 2>&1; then
-  major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-  [ "$major" -ge 20 ] && need_node=0
+# systemd can't reliably exec home-managed Node (nvm/fnm under ~) — Permission
+# denied at EXEC step. Prefer a SYSTEM node; only fall back to a login-shell
+# wrapper when no system node can be installed.
+node_major() { "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
+
+SYSTEM_NODE=""
+for cand in /usr/bin/node /usr/local/bin/node /opt/node/bin/node; do
+  if [ -x "$cand" ] && [ "$(node_major "$cand")" -ge 20 ]; then SYSTEM_NODE="$cand"; break; fi
+done
+
+if [ -z "$SYSTEM_NODE" ]; then
+  log "Installing system-wide Node.js 22 (NodeSource)..."
+  if command -v apt-get >/dev/null 2>&1; then
+    as_root bash -c "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs" || true
+  elif command -v dnf >/dev/null 2>&1; then
+    (curl -fsSL https://rpm.nodesource.com/setup_22.x | as_root bash -) || true
+    as_root dnf install -y nodejs || true
+  elif command -v pacman >/dev/null 2>&1; then
+    as_root pacman -Sy --noconfirm nodejs npm || true
+  fi
+  for cand in /usr/bin/node /usr/local/bin/node /opt/node/bin/node; do
+    if [ -x "$cand" ] && [ "$(node_major "$cand")" -ge 20 ]; then SYSTEM_NODE="$cand"; break; fi
+  done
 fi
 
-if [ "$need_node" -eq 1 ]; then
-  log "Installing Node.js 22.x ..."
-  if command -v apt-get >/dev/null 2>&1; then
-    as_root bash -c "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs"
-  elif command -v dnf >/dev/null 2>&1; then
-    as_root dnf install -y nodejs
-  elif command -v pacman >/dev/null 2>&1; then
-    as_root pacman -Sy --noconfirm nodejs npm
+USE_WRAPPER=0
+if [ -n "$SYSTEM_NODE" ]; then
+  NODE_BIN="$SYSTEM_NODE"
+else
+  # Fall back to the user's own Node (nvm/fnm/...) executed via a login shell.
+  if command -v node >/dev/null 2>&1 && [ "$(node_major "$(command -v node)")" -ge 20 ]; then
+    NODE_BIN="$(command -v node)"
+    USE_WRAPPER=1
+    warn "Using home-managed Node ($NODE_BIN) via a login-shell wrapper."
   else
-    die "No supported package manager found. Install Node.js >= 20 manually from https://nodejs.org"
+    die "No Node.js >= 20 available and system install failed. Install Node from https://nodejs.org and re-run."
   fi
 fi
+log "Using Node: $NODE_BIN"
 
 if ! command -v pnpm >/dev/null 2>&1; then
   log "Enabling pnpm (corepack)..."
@@ -121,6 +142,11 @@ NODE_BIN="$(command -v node)"
 
 if command -v systemctl >/dev/null 2>&1 && as_root true 2>/dev/null; then
   log "Installing systemd service '${SERVICE_NAME}' ..."
+  if [ "$USE_WRAPPER" -eq 1 ]; then
+    EXEC_LINE="/bin/bash -lc 'cd ${INSTALL_DIR} && exec node packages/cli/dist/bin.js start'"
+  else
+    EXEC_LINE="${NODE_BIN} ${INSTALL_DIR}/packages/cli/dist/bin.js start"
+  fi
   as_root tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null << UNIT
 [Unit]
 Description=KucLab Hertz (autonomous agent platform)
@@ -131,7 +157,7 @@ Wants=network-online.target
 Type=simple
 User=${RUN_AS_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${NODE_BIN} ${INSTALL_DIR}/packages/cli/dist/bin.js start
+ExecStart=${EXEC_LINE}
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
@@ -142,6 +168,7 @@ WantedBy=multi-user.target
 UNIT
   as_root systemctl daemon-reload
   as_root systemctl enable "${SERVICE_NAME}" --quiet
+  as_root systemctl reset-failed "${SERVICE_NAME}" 2>/dev/null || true
   as_root systemctl restart "${SERVICE_NAME}"
 
   log "Waiting for the service to come up ..."
