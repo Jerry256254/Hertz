@@ -82,9 +82,13 @@ export class DesktopManager {
     }
 
     const status = await this.status(agentId);
-    if (!status.running || !status.hostPort) {
-      const logTail = await this.execInContainer(agentId, "bash", ["-c", "tail -20 /tmp/websockify.log 2>/dev/null; true"]);
-      throw new Error(`Desktop failed to start inside the container. websockify log: ${logTail.stdout.trim() || "(empty)"}`);
+    const x11vncUp = await this.execInContainer(agentId, "bash", ["-c", "pgrep x11vnc >/dev/null && echo yes || echo no"]);
+    if (!status.running || !status.hostPort || x11vncUp.stdout.trim() !== "yes") {
+      const logs = await this.execInContainer(agentId, "bash", [
+        "-c",
+        "echo '--- xvfb:'; tail -5 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -5 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -5 /tmp/websockify.log 2>/dev/null; true",
+      ]);
+      throw new Error(`Desktop failed to start inside the container. Logs:\n${logs.stdout.trim() || "(empty)"}`);
     }
     return status;
   }
@@ -150,19 +154,33 @@ export class DesktopManager {
 
 export const START_DESKTOP_SCRIPT = String.raw`#!/usr/bin/env bash
 # Bootstraps the visible desktop inside an agent container.
+# Robust version: every process logs to a file (no SIGPIPE deaths from the
+# closed docker-exec pipe), X lock files are cleaned, and each stage waits
+# for the previous one to actually be ready.
 set -x
 export DISPLAY=:99
-pkill -f 'Xvfb :99' 2>/dev/null; pkill x11vnc 2>/dev/null; pkill -f 'websockify.*6080' 2>/dev/null
+
+pkill -f 'Xvfb :99' 2>/dev/null
+pkill x11vnc 2>/dev/null
+pkill -f 'websockify.*6080' 2>/dev/null
+pkill xfce4-session 2>/dev/null
 sleep 0.5
+rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock
 
-Xvfb :99 -screen 0 1440x900x24 -nolisten tcp &
-sleep 1
+nohup Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+for i in $(seq 1 40); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.25; done
 
-# A window manager makes Chromium windows behave (move/resize/focus).
-which startxfce4 >/dev/null 2>&1 && (dbus-launch --exit-with-session startxfce4 >/dev/null 2>&1 &)
+if command -v startxfce4 >/dev/null 2>&1; then
+  nohup dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1 &
+fi
 
-x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet &
+nohup x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet >/tmp/x11vnc.log 2>&1 &
+for i in $(seq 1 40); do
+  (exec 3<>/dev/tcp/127.0.0.1/5900) 2>/dev/null && { exec 3>&- 3<&-; break; }
+  sleep 0.25
+done
+
+nohup websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
 sleep 0.5
-
-websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
+echo "desktop stack up"
 `;
