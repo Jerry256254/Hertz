@@ -566,7 +566,11 @@ export class AgentLoopManager {
               stopReason = evt.stopReason;
               break;
             case "error":
-              throw new Error(evt.message);
+              throw new Error(
+                config.model
+                  ? `Provider stream error (model: ${config.model}): ${evt.message}. If this is a free/gateway model, it may not support tool calling — try a different model in the bot's settings.`
+                  : evt.message,
+              );
           }
         }
         return { assistantText, toolUses, usage, stopReason };

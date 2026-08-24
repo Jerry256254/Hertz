@@ -76,13 +76,22 @@ export class DesktopManager {
     if (already.stdout.trim() !== "yes") {
       await this.computer.run(["docker", "exec", this.computer.containerName(agentId), "mkdir", "-p", "/opt/hertz", "/tmp/.X11-unix"]);
       await this.installScript(agentId);
-      await this.computer.run(["docker", "exec", "-d", this.computer.containerName(agentId), "bash", "/opt/hertz/start-desktop.sh"]);
+      // Run the bootstrap in the FOREGROUND of a detached host process.
+      // The script ends with `wait` on the daemon PIDs, keeping the exec
+      // session (and all desktop processes) alive indefinitely.
+      const { spawn: spawnProc } = await import("node:child_process");
+      const bootstrap = spawnProc(
+        "docker",
+        ["exec", this.computer.containerName(agentId), "bash", "/opt/hertz/start-desktop.sh"],
+        { detached: true, stdio: "ignore" },
+      );
+      bootstrap.unref();
     }
 
     // Wait for REAL readiness (websockify AND x11vnc) — the bootstrap stages
     // take several seconds (Xvfb fonts cache, VNC port probe) and a fixed
     // 2-second check produced false failures while the stack was still booting.
-    const deadline = Date.now() + 25_000;
+    const deadline = Date.now() + 60_000;
     let ready = false;
     while (Date.now() < deadline) {
       const probe = await this.execInContainer(agentId, "bash", [
@@ -168,8 +177,9 @@ export class DesktopManager {
 
 export const START_DESKTOP_SCRIPT = String.raw`#!/usr/bin/env bash
 # Bootstraps the visible desktop inside an agent container.
-# Guarantees a VISIBLE, INTERACTIVE screen: window manager + a terminal window
-# always come up, every process logs to a file, stages wait for readiness.
+# CRITICAL: the script ends with wait — this keeps the docker exec session
+# alive so backgrounded daemons (Xvfb, x11vnc, websockify) are never orphaned
+# or killed when the session would otherwise be cleaned up.
 set -x
 export DISPLAY=:99
 
@@ -181,29 +191,34 @@ pkill xfwm4 2>/dev/null
 sleep 0.5
 rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock
 
-nohup Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
-for i in $(seq 1 40); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.25; done
+Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+XVFB_PID=$!
+for i in $(seq 1 60); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.25; done
 
 xsetroot -solid "#2b2f36" 2>/dev/null || true
 
 if command -v startxfce4 >/dev/null 2>&1; then
-  nohup dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1 &
+  dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1 &
   sleep 2
 fi
 
-# Window manager fallback: without xfwm4 windows have no decorations/focus.
-command -v xfwm4 >/dev/null 2>&1 && pgrep xfwm4 >/dev/null || nohup xfwm4 >/tmp/xfwm4.log 2>&1 &
+command -v xfwm4 >/dev/null 2>&1 && pgrep xfwm4 >/dev/null || xfwm4 >/tmp/xfwm4.log 2>&1 &
 
-# Always-open terminal: proof the desktop is alive and interactive.
-nohup xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 &
+xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 &
 
-nohup x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet >/tmp/x11vnc.log 2>&1 &
-for i in $(seq 1 40); do
+x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet >/tmp/x11vnc.log 2>&1 &
+X11VNC_PID=$!
+for i in $(seq 1 60); do
   (exec 3<>/dev/tcp/127.0.0.1/5900) 2>/dev/null && { exec 3>&- 3<&-; break; }
   sleep 0.25
 done
 
-nohup websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
+websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
+WEBSOCKIFY_PID=$!
 sleep 0.5
-echo "desktop stack up"
+
+echo "desktop stack up — waiting on daemons"
+# Keep the exec session alive: wait for the daemon PIDs so Docker doesn't
+# clean up the process group when this script exits.
+wait $XVFB_PID $X11VNC_PID $WEBSOCKIFY_PID 2>/dev/null
 `;

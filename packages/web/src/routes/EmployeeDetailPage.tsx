@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BrainCircuit, FolderOpen, Plug, TerminalSquare } from "lucide-react";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import type { Agent, ProviderConfig } from "../lib/types";
 import { ROLE_LABEL } from "../lib/types";
 import { agentColor } from "../lib/agent-color";
@@ -336,8 +336,19 @@ function ScreenCard({ agentId }: { agentId: string }) {
       const { token } = await api.get<{ token: string }>("/agents/" + agentId + "/screen/token");
       setIframeUrl(`/screen/${agentId}?t=${encodeURIComponent(token)}`);
     } catch (err) {
-      setError((err as Error).message);
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
     }
+  }
+
+  function openViewerPopup() {
+    const win = window.open("about:blank", "_blank");
+    api.get<{ token: string }>("/agents/" + agentId + "/screen/token")
+      .then(({ token }) => {
+        const url = `/screen/${agentId}?t=${encodeURIComponent(token)}`;
+        if (win && !win.closed) win.location.href = url;
+        else window.open(url, "_blank");
+      })
+      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : (err as Error).message));
   }
 
   async function startDesktop() {
@@ -345,7 +356,7 @@ function ScreenCard({ agentId }: { agentId: string }) {
     try {
       await api.post(`/agents/${agentId}/screen/start`);
     } catch (err) {
-      setError((err as Error).message);
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
     }
   }
 

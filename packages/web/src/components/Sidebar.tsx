@@ -19,7 +19,7 @@ import {
 } from "lucide-react";import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { HertzSession, Project } from "../lib/types";
-import { Avatar, IconButton } from "./ui";
+import { Avatar, Button, IconButton } from "./ui";
 import { agentColor } from "../lib/agent-color";
 import { DeleteButton } from "./DeleteButton";
 
@@ -250,11 +250,19 @@ function UpdateButton() {
           if (!startUpdate.isPending && !data?.running && !finished) startUpdate.mutate();
           setOpen(true);
         }}
-        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors disabled:opacity-50"
+        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors disabled:opacity-50 ${
+          updateAvailable
+            ? "bg-accent-wash text-accent font-medium hover:bg-accent hover:text-accent-fg"
+            : "text-fg-muted hover:bg-bg-hover hover:text-accent"
+        }`}
       >
         <RefreshCw size={15} className={data?.running ? "animate-spin" : ""} />
         Update Hertz
-        {updateAvailable && <span className="ml-auto h-2 w-2 rounded-full bg-accent" />}
+        {updateAvailable && (
+          <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-fg">
+            NEW
+          </span>
+        )}
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !data?.running && setOpen(false)}>
@@ -287,7 +295,18 @@ function UpdateButton() {
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-bg-sunken p-3 text-[11px] text-fg-muted">
               {data?.log || "Starting…"}
             </pre>
-            <div className="mt-3 text-right">
+            <div className="mt-3 flex items-center justify-between">
+              {!data?.running && !finished && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => startUpdate.mutate()}
+                  disabled={startUpdate.isPending}
+                >
+                  <RefreshCw size={13} /> Update now
+                </Button>
+              )}
+              <span className="flex-1" />
               <button
                 className="rounded-md px-3 py-1.5 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg"
                 onClick={() => setOpen(false)}

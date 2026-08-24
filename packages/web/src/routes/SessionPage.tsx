@@ -221,9 +221,18 @@ export function SessionPage() {
 
   const agentIdForScreen = data?.agent?.id ?? data?.session.agentId ?? "";
 
-  async function openScreen(agentId: string) {
-    const { token } = await api.get<{ token: string }>(`/agents/${agentId}/screen/token`);
-    window.open(`/screen/${agentId}?t=${encodeURIComponent(token)}`, "_blank", "width=1280,height=820");
+  function openScreen(agentId: string) {
+    const win = window.open("about:blank", "_blank");
+    api.get<{ token: string }>(`/agents/${agentId}/screen/token`)
+      .then(({ token }) => {
+        const url = `/screen/${agentId}?t=${encodeURIComponent(token)}`;
+        if (win && !win.closed) win.location.href = url;
+        else window.open(url, "_blank");
+      })
+      .catch((err: unknown) => {
+        if (win && !win.closed) win.close();
+        setRunError(err instanceof ApiError ? err.message : "Couldn't open screen — desktop may still be starting. Try again in a few seconds.");
+      });
   }
 
   const doneTakeover = useMutation({
