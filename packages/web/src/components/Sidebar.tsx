@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -226,8 +226,17 @@ function UpdateButton() {
     queryKey: ["update-status"],
     queryFn: () => api.get<{ running: boolean; log: string }>("/update/status"),
     enabled: open,
-    refetchInterval: open ? 3000 : false,
+    refetchInterval: open ? 2000 : false,
   });
+
+  // When the update finishes (health poll line appears), reload into the new version.
+  const finished = data?.log.includes("UPDATE OK") ?? false;
+  useEffect(() => {
+    if (finished) {
+      const t = setTimeout(() => window.location.reload(), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [finished]);
 
   const startUpdate = useMutation({
     mutationFn: () => api.post("/update"),
@@ -238,7 +247,7 @@ function UpdateButton() {
     <>
       <button
         onClick={() => {
-          if (!startUpdate.isPending) startUpdate.mutate();
+          if (!startUpdate.isPending && !data?.running && !finished) startUpdate.mutate();
           setOpen(true);
         }}
         className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors disabled:opacity-50"
@@ -252,7 +261,9 @@ function UpdateButton() {
           <div className="w-full max-w-lg rounded-xl border border-border bg-bg-raised p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center gap-2">
               <RefreshCw size={15} className={data?.running ? "animate-spin text-accent" : "text-accent"} />
-              <span className="text-sm font-medium text-fg">{data?.running ? "Updating Hertz…" : "Update Hertz"}</span>
+              <span className="text-sm font-medium text-fg">
+                {data?.running ? "Updating Hertz…" : finished ? "Updated — reloading…" : "Update Hertz"}
+              </span>
             </div>
             {updateAvailable && (
               <div className="mb-3 rounded-md bg-accent-wash px-3 py-2 text-xs font-medium text-accent">

@@ -15,13 +15,13 @@ import { newId } from "../db/client.js";
 const createSchema = z.object({
   provider: z.enum(SUPPORTED_PROVIDERS),
   label: z.string().trim().min(1),
-  apiKey: z.string().trim().min(1),
+  apiKey: z.string().trim().default(''),
   baseUrl: z.string().trim().url().optional(),
   defaultModel: z.string().trim().optional(),
 });
 
 const addKeySchema = z.object({
-  apiKey: z.string().trim().min(1),
+  apiKey: z.string().trim().default(''),
 });
 
 export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): void {

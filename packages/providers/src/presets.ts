@@ -45,11 +45,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
   {
     id: "opencode-zen",
-    name: "OpenCode Zen Gateway",
+    name: "OpenCode Zen Gateway (free)",
     kind: "openai-compatible",
     category: "frontier",
     baseUrl: "https://opencode.ai/zen/v1",
-    hint: "opencode.ai/zen — key via `opencode auth login` (free tier included)",
+    hint: "FREE via gateway — works with no API key; optionally paste one from `opencode auth login` for more models",
   },
   {
     id: "deepseek",

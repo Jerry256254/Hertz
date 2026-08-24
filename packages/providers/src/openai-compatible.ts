@@ -108,8 +108,10 @@ export interface OpenAICompatibleOptions {
 }
 
 export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): ProviderAdapter {
+  // Keyless gateways (e.g. OpenCode Zen free tier) omit the Authorization
+  // header entirely when no API key is configured.
   const headers = {
-    authorization: `Bearer ${opts.apiKey}`,
+    ...(opts.apiKey ? { authorization: `Bearer ${opts.apiKey}` } : {}),
     "content-type": "application/json",
   };
 

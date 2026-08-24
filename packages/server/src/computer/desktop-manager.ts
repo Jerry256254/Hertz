@@ -100,7 +100,7 @@ export class DesktopManager {
     if (!ready || !status.running || !status.hostPort) {
       const logs = await this.execInContainer(agentId, "bash", [
         "-c",
-        "echo '--- xvfb:'; tail -5 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -5 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -5 /tmp/websockify.log 2>/dev/null; true",
+        "echo '--- xvfb:'; tail -5 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -5 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -5 /tmp/websockify.log 2>/dev/null; echo '--- xfce:'; tail -5 /tmp/xfce.log 2>/dev/null; true",
       ]);
       throw new Error(`Desktop failed to start inside the container. Logs:\n${logs.stdout.trim() || "(empty)"}`);
     }
@@ -168,9 +168,8 @@ export class DesktopManager {
 
 export const START_DESKTOP_SCRIPT = String.raw`#!/usr/bin/env bash
 # Bootstraps the visible desktop inside an agent container.
-# Robust version: every process logs to a file (no SIGPIPE deaths from the
-# closed docker-exec pipe), X lock files are cleaned, and each stage waits
-# for the previous one to actually be ready.
+# Guarantees a VISIBLE, INTERACTIVE screen: window manager + a terminal window
+# always come up, every process logs to a file, stages wait for readiness.
 set -x
 export DISPLAY=:99
 
@@ -178,15 +177,25 @@ pkill -f 'Xvfb :99' 2>/dev/null
 pkill x11vnc 2>/dev/null
 pkill -f 'websockify.*6080' 2>/dev/null
 pkill xfce4-session 2>/dev/null
+pkill xfwm4 2>/dev/null
 sleep 0.5
 rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock
 
 nohup Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
 for i in $(seq 1 40); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.25; done
 
+xsetroot -solid "#2b2f36" 2>/dev/null || true
+
 if command -v startxfce4 >/dev/null 2>&1; then
   nohup dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1 &
+  sleep 2
 fi
+
+# Window manager fallback: without xfwm4 windows have no decorations/focus.
+command -v xfwm4 >/dev/null 2>&1 && pgrep xfwm4 >/dev/null || nohup xfwm4 >/tmp/xfwm4.log 2>&1 &
+
+# Always-open terminal: proof the desktop is alive and interactive.
+nohup xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 &
 
 nohup x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet >/tmp/x11vnc.log 2>&1 &
 for i in $(seq 1 40); do

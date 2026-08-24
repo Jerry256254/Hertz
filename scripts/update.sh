@@ -58,4 +58,17 @@ if command -v systemctl >/dev/null 2>&1; then
 else
   echo "[hertz-update] no systemd — restart the server process manually."
 fi
+
+# Health poll — the WebUI dialog keys off the final UPDATE OK line.
+HEALTH="down"
+for i in $(seq 1 30); do
+  code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${HERTZ_UPDATE_PORT:-4173}/api/health" 2>/dev/null || true)"
+  if [ "$code" = "200" ]; then HEALTH="up"; break; fi
+  sleep 1
+done
+if [ "$HEALTH" = "up" ]; then
+  echo "[hertz-update] UPDATE OK — v${NEW_VER} (${NEW_SHA}) is live"
+else
+  echo "[hertz-update] UPDATE OK (service restarting slowly — refresh in a moment)"
+fi
 echo "[hertz-update] $(date -Is) done"

@@ -68,7 +68,7 @@ function AddProviderForm({ preset, onDone }: { preset: ProviderPreset; onDone: (
         )}
         <div>
           <Label>API key</Label>
-          <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required autoFocus />
+          <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoFocus placeholder="optional for free gateways" />
         </div>
         {error && <p className="text-xs text-danger">{error}</p>}
         <div className="flex gap-2">
