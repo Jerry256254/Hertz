@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-import type { AuditSink } from "@kuclab-hertz/sandbox";
 import type { ComputerManager } from "./computer-manager.js";
 
 export interface DesktopStatus {
@@ -11,22 +9,15 @@ export interface DesktopStatus {
 
 /**
  * The agent's visible desktop inside its container:
+ *   Xvfb (:99) → x11vnc (5900) ← websockify/noVNC (6080)
  *
- *   Xvfb (:99)  →  x11vnc (5900)  ←  websockify/noVNC (6080)
- *
- * Playwright's Chromium runs headed on :99, so whatever the bot does in its
- * browser — and any login page it opens — is exactly what the CEO sees on the
- * streamed screen. The noVNC port is published to 127.0.0.1 only; the server
- * proxies authenticated WebSocket connections to it (see routes/screen.ts),
- * so access control stays in Hertz, not in Docker port mappings.
+ * Each daemon is started as the MAIN process of its own `docker exec -d`
+ * session — Docker never kills the main process of an exec session, so the
+ * daemons are guaranteed to survive regardless of any other session exiting.
  */
 export class DesktopManager {
-  private readonly portCache = new Map<string, number>();
-
   constructor(
     private readonly computer: ComputerManager,
-    private readonly audit: AuditSink,
-    /** Resolves the agent's image + mounted paths so an old container can be recreated with the desktop port. */
     private readonly resolveContext?: (agentId: string) => Promise<{ image: string | null; mountPaths: string[] }>,
   ) {}
 
@@ -34,191 +25,122 @@ export class DesktopManager {
     const containerName = this.computer.containerName(agentId);
     const state = await this.computer.status(agentId);
     if (state !== "running") return { running: false, containerName };
-
     const probe = await this.execInContainer(agentId, "bash", ["-c", "pgrep -f 'websockify.*6080' >/dev/null && echo yes || echo no"]);
     const running = probe.stdout.trim() === "yes";
     return { running, containerName, ...(running ? { hostPort: await this.resolveHostPort(agentId) } : {}) };
   }
 
-  /** Idempotent — starts Xvfb/x11vnc/websockify (+ an Xfce session) if not already up. */
   async start(agentId: string): Promise<DesktopStatus> {
     const state = await this.computer.status(agentId);
     if (state === "unavailable") {
       throw new Error(
-        "Docker isn't accessible to the Hertz service. Re-run the installer (curl -fsSL https://raw.githubusercontent.com/Jerry256254/Hertz/main/install.sh | bash) — it adds the service user to the docker group and restarts the service.",
+        "Docker isn't accessible to the Hertz service. Re-run the installer — it adds the service user to the docker group.",
       );
     }
-    // Missing or stopped container: bring it up right here — starting the
-    // desktop should never require the user to trigger a run first.
     if (state !== "running") {
       const ctxInfo = (await this.resolveContext?.(agentId)) ?? { image: null, mountPaths: [] };
       await this.computer.ensureContainer({ agentId, image: ctxInfo.image, mountPaths: ctxInfo.mountPaths });
     }
 
-    // Old containers predate the desktop port publish — recreate once so the
-    // screen can be proxied at all (bind mounts keep project + personal data).
-    const ctxInfo = (await this.resolveContext?.(agentId)) ?? { image: null, mountPaths: [] };
-    const hostPort = await this.ensureDesktopPort(agentId, ctxInfo.image, ctxInfo.mountPaths);
-
-    // The image must actually contain the desktop stack.
-    const hasStack = await this.execInContainer(agentId, "bash", ["-c", "command -v websockify >/dev/null && echo yes || echo no"]);
+    // The image must contain the desktop stack.
+    const hasStack = await this.execInContainer(agentId, "bash", ["-c", "command -v websockify >/dev/null && command -v x11vnc >/dev/null && echo yes || echo no"]);
     if (hasStack.stdout.trim() !== "yes") {
-      throw new Error(
-        "This computer image has no desktop stack (websockify missing). Rebuild it: docker build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile . — install.sh does this automatically.",
-      );
+      throw new Error("Computer image missing desktop stack (websockify/x11vnc). Rebuild: docker build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile .");
     }
 
-    const already = await this.execInContainer(
-      agentId,
-      "bash",
-      ["-c", "pgrep -f 'websockify.*6080' >/dev/null && echo yes || echo no"],
-    );
-    if (already.stdout.trim() !== "yes") {
-      await this.computer.run(["docker", "exec", this.computer.containerName(agentId), "mkdir", "-p", "/opt/hertz", "/tmp/.X11-unix"]);
-      await this.installScript(agentId);
-      // Run the bootstrap in the FOREGROUND of a detached host process.
-      // The script ends with `wait` on the daemon PIDs, keeping the exec
-      // session (and all desktop processes) alive indefinitely.
-      const { spawn: spawnProc } = await import("node:child_process");
-      const bootstrap = spawnProc(
-        "docker",
-        ["exec", this.computer.containerName(agentId), "bash", "/opt/hertz/start-desktop.sh"],
-        { detached: true, stdio: "ignore" },
-      );
-      bootstrap.unref();
+    // Check if the FULL stack is already up (all three processes).
+    const stackCheck = await this.execInContainer(agentId, "bash", [
+      "-c",
+      "pgrep -f 'Xvfb :99' >/dev/null && pgrep x11vnc >/dev/null && pgrep -f 'websockify.*6080' >/dev/null && echo yes || echo no",
+    ]);
+    if (stackCheck.stdout.trim() === "yes") {
+      const status = await this.status(agentId);
+      if (status.running && status.hostPort) return status;
     }
 
-    // Wait for REAL readiness (websockify AND x11vnc) — the bootstrap stages
-    // take several seconds (Xvfb fonts cache, VNC port probe) and a fixed
-    // 2-second check produced false failures while the stack was still booting.
-    const deadline = Date.now() + 60_000;
+    // Kill any partial stack and start fresh — each daemon as the MAIN process
+    // of its own exec session (Docker never kills exec session main processes).
+    const cn = this.computer.containerName(agentId);
+    await this.computer.run(["docker", "exec", cn, "bash", "-c",
+      "pkill -f 'Xvfb :99' 2>/dev/null; pkill x11vnc 2>/dev/null; pkill -f 'websockify.*6080' 2>/dev/null; pkill xfce4-session 2>/dev/null; pkill xfwm4 2>/dev/null; rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock; exit 0",
+    ]);
+    await new Promise((r) => setTimeout(r, 500));
+
+    // 1. Xvfb
+    await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
+      "Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1"]);
+    // Wait for X socket
+    await this.computer.run(["docker", "exec", cn, "bash", "-c",
+      "for i in $(seq 1 60); do [ -S /tmp/.X11-unix/X99 ] && exit 0; sleep 0.25; done; exit 1",
+    ]).catch(() => {});
+
+    // 2. Desktop environment (xfce + wm fallback)
+    await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
+      "xsetroot -solid '#2b2f36' 2>/dev/null; if command -v startxfce4 >/dev/null; then dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1; fi; command -v xfwm4 >/dev/null && (pgrep xfwm4 >/dev/null || xfwm4 >/tmp/xfwm4.log 2>&1); nohup xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 & sleep 3; exit 0",
+    ]);
+    await new Promise((r) => setTimeout(r, 3_000));
+
+    // 3. x11vnc
+    await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
+      "x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet >/tmp/x11vnc.log 2>&1",
+    ]);
+    // Wait for VNC port
+    await this.computer.run(["docker", "exec", cn, "bash", "-c",
+      "for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/5900) 2>/dev/null && exit 0; sleep 0.25; done; exit 1",
+    ]).catch(() => {});
+
+    // 4. websockify
+    await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
+      "websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1",
+    ]);
+    await new Promise((r) => setTimeout(r, 1_000));
+
+    // Verify all three processes are alive
+    const deadline = Date.now() + 30_000;
     let ready = false;
     while (Date.now() < deadline) {
-      const probe = await this.execInContainer(agentId, "bash", [
-        "-c",
-        "pgrep -f 'websockify.*6080' >/dev/null && pgrep x11vnc >/dev/null && echo yes || echo no",
+      const probe = await this.execInContainer(agentId, "bash", ["-c",
+        "pgrep -f 'Xvfb :99' >/dev/null && pgrep x11vnc >/dev/null && pgrep -f 'websockify.*6080' >/dev/null && echo yes || echo no",
       ]);
-      if (probe.stdout.trim() === "yes") {
-        ready = true;
-        break;
-      }
+      if (probe.stdout.trim() === "yes") { ready = true; break; }
       await new Promise((r) => setTimeout(r, 600));
     }
 
     const status = await this.status(agentId);
     if (!ready || !status.running || !status.hostPort) {
-      const logs = await this.execInContainer(agentId, "bash", [
-        "-c",
-        "echo '--- xvfb:'; tail -5 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -5 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -5 /tmp/websockify.log 2>/dev/null; echo '--- xfce:'; tail -5 /tmp/xfce.log 2>/dev/null; true",
+      const logs = await this.execInContainer(agentId, "bash", ["-c",
+        "echo '--- xvfb:'; tail -8 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -8 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -8 /tmp/websockify.log 2>/dev/null; echo '--- xfce:'; tail -8 /tmp/xfce.log 2>/dev/null; echo '--- procs:'; ps aux | grep -E 'Xvfb|x11vnc|websockify' | grep -v grep; true",
       ]);
-      throw new Error(`Desktop failed to start inside the container. Logs:\n${logs.stdout.trim() || "(empty)"}`);
+      throw new Error(`Desktop failed to start. Logs:\n${logs.stdout.trim() || "(empty)"}`);
     }
     return status;
   }
 
-  /**
-   * Containers created before the desktop feature lack the 6080 publish —
-   * detect and recreate once (bind mounts keep the agent's project and
-   * personal data; in-container apt installs are lost, which we log).
-   */
   async ensureDesktopPort(agentId: string, image: string | null, mountPaths: string[]): Promise<number | undefined> {
     const existing = await this.resolveHostPort(agentId);
     if (existing) return existing;
-    console.warn(`[hertz] container for agent ${agentId} has no desktop port — recreating it (mounted folders are kept)`);
+    console.warn(`[hertz] container for agent ${agentId} has no desktop port — recreating (bind mounts kept)`);
     await this.computer.destroyContainer(agentId);
     await this.computer.ensureContainer({ agentId, image, mountPaths });
     return this.resolveHostPort(agentId);
   }
 
   async stop(agentId: string): Promise<void> {
-    await this.execInContainer(agentId, "bash", [
-      "-c",
-      "pkill -f 'websockify.*6080'; pkill x11vnc; pkill -f 'Xvfb :99'; pkill xfce4-session; true",
+    await this.execInContainer(agentId, "bash", ["-c",
+      "pkill -f 'Xvfb :99'; pkill x11vnc; pkill -f 'websockify.*6080'; pkill xfce4-session; exit 0",
     ]);
-    this.portCache.delete(agentId);
   }
 
-  /**
-   * Resolves (and caches) the random localhost port Docker mapped to the
-   * container's 6080. Requires the container to have been created by
-   * ComputerManager with the desktop publish flag.
-   */
   async resolveHostPort(agentId: string): Promise<number | undefined> {
-    const cached = this.portCache.get(agentId);
-    if (cached) return cached;
-
     const out = await this.computer.run(["docker", "port", this.computer.containerName(agentId), "6080"]);
     if (out.exitCode !== 0) return undefined;
-    // "127.0.0.1:54321" or "[::]:54321"-style output
     const match = /:(\d+)\s*$/m.exec(out.stdout.trim());
     if (!match) return undefined;
     const port = Number(match[1]);
-    if (Number.isFinite(port)) this.portCache.set(agentId, port);
-    return port;
+    return Number.isFinite(port) ? port : undefined;
   }
 
-  /** The bot's browser daemon must run ON the visible display. */
-  displayEnvArgs(): string[] {
-    return ["-e", "DISPLAY=:99"];
-  }
-
-  private async installScript(agentId: string): Promise<void> {
-    await this.computer.writeFileInto(agentId, "/opt/hertz/start-desktop.sh", START_DESKTOP_SCRIPT);
-  }
-
-  private execInContainer(agentId: string, command: string, args: string[]) {
+  async execInContainer(agentId: string, command: string, args: string[]) {
     return this.computer.execIn({ agentId, command, args, cwd: "/" });
   }
-
-  auditRecord(actor: Parameters<AuditSink["record"]>[0]): void {
-    this.audit.record(actor);
-  }
 }
-
-export const START_DESKTOP_SCRIPT = String.raw`#!/usr/bin/env bash
-# Bootstraps the visible desktop inside an agent container.
-# CRITICAL: the script ends with wait — this keeps the docker exec session
-# alive so backgrounded daemons (Xvfb, x11vnc, websockify) are never orphaned
-# or killed when the session would otherwise be cleaned up.
-set -x
-export DISPLAY=:99
-
-pkill -f 'Xvfb :99' 2>/dev/null
-pkill x11vnc 2>/dev/null
-pkill -f 'websockify.*6080' 2>/dev/null
-pkill xfce4-session 2>/dev/null
-pkill xfwm4 2>/dev/null
-sleep 0.5
-rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock
-
-Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
-XVFB_PID=$!
-for i in $(seq 1 60); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.25; done
-
-xsetroot -solid "#2b2f36" 2>/dev/null || true
-
-if command -v startxfce4 >/dev/null 2>&1; then
-  dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1 &
-  sleep 2
-fi
-
-command -v xfwm4 >/dev/null 2>&1 && pgrep xfwm4 >/dev/null || xfwm4 >/tmp/xfwm4.log 2>&1 &
-
-xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 &
-
-x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet >/tmp/x11vnc.log 2>&1 &
-X11VNC_PID=$!
-for i in $(seq 1 60); do
-  (exec 3<>/dev/tcp/127.0.0.1/5900) 2>/dev/null && { exec 3>&- 3<&-; break; }
-  sleep 0.25
-done
-
-websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
-WEBSOCKIFY_PID=$!
-sleep 0.5
-
-echo "desktop stack up — waiting on daemons"
-# Keep the exec session alive: wait for the daemon PIDs so Docker doesn't
-# clean up the process group when this script exits.
-wait $XVFB_PID $X11VNC_PID $WEBSOCKIFY_PID 2>/dev/null
-`;

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BrainCircuit, Bot, ChevronDown, Clock, FolderGit2, ListTodo, MessageSquarePlus, Plus, UserPlus, Users, Video } from "lucide-react";
+import { BrainCircuit, Bot, ChevronDown, Clock, FolderGit2, ListTodo, Plus, UserPlus, Users, Video } from "lucide-react";
 import { api } from "../lib/api";
 import type {
   Agent,
@@ -314,9 +314,6 @@ export function ProjectPage() {
                 <IconButton title="Memory" onClick={() => setMemoryAgent({ id: manager.id, name: manager.name })}>
                   <BrainCircuit size={15} />
                 </IconButton>
-                <Button variant="primary" size="sm" onClick={() => newChat.mutate(manager.id)} disabled={newChat.isPending}>
-                  <MessageSquarePlus size={13} /> Chat
-                </Button>
                 <DeleteButton title="Remove manager" onDelete={() => deleteAgent.mutate(manager.id)} />
               </div>
             </Card>
@@ -424,9 +421,6 @@ export function ProjectPage() {
                     <IconButton title="Memory" onClick={() => setMemoryAgent({ id: a.id, name: a.name })}>
                       <BrainCircuit size={15} />
                     </IconButton>
-                    <Button variant="secondary" size="sm" onClick={() => newChat.mutate(a.id)} disabled={newChat.isPending}>
-                      <MessageSquarePlus size={13} /> New chat
-                    </Button>
                     <DeleteButton
                       title={isAttached ? "Remove from this project" : "Delete employee"}
                       onDelete={() => (isAttached ? detachAgent.mutate(a.id) : deleteAgent.mutate(a.id))}

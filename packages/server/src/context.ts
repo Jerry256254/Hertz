@@ -76,7 +76,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const providers = createProviderRegistry(db, masterKey);
   const mcpRegistry = new McpRegistry(db, masterKey);
   const computer = new ComputerManager(audit);
-  const desktop = new DesktopManager(computer, audit, async (agentId) => {
+  const desktop = new DesktopManager(computer, async (agentId) => {
     // Image + mounts for a possible container recreate (desktop port missing).
     const rows = await db
       .select({ image: agents.computerImage, projectId: agents.projectId })
