@@ -186,9 +186,12 @@ UNIT
   log "Verifying the effective unit definition..."
   EFFECTIVE_UNIT="$(as_root systemctl cat "${SERVICE_NAME}" 2>/dev/null || true)"
   if echo "${EFFECTIVE_UNIT}" | grep -q "\.nvm"; then
-    warn "An .nvm ExecStart still leaks into the unit — fragments found:"
-    echo "${EFFECTIVE_UNIT}" | grep -n "ExecStart\|\.nvm" || true
-    warn "A runtime fragment survives until reboot. Run:  sudo reboot   — then re-run this installer."
+    warn "An .nvm ExecStart still leaks into the unit — hunting every layer:"
+    echo "--- on-disk /etc unit:";   grep -n "ExecStart" "/etc/systemd/system/${SERVICE_NAME}.service" 2>/dev/null || true
+    echo "--- /run fragments:";      ls -la /run/systemd/system/ 2>/dev/null | grep -i hertz || echo "  (none)"
+    echo "--- systemd-delta:";       as_root systemd-delta --type=extended 2>/dev/null | grep -i hertz || echo "  (none)"
+    echo "--- unit file type:";      ls -la "/etc/systemd/system/${SERVICE_NAME}.service"
+    warn "If nothing above shows nvm but systemd still uses it:  sudo reboot  (clears /run) — then re-run this installer."
     die "Refusing to continue with a broken unit definition."
   fi
   log "Unit OK: $(echo "${EFFECTIVE_UNIT}" | grep -m1 '^ExecStart' || echo 'ExecStart set')"
