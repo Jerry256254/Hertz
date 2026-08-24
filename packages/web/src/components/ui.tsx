@@ -100,13 +100,28 @@ export function Avatar({
   label,
   tone = "neutral",
   color,
+  mascot,
+  animate = false,
 }: {
   label: string;
   tone?: "accent" | "neutral";
   /** Deterministic per-agent color (see lib/agent-color.ts) — overrides `tone` when given, for telling colleagues apart in a shared feed. */
   color?: string;
+  /** Mascot emoji — when present it IS the avatar (Grok-Bot style), floating gently. */
+  mascot?: string | null;
+  /** Animate (bounce) — used while the agent is running. */
+  animate?: boolean;
 }) {
   const bg = tone === "accent" ? "bg-accent text-accent-fg" : "bg-bg-sunken text-fg-muted";
+  if (mascot) {
+    return (
+      <span
+        className={`agent-mascot flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-lg leading-none shadow-sm ${animate ? "agent-mascot-live" : ""}`}
+      >
+        {mascot}
+      </span>
+    );
+  }
   return (
     <span
       className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-sm font-semibold shadow-sm ${color ? "" : bg}`}

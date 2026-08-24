@@ -2,11 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { agentMemory, agentProjects, agents, projectRoots, projects, sessions } from "../db/schema.js";
+import { agentMemory, agentProjects, agents, messages, projectRoots, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { hasProjectAccess } from "../auth/project-access.js";
-import { AGENT_ROLES, defaultSystemPromptFor } from "../tools/org-tools.js";
+import { AGENT_ROLES, defaultSystemPromptFor, pickMascot } from "../tools/org-tools.js";
 import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 import { skillsIndexFor } from "../tools/skill-tools.js";
 
@@ -17,6 +17,7 @@ const createSchema = z.object({
   providerConfigId: z.string().min(1),
   role: z.enum(AGENT_ROLES).default("generalist"),
   systemPrompt: z.string().optional(),
+  mascot: z.string().min(1).max(8).optional(),
   jobDescription: z.string().optional(),
 });
 
@@ -30,9 +31,13 @@ const updateSchema = z.object({
   /** Proactive self-wake interval; 0 disables heartbeats. */
   heartbeatMinutes: z.number().int().min(0).max(10080).optional(),
   heartbeatPrompt: z.string().max(4000).nullable().optional(),
+  /** Mascot emoji shown as the agent's animated avatar everywhere. */
+  mascot: z.string().min(1).max(8).nullable().optional(),
 });
 
 const terminationDecisionSchema = z.object({ decision: z.enum(["approved", "rejected"]) });
+
+const ensureChatSchema = z.object({ projectId: z.string().min(1) });
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
@@ -62,6 +67,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         projectId: parsed.data.projectId,
         providerConfigId: parsed.data.providerConfigId,
         name: parsed.data.name,
+        mascot: parsed.data.mascot ?? pickMascot(id),
         role: parsed.data.role,
         model: parsed.data.model,
         systemPrompt: parsed.data.systemPrompt ?? defaultSystemPromptFor(parsed.data.role),
@@ -127,6 +133,67 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     });
 
     /** Restart (recreate) the agent's computer — e.g. after a broken state or to pick up a new image. */
+    /**
+     * Contacts model: every agent has EXACTLY ONE permanent chat thread per
+     * project. Returns it — creating it on first touch. The sidebar renders
+     * agents (contacts), not raw sessions.
+     */
+    instance.post("/api/agents/:id/ensure-chat", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = ensureChatSchema.safeParse(request.body ?? {});
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      const projectId = parsed.data.projectId;
+
+      const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+      const agent = agentRows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (agent.approvalStatus !== "approved") return reply.code(400).send({ error: `${agent.name} isn't approved` });
+      if (agent.status === "terminated") return reply.code(400).send({ error: `${agent.name} has been terminated` });
+
+      const existing = await ctx.db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.agentId, id), eq(sessions.projectId, projectId), eq(sessions.kind, "chat")))
+        .orderBy(desc(sessions.updatedAt))
+        .limit(1);
+      if (existing[0]) return { id: existing[0].id };
+
+      const sid = newId();
+      const now = new Date();
+      await ctx.db.insert(sessions).values({
+        id: sid,
+        agentId: id,
+        projectId,
+        title: agent.name,
+        mode: "autonomous",
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return reply.code(201).send({ id: sid });
+    });
+
+    /** Clears the agent's chat history (messages only — memory and skills stay). */
+    instance.post("/api/agents/:id/clear-chat", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = ensureChatSchema.safeParse(request.body ?? {});
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      const projectId = parsed.data.projectId;
+
+      const chatRows = await ctx.db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.agentId, id), eq(sessions.projectId, projectId), eq(sessions.kind, "chat")));
+      for (const s of chatRows) {
+        if (ctx.agentLoop.isRunning(s.id)) {
+          return reply.code(409).send({ error: "The agent is running — stop it before clearing the chat." });
+        }
+        await ctx.db.delete(messages).where(eq(messages.sessionId, s.id));
+        await ctx.db.update(sessions).set({ status: "active", metadata: null, updatedAt: new Date() }).where(eq(sessions.id, s.id));
+      }
+      return { ok: true, cleared: chatRows.length };
+    });
+
     instance.post("/api/agents/:id/computer/restart", async (request, reply) => {
       const { id } = request.params as { id: string };
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);

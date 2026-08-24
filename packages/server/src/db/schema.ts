@@ -68,6 +68,8 @@ export const agents = sqliteTable("agents", {
   computerBackend: text("computer_backend", { enum: ["local", "docker"] }).notNull().default("local"),
   /** Override of the default computer image for docker-backend agents. */
   computerImage: text("computer_image"),
+  /** The agent's mascot emoji — its face everywhere in the UI (animated avatar). */
+  mascot: text("mascot"),
   /**
    * Proactive heartbeat interval in minutes (0 = off). When enabled, the agent
    * gets a periodic self-directed turn (OpenClaw-style heartbeat): it can check

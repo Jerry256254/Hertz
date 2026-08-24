@@ -71,8 +71,17 @@ fi
 # --- 3. build ----------------------------------------------------------------
 log "Installing dependencies & building (this can take a few minutes)..."
 cd "$INSTALL_DIR"
-pnpm install --frozen-lockfile >/dev/null
-pnpm build >/dev/null
+pnpm install --frozen-lockfile > /tmp/hertz-install.log 2>&1 || { tail -30 /tmp/hertz-install.log; die "pnpm install failed — see /tmp/hertz-install.log"; }
+pnpm build > /tmp/hertz-build.log 2>&1 || { tail -40 /tmp/hertz-build.log; die "build failed — see /tmp/hertz-build.log"; }
+
+# Build the agent-computer image too (desktop + browser inside every bot).
+# Best-effort: agents fall back to local backend when Docker/image is missing.
+if command -v docker >/dev/null 2>&1 && ! docker image inspect kuclab-hertz-computer:latest >/dev/null 2>&1; then
+  log "Building agent computer image (kuclab-hertz-computer) ..."
+  docker build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile . > /tmp/hertz-image.log 2>&1 \
+    && log "Computer image ready." \
+    || warn "Computer image build failed — see /tmp/hertz-image.log (agents will run local until it succeeds)"
+fi
 
 # --- 4. non-interactive network config --------------------------------------
 DATA_DIR="${HOME}/.kuclab-hertz"
@@ -112,6 +121,21 @@ WantedBy=multi-user.target
 UNIT
   as_root systemctl daemon-reload
   as_root systemctl enable "${SERVICE_NAME}" --quiet
+  as_root systemctl restart "${SERVICE_NAME}"
+
+  log "Waiting for the service to come up ..."
+  up=0
+  for i in $(seq 1 20); do
+    if systemctl is-active --quiet "${SERVICE_NAME}"; then up=1; break; fi
+    sleep 1
+  done
+  if [ "$up" -eq 1 ]; then
+    log "Service '${SERVICE_NAME}' is running in the background (survives reboot: enabled)."
+  else
+    warn "Service did not come up — recent logs:"
+    as_root journalctl -u "${SERVICE_NAME}" -n 40 --no-pager || true
+    die "Fix the issue above and run: sudo systemctl restart ${SERVICE_NAME}"
+  fi
 
   # Allow the WebUI "Update" button to restart the service without a password.
   SUDOERS_FILE="/etc/sudoers.d/hertz-${SERVICE_NAME}-restart"
@@ -121,13 +145,6 @@ UNIT
     as_root chmod 440 "$SUDOERS_FILE"
   fi
 
-  as_root systemctl restart "${SERVICE_NAME}"
-  sleep 2
-  if systemctl is-active --quiet "${SERVICE_NAME}"; then
-    log "Service '${SERVICE_NAME}' is running (survives reboot: enabled)."
-  else
-    warn "Service installed but not active yet — check: journalctl -u ${SERVICE_NAME} -n 50"
-  fi
 else
   warn "systemd not available — starting in foreground. Install tmux/systemd for background operation."
   exec node packages/cli/dist/bin.js start

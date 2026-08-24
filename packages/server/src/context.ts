@@ -6,7 +6,7 @@ import { AgentLoopManager } from "@kuclab-hertz/core";
 import type { AuditSink } from "@kuclab-hertz/sandbox";
 import { openDatabase, type Database } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
-import { resolveHertzPaths, type HertzPaths } from "./paths.js";
+import { resolveHertzPaths, employeeDir, ensureEmployeeDirs, type HertzPaths } from "./paths.js";
 import { loadOrCreateMasterKey } from "./secrets/master-key.js";
 import { createPersistenceAdapter } from "./persistence/persistence-adapter.js";
 import { createProviderRegistry } from "./providers/provider-registry.js";
@@ -23,9 +23,7 @@ import { reconcileOnBoot } from "./runtime/reconcile.js";
 import { ComputerManager } from "./computer/computer-manager.js";
 import { DesktopManager } from "./computer/desktop-manager.js";
 import { HeartbeatScheduler } from "./heartbeats/heartbeat-scheduler.js";
-import { ChannelManager } from "./channels/channel-manager.js";
-import { decryptSecret } from "./secrets/key-encryption.js";
-import { agents, users } from "./db/schema.js";
+import { agents, projectRoots, users } from "./db/schema.js";
 
 export interface AppContext {
   paths: HertzPaths;
@@ -42,7 +40,6 @@ export interface AppContext {
   computer: ComputerManager;
   desktop: DesktopManager;
   heartbeatScheduler: HeartbeatScheduler;
-  channelManager: ChannelManager;
 }
 
 export async function createAppContext(dataDir?: string): Promise<AppContext> {
@@ -79,7 +76,26 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const providers = createProviderRegistry(db, masterKey);
   const mcpRegistry = new McpRegistry(db, masterKey);
   const computer = new ComputerManager(audit);
-  const desktop = new DesktopManager(computer, audit);
+  const desktop = new DesktopManager(computer, audit, async (agentId) => {
+    // Image + mounts for a possible container recreate (desktop port missing).
+    const rows = await db
+      .select({ image: agents.computerImage, projectId: agents.projectId })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    const agent = rows[0];
+    if (!agent) return { image: null, mountPaths: [] };
+    const roots = await db
+      .select({ absolutePath: projectRoots.absolutePath })
+      .from(projectRoots)
+      .where(eq(projectRoots.projectId, agent.projectId));
+    const mainRoot = roots.find((r) => (r.absolutePath ?? "").length > 0);
+    await ensureEmployeeDirs(paths, agent.projectId, agentId);
+    return {
+      image: agent.image,
+      mountPaths: [...new Set([...(mainRoot ? [mainRoot.absolutePath] : []), employeeDir(paths, agent.projectId, agentId)])],
+    };
+  });
   const shellPrefixResolver = async (ownerAgentId: string, cwd: string): Promise<string[] | undefined> => {
     const rows = await db.select({ backend: agents.computerBackend }).from(agents).where(eq(agents.id, ownerAgentId)).limit(1);
     if (rows[0]?.backend !== "docker") return undefined;
@@ -125,6 +141,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const runJobsDeps: RunJobsDeps = {
     db,
     providers,
+    desktop,
     paths,
     sandboxRegistry,
     persistence,
@@ -158,15 +175,6 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const heartbeatScheduler = new HeartbeatScheduler({ db, queue });
   heartbeatScheduler.start();
 
-  const channelManager = new ChannelManager({
-    db,
-    queue,
-    masterKey,
-    decrypt: decryptSecret,
-    fallbackUserId,
-  });
-  await channelManager.start();
-
   return {
     paths,
     db,
@@ -182,6 +190,5 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     computer,
     desktop,
     heartbeatScheduler,
-    channelManager,
   };
 }

@@ -10,6 +10,7 @@ import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
 import type { JobQueue, JobHandler } from "../queue/job-queue.js";
 import type { ComputerManager } from "../computer/computer-manager.js";
+import type { DesktopManager } from "../computer/desktop-manager.js";
 import { runGroupTurn } from "../groups.js";
 
 /** Text of the most recent real (non-tool-result) user message — the group trigger. */
@@ -82,6 +83,7 @@ async function modelSupportsVision(deps: RunJobsDeps, providerConfigId: string, 
 export interface RunJobsDeps {
   db: Database;
   providers: ProviderPort;
+  desktop: DesktopManager;
   paths: HertzPaths;
   sandboxRegistry: SandboxRegistry;
   persistence: PersistencePort;
@@ -165,6 +167,14 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
     await ensureEmployeeDirs(deps.paths, session.projectId, agent.id);
     const selfDir = employeeDir(deps.paths, session.projectId, agent.id);
     const computer = await prepareComputer(deps, agent, [mainRoot.absolutePath, selfDir]);
+
+    // Every active run gets its visible desktop up (Xvfb + VNC + noVNC), so the
+    // user can watch/take over at any moment. Fire-and-forget: never blocks work.
+    if (computer && agent.computerBackend === "docker") {
+      void deps.desktop.start(agent.id).catch((err: Error) => {
+        console.warn(`[hertz] desktop auto-start for ${agent.name}: ${(err as Error).message}`);
+      });
+    }
     deps.sandboxRegistry.register(
       session.id,
       {
@@ -210,6 +220,7 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
           conversationPeerName: payload.conversationPeerName,
           mode: isConversation ? undefined : mode,
           paths: deps.paths,
+          visionSupport: await modelSupportsVision(deps, agent.providerConfigId, agent.model),
         }),
         mode: isConversation ? "auto" : mode,
         excludeTools: excludeTools.length > 0 ? excludeTools : undefined,

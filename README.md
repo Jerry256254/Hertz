@@ -1,6 +1,6 @@
 # Hertz Jobs
 
-Self-hosted autonomous agent platform — a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you can talk to them from Telegram or the WebUI.
+Self-hosted autonomous agent platform — a server with a WebUI where AI bots work on real projects **24/7**: they run on their own computers, wake themselves up on heartbeats, ask for approval before sensitive actions, learn repeatable procedures as skills, and you talk to them in the built-in messenger-style WebUI.
 
 **Quick start (Linux server, recommended):**
 
@@ -60,7 +60,7 @@ Typical things people ask their team to do:
 
 Optional extras (all set up later, none required to start):
 - **Docker** — gives each bot its own isolated container ("its own computer") and enables browser automation,
-- a **Telegram** bot token — so you can message your bots from your phone.
+
 
 ---
 

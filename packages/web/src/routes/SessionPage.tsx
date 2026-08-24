@@ -8,7 +8,7 @@ import { subscribeToSession } from "../lib/ws-client";
 import { MessageView } from "../components/MessageView";
 import { Markdown } from "../components/Markdown";
 import { FileExplorer } from "../components/FileExplorer";
-import { IconButton, Input, Badge, Button } from "../components/ui";
+import { Avatar, IconButton, Input, Badge, Button } from "../components/ui";
 import { Clock } from "lucide-react";
 import { agentColor } from "../lib/agent-color";
 
@@ -19,9 +19,9 @@ interface SessionDetail {
   running: boolean;
   paused: boolean;
   pendingQuestion: string | null;
-  agent?: { id: string; name: string; role: string } | null;
-  peerAgent?: { id: string; name: string; role: string } | null;
-  participants?: Array<{ id: string; name: string; role: string }>;
+  agent?: { id: string; name: string; role: string; mascot?: string | null } | null;
+  peerAgent?: { id: string; name: string; role: string; mascot?: string | null } | null;
+  participants?: Array<{ id: string; name: string; role: string; mascot?: string | null }>;
   pendingTakeover?: { reason?: string } | null;
 }
 
@@ -279,6 +279,14 @@ export function SessionPage() {
     return names;
   }, [data]);
 
+  const senderMascots = useMemo(() => {
+    const mascots: Record<string, string | null | undefined> = {};
+    if (data?.agent) mascots[data.agent.id] = data.agent.mascot;
+    if (data?.peerAgent) mascots[data.peerAgent.id] = data.peerAgent.mascot;
+    for (const p of data?.participants ?? []) mascots[p.id] = p.mascot;
+    return mascots;
+  }, [data]);
+
   // Which agent the streaming/typing bubble belongs to: in a direct conversation
   // it's whoever must answer next (the one who didn't send the last message).
   const activeAgentId = useMemo(() => {
@@ -308,12 +316,7 @@ export function SessionPage() {
         <header className="flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             {data?.agent && (
-              <span
-                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
-                style={{ background: agentColor(data.agent.id) }}
-              >
-                {data.agent.name.slice(0, 1).toUpperCase()}
-              </span>
+              <Avatar label={data.agent.name} mascot={data.agent.mascot} animate={isRunning} />
             )}
             {data && <EditableTitle sessionId={sessionId!} title={data.session.title} />}
           </div>
@@ -404,7 +407,7 @@ export function SessionPage() {
 
         <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto py-6">
           {data?.messages.map((m) => (
-            <MessageView key={m.id} message={m} toolResultsById={toolResultsById} senderNames={senderNames} />
+            <MessageView key={m.id} message={m} toolResultsById={toolResultsById} senderNames={senderNames} senderMascots={senderMascots} />
           ))}
           {streamingText && (
             <div className="mx-auto flex w-full max-w-3xl gap-3 px-4 py-3">

@@ -82,6 +82,21 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
+  const scroll: OrgToolDef = {
+    name: "desktop_scroll",
+    description: "Scroll on YOUR desktop at the current mouse position: direction 'up' | 'down', amount in wheel clicks.",
+    inputSchema: z.object({
+      direction: z.enum(["up", "down"]).optional().default("down"),
+      amount: z.number().int().min(1).max(20).optional().default(3),
+    }),
+    async execute(rawInput, ctx) {
+      const input = z.object({ direction: z.enum(["up", "down"]), amount: z.number() }).parse(rawInput);
+      const button = input.direction === "down" ? 5 : 4;
+      const seq = `click --repeat ${input.amount} --delay 90 ${button}`;
+      return xdotool(ctx, seq);
+    },
+  };
+
   const openApp: OrgToolDef = {
     name: "desktop_open_app",
     description:
@@ -193,7 +208,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
-  return [readScreen, click, typeText, key, openApp, requestTakeover];
+  return [readScreen, click, typeText, key, scroll, openApp, requestTakeover];
 }
 
 function shellQuote(text: string): string {

@@ -12,7 +12,6 @@ import {
   Pause,
   Plug,
   Plus,
-  Radio,
   RefreshCw,
   ShieldCheck,
   Users,
@@ -145,50 +144,12 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
                     <span className="truncate font-medium">{project.name}</span>
                   </Link>
                 </div>
-                {!isCollapsed && (
-                  <ul className="ml-4 border-l border-border pl-2">
-                    {sessions.map((session) => {
-                      const isActive = params.sessionId === session.id;
-                      return (
-                        <li
-                          key={session.id}
-                          className={`group/session flex items-center gap-1.5 rounded-lg pr-1.5 text-sm ${
-                            isActive ? "bg-accent-wash text-accent" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
-                          } transition-colors`}
-                        >
-                          <Link
-                            to={`/projects/${project.id}/sessions/${session.id}`}
-                            className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5"
-                          >
-                            {session.kind === "conversation" ? (
-                              <span
-                                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                style={{ backgroundColor: agentColor(session.peerAgentId ?? session.agentId) }}
-                                title="Direct agent chat"
-                              />
-                            ) : session.status === "active" ? (
-                              <Loader2 size={12} className="flex-shrink-0 animate-spin text-accent" />
-                            ) : session.status === "paused" ? (
-                              <Pause size={12} className="flex-shrink-0 text-warning" />
-                            ) : (
-                              <MessagesSquare size={12} className="flex-shrink-0 text-fg-subtle" />
-                            )}
-                            <span className="truncate">
-                              {session.kind === "conversation" && session.peerAgentName
-                                ? session.peerAgentName
-                                : session.title}
-                            </span>
-                          </Link>
-                          <span className="hidden flex-shrink-0 group-hover/session:block">
-                            <DeleteButton title="Delete chat" onDelete={() => deleteSession.mutate(session.id)} />
-                          </span>
-                        </li>
-                      );
-                    })}
-                    {sessions.length === 0 && (
-                      <li className="px-2 py-1.5 text-xs text-fg-subtle">No chats yet</li>
-                    )}
-                  </ul>
+                                {!isCollapsed && (
+                  <ProjectContacts
+                    projectId={project.id}
+                    activeSessionId={params.sessionId}
+                    sessions={sessions}
+                  />
                 )}
               </li>
             );
@@ -205,15 +166,6 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
           Approvals
         </Link>
         {user?.role === "admin" && <UpdateButton />}
-        {user?.role === "admin" && (
-          <Link
-            to="/channels"
-            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
-          >
-            <Radio size={15} />
-            Channels
-          </Link>
-        )}
         <Link
           to="/integrations"
           className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
@@ -259,7 +211,17 @@ function UpdateButton() {
     queryFn: () => api.get<{ current: { version: string; sha: string }; latest: { tag: string; url: string } | null }>("/update/version"),
     enabled: open,
   });
-  const updateAvailable = !!versions?.latest && !`v${versions.current.version}`.startsWith(versions.latest.tag.replace(/\.0$/, "")) && `v${versions.current.version}` !== versions.latest.tag;
+  const updateAvailable = (() => {
+    if (!versions?.latest?.tag) return false;
+    const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+    const cur = parse(versions.current.version);
+    const lat = parse(versions.latest.tag);
+    const cMaj = cur[0] ?? 0, cMin = cur[1] ?? 0, cPat = cur[2] ?? 0;
+    const lMaj = lat[0] ?? 0, lMin = lat[1] ?? 0, lPat = lat[2] ?? 0;
+    if (lMaj !== cMaj) return lMaj > cMaj;
+    if (lMin !== cMin) return lMin > cMin;
+    return lPat > cPat;
+  })();
   const { data } = useQuery({
     queryKey: ["update-status"],
     queryFn: () => api.get<{ running: boolean; log: string }>("/update/status"),
@@ -292,6 +254,11 @@ function UpdateButton() {
               <RefreshCw size={15} className={data?.running ? "animate-spin text-accent" : "text-accent"} />
               <span className="text-sm font-medium text-fg">{data?.running ? "Updating Hertz…" : "Update Hertz"}</span>
             </div>
+            {updateAvailable && (
+              <div className="mb-3 rounded-md bg-accent-wash px-3 py-2 text-xs font-medium text-accent">
+                Update available — click the button below, watch the log, the page reconnects when done.
+              </div>
+            )}
             {versions && (
               <div className="mb-3 rounded-md bg-bg-sunken px-3 py-2 text-xs text-fg-muted">
                 Installed: <span className="mono text-fg">v{versions.current.version}</span> ({versions.current.sha || "?"})
@@ -321,5 +288,110 @@ function UpdateButton() {
         </div>
       )}
     </>
+  );
+}
+
+interface ContactAgent {
+  id: string;
+  name: string;
+  role: string;
+  mascot: string | null;
+  status: string;
+  lastStatus: string | null;
+}
+
+/**
+ * Contacts model: under each project the sidebar lists its AGENTS (contacts),
+ * not raw chats. Clicking a contact opens that agent's ONE permanent thread
+ * (created on first touch). Group chats are listed below the contacts.
+ */
+function ProjectContacts({
+  projectId,
+  activeSessionId,
+  sessions,
+}: {
+  projectId: string;
+  activeSessionId?: string;
+  sessions: SidebarSession[];
+}) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const { data: agentsData } = useQuery({
+    queryKey: ["project-agents", projectId],
+    queryFn: () => api.get<{ agents: Array<ContactAgent & { model: string }> }>(`/projects/${projectId}/agents`),
+  });
+
+  const ensureChat = useMutation({
+    mutationFn: (agentId: string) => api.post<{ id: string }>(`/agents/${agentId}/ensure-chat`, { projectId }),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
+      navigate(`/projects/${projectId}/sessions/${created.id}`);
+    },
+  });
+
+  const groups = sessions.filter((s) => s.kind === "group");
+
+  return (
+    <div className="ml-4 border-l border-border pl-2">
+      <p className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Contacts</p>
+      <ul>
+        {(agentsData?.agents ?? []).map((a) => {
+          const running = a.status === "running";
+          return (
+            <li key={a.id}>
+              <button
+                onClick={() => ensureChat.mutate(a.id)}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+                  running ? "bg-bg-hover" : "hover:bg-bg-hover"
+                }`}
+                title={a.lastStatus ?? a.role}
+              >
+                <Avatar label={a.name} mascot={a.mascot} animate={running} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-sm text-fg">{a.name}</span>
+                    {a.role === "manager" && (
+                      <span className="flex-shrink-0 rounded bg-bg-sunken px-1 text-[9px] font-semibold uppercase text-fg-subtle">
+                        lead
+                      </span>
+                    )}
+                  </span>
+                  <span className="block truncate text-xs text-fg-subtle">{a.lastStatus ?? a.role}</span>
+                </span>
+                {running && <span className="h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-accent" />}
+              </button>
+            </li>
+          );
+        })}
+        {(agentsData?.agents ?? []).length === 0 && (
+          <li className="px-2 py-1.5 text-xs text-fg-subtle">No bots yet — open the project to hire.</li>
+        )}
+      </ul>
+
+      {groups.length > 0 && (
+        <>
+          <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Groups</p>
+          <ul>
+            {groups.map((session) => {
+              const isActive = activeSessionId === session.id;
+              return (
+                <li key={session.id}>
+                  <Link
+                    to={`/projects/${projectId}/sessions/${session.id}`}
+                    className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
+                      isActive ? "bg-accent-wash text-accent" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
+                    }`}
+                  >
+                    <MessagesSquare size={13} className="flex-shrink-0 text-fg-subtle" />
+                    <span className="truncate">{session.title}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }

@@ -155,6 +155,7 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
         providerConfigId: input.providerConfigId ?? manager.providerConfigId,
         name: input.name,
         role: input.role,
+        mascot: pickMascot(id),
         model: input.model ?? manager.model,
         systemPrompt: defaultSystemPromptFor(input.role),
         jobDescription: input.jobDescription,
@@ -286,4 +287,16 @@ export function createOrgTools(deps: OrgToolsDeps): OrgToolDef[] {
   };
 
   return [hireEmployee, listProviderModels, listEmployees, assignTask, viewEmployeeMemory, fireEmployee];
+}
+
+/** Mascot palette — every agent gets a fun face by default (hash of its id), changeable in settings. */
+export const MASCOT_PALETTE = [
+  "🦊", "🐼", "🐙", "🤖", "👾", "🦉", "🐝", "🦖", "🐬", "🦄",
+  "🐸", "🐨", "🦁", "🐷", "🐵", "🐺", "🦋", "🐢", "🐳", "🦜",
+] as const;
+
+export function pickMascot(agentId: string): string {
+  let hash = 0;
+  for (const ch of agentId) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  return MASCOT_PALETTE[Math.abs(hash) % MASCOT_PALETTE.length]!;
 }

@@ -68,7 +68,7 @@ function selectRelevantMemories(
 export async function buildSystemPrompt(
   db: Database,
   agent: { id: string; systemPrompt: string | null },
-  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous"; paths?: HertzPaths; conversationContext?: string } = {},
+  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous"; paths?: HertzPaths; conversationContext?: string; visionSupport?: boolean } = {},
 ): Promise<string> {
   const allNotesDesc = await db
     .select()
@@ -82,6 +82,12 @@ export async function buildSystemPrompt(
   const notes = selectRelevantMemories([...allNotesDesc].reverse(), contextTail);
 
   let prompt = agent.systemPrompt ?? "";
+
+  if (opts.visionSupport !== undefined) {
+    prompt += opts.visionSupport
+      ? `\n\n## Your eyes\nYour model is multimodal — you SEE images. Use desktop_read_screen / browser screenshots, then act on what you actually see: move the mouse (desktop_click at pixel coordinates), type, scroll — exactly like a person at the computer. Look again after each action to verify the result before continuing.`
+      : `\n\n## Your limits\nYour model has NO vision — you cannot read screenshots. Don't call desktop_read_screen; use browser_snapshot / read_file for text instead, and say plainly when something truly needs eyes.`;
+  }
 
   if (opts.paths) {
     const skills: SkillIndexEntry[] = await skillsIndexFor(opts.paths, agent.id);

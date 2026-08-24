@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS agents (
   pending_termination INTEGER NOT NULL DEFAULT 0,
   computer_backend TEXT NOT NULL DEFAULT 'local',
   computer_image TEXT,
+  mascot TEXT,
   heartbeat_minutes INTEGER NOT NULL DEFAULT 0,
   heartbeat_prompt TEXT,
   last_heartbeat_at INTEGER,
@@ -377,6 +378,7 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agent_memory ADD COLUMN importance INTEGER NOT NULL DEFAULT 2",
   "ALTER TABLE agent_memory ADD COLUMN keywords TEXT",
   "ALTER TABLE agent_memory ADD COLUMN last_used_at INTEGER",
+  "ALTER TABLE agents ADD COLUMN mascot TEXT",
 ];
 
 /** One row per agent↔agent conversation pair, enforced by a partial unique index — must run after the sessions columns exist, so it lives here rather than in BOOTSTRAP_SQL. */

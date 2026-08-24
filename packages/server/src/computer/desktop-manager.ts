@@ -26,6 +26,8 @@ export class DesktopManager {
   constructor(
     private readonly computer: ComputerManager,
     private readonly audit: AuditSink,
+    /** Resolves the agent's image + mounted paths so an old container can be recreated with the desktop port. */
+    private readonly resolveContext?: (agentId: string) => Promise<{ image: string | null; mountPaths: string[] }>,
   ) {}
 
   async status(agentId: string): Promise<DesktopStatus> {
@@ -46,7 +48,19 @@ export class DesktopManager {
         "The agent's container isn't running yet — it starts automatically on the agent's next run. Trigger any message first, then retry.",
       );
     }
-    const containerName = this.computer.containerName(agentId);
+
+    // Old containers predate the desktop port publish — recreate once so the
+    // screen can be proxied at all (bind mounts keep project + personal data).
+    const ctxInfo = (await this.resolveContext?.(agentId)) ?? { image: null, mountPaths: [] };
+    const hostPort = await this.ensureDesktopPort(agentId, ctxInfo.image, ctxInfo.mountPaths);
+
+    // The image must actually contain the desktop stack.
+    const hasStack = await this.execInContainer(agentId, "bash", ["-c", "command -v websockify >/dev/null && echo yes || echo no"]);
+    if (hasStack.stdout.trim() !== "yes") {
+      throw new Error(
+        "This computer image has no desktop stack (websockify missing). Rebuild it: docker build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile . — install.sh does this automatically.",
+      );
+    }
 
     const already = await this.execInContainer(
       agentId,
@@ -54,21 +68,33 @@ export class DesktopManager {
       ["-c", "pgrep -f 'websockify.*6080' >/dev/null && echo yes || echo no"],
     );
     if (already.stdout.trim() !== "yes") {
-      // Install the desktop bootstrap script, then launch the stack detached.
-      await this.computer.run([
-        "docker", "exec", containerName, "mkdir", "-p", "/opt/hertz", "/tmp/.X11-unix",
-      ]);
+      await this.computer.run(["docker", "exec", this.computer.containerName(agentId), "mkdir", "-p", "/opt/hertz", "/tmp/.X11-unix"]);
       await this.installScript(agentId);
-      await this.computer.run(["docker", "exec", "-d", containerName, "bash", "/opt/hertz/start-desktop.sh"]);
-      // Give websockify a moment to bind before we resolve the mapped port.
-      await new Promise((r) => setTimeout(r, 1_500));
+      await this.computer.run(["docker", "exec", "-d", this.computer.containerName(agentId), "bash", "/opt/hertz/start-desktop.sh"]);
+      // Give Xvfb + websockify a moment to bind before we report status.
+      await new Promise((r) => setTimeout(r, 2_000));
     }
 
     const status = await this.status(agentId);
-    if (!status.running) {
-      throw new Error("Desktop failed to start inside the container — check `docker logs` / journalctl for details");
+    if (!status.running || !status.hostPort) {
+      const logTail = await this.execInContainer(agentId, "bash", ["-c", "tail -20 /tmp/websockify.log 2>/dev/null; true"]);
+      throw new Error(`Desktop failed to start inside the container. websockify log: ${logTail.stdout.trim() || "(empty)"}`);
     }
     return status;
+  }
+
+  /**
+   * Containers created before the desktop feature lack the 6080 publish —
+   * detect and recreate once (bind mounts keep the agent's project and
+   * personal data; in-container apt installs are lost, which we log).
+   */
+  async ensureDesktopPort(agentId: string, image: string | null, mountPaths: string[]): Promise<number | undefined> {
+    const existing = await this.resolveHostPort(agentId);
+    if (existing) return existing;
+    console.warn(`[hertz] container for agent ${agentId} has no desktop port — recreating it (mounted folders are kept)`);
+    await this.computer.destroyContainer(agentId);
+    await this.computer.ensureContainer({ agentId, image, mountPaths });
+    return this.resolveHostPort(agentId);
   }
 
   async stop(agentId: string): Promise<void> {

@@ -100,6 +100,7 @@ export interface Agent {
   jobDescription?: string | null;
   approvalStatus: "pending" | "approved" | "rejected";
   pendingTermination: boolean;
+  mascot?: string | null;
   computerBackend?: "local" | "docker";
   computerImage?: string | null;
   heartbeatMinutes?: number;
@@ -141,7 +142,7 @@ export interface HertzSession {
   peerAgentId?: string | null;
   projectId: string;
   title: string;
-  kind: "chat" | "conversation";
+  kind: "chat" | "conversation" | "group";
   mode?: "plan" | "auto" | "autonomous" | null;
   status: "active" | "completed" | "error" | "archived" | "paused" | "awaiting_input";
   createdAt: string;

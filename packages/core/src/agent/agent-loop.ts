@@ -4,6 +4,7 @@ import type { ArtifactStore, ToolContext } from "@kuclab-hertz/tools";
 import type { ActorContext, AuditSink, PathGuard, ShellPolicy } from "@kuclab-hertz/sandbox";
 import type { PersistedMessage, PersistencePort, ProviderPort, ToolPort } from "../ports.js";
 import { planCachePrefix } from "../context/cache-planner.js";
+import { computeBudget, needsSummarization } from "../context/budget.js";
 
 export interface SandboxBundle {
   pathGuard: PathGuard;
@@ -475,7 +476,31 @@ export class AgentLoopManager {
       await this.waitIfPaused(config.sessionId);
       turnsRemaining--;
 
-      const history = await persistence.listMessages(config.sessionId);
+      let history = await persistence.listMessages(config.sessionId);
+
+      // Auto-compact: when the context nears the window limit, fold the older
+      // conversation into one agent-written summary (the "Compact" divider in
+      // the UI) and continue with the fresh, small history. Runs at most once
+      // per turn, before the model call.
+      if (history.length > 12) {
+        const last = history[history.length - 1]!;
+        const budget = computeBudget([last]);
+        if (needsSummarization(budget, 85)) {
+          this.emit(config.sessionId, { type: "notice", message: "Context window nearly full — auto-compacting the conversation." });
+          try {
+            await this.compact({
+              sessionId: config.sessionId,
+              userId,
+              providerConfigId: config.providerConfigId,
+              model: config.model,
+            });
+            history = await persistence.listMessages(config.sessionId);
+          } catch (err) {
+            this.emit(config.sessionId, { type: "notice", message: `Auto-compact failed (${(err as Error).message}) — continuing with full history.` });
+          }
+        }
+      }
+
       const chatMessages = toChatMessages(history);
       const snapshotId = history.length > 0 ? history[history.length - 1]!.id : null;
 

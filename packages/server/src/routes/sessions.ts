@@ -179,15 +179,15 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const budget = computeBudget(messages);
 
     const agent = session.agentId
-      ? (await ctx.db.select({ id: agents.id, name: agents.name, role: agents.role }).from(agents).where(eq(agents.id, session.agentId)).limit(1))[0]
+      ? (await ctx.db.select({ id: agents.id, name: agents.name, role: agents.role, mascot: agents.mascot }).from(agents).where(eq(agents.id, session.agentId)).limit(1))[0]
       : undefined;
     const peerAgent = session.peerAgentId
-      ? (await ctx.db.select({ id: agents.id, name: agents.name, role: agents.role }).from(agents).where(eq(agents.id, session.peerAgentId)).limit(1))[0]
+      ? (await ctx.db.select({ id: agents.id, name: agents.name, role: agents.role, mascot: agents.mascot }).from(agents).where(eq(agents.id, session.peerAgentId)).limit(1))[0]
       : undefined;
 
     const participants = session.kind === "group"
       ? await ctx.db
-          .select({ id: agents.id, name: agents.name, role: agents.role })
+          .select({ id: agents.id, name: agents.name, role: agents.role, mascot: agents.mascot })
           .from(sessionParticipants)
           .innerJoin(agents, eq(sessionParticipants.agentId, agents.id))
           .where(eq(sessionParticipants.sessionId, id))

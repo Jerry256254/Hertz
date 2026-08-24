@@ -154,7 +154,11 @@ export function EmployeeDetailPage() {
               </div>
             </Card>
 
+            <MascotCard agentId={agent.id} mascot={agent.mascot ?? null} name={agent.name} />
+
             <ComputerCard agentId={agent.id} backend={agent.computerBackend ?? "local"} />
+
+            <ClearChatCard agentId={agent.id} projectId={projectId!} />
 
             <ScreenCard agentId={agent.id} />
 
@@ -391,6 +395,70 @@ function ScreenCard({ agentId }: { agentId: string }) {
           className="mt-3 aspect-[16/10] w-full rounded-lg border border-border"
         />
       )}
+    </Card>
+  );
+}
+
+
+const MASCOT_CHOICES = ["🦊","🐼","🐙","🤖","👾","🦉","🐝","🦖","🐬","🦄","🐸","🐨","🦁","🐷","🐵","🐺","🦋","🐢","🐳","🦜"];
+
+function MascotCard({ agentId, mascot, name }: { agentId: string; mascot: string | null; name: string }) {
+  const queryClient = useQueryClient();
+  const current = mascot ?? "🤖";
+  const pick = useMutation({
+    mutationFn: (m: string) => api.patch(`/agents/${agentId}`, { mascot: m }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent", agentId] }),
+  });
+
+  return (
+    <Card className="p-4">
+      <p className="text-sm font-medium text-fg">Mascot</p>
+      <p className="mb-3 text-xs text-fg-subtle">{name}'s face everywhere in the app — pick a new one.</p>
+      <div className="flex flex-wrap gap-1.5">
+        {MASCOT_CHOICES.map((m) => (
+          <button
+            key={m}
+            onClick={() => pick.mutate(m)}
+            className={`flex h-10 w-10 items-center justify-center rounded-xl border text-xl transition-all ${
+              m === current ? "border-accent bg-accent-wash scale-110" : "border-border hover:bg-bg-hover"
+            }`}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ClearChatCard({ agentId, projectId }: { agentId: string; projectId: string }) {
+  const queryClient = useQueryClient();
+  const clear = useMutation({
+    mutationFn: () => api.post(`/agents/${agentId}/clear-chat`, { projectId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
+      void queryClient.invalidateQueries({ queryKey: ["session"] });
+    },
+  });
+
+  return (
+    <Card className="p-4">
+      <p className="text-sm font-medium text-fg">Chat history</p>
+      <p className="mb-3 text-xs text-fg-subtle">
+        Deletes this contact's chat messages. Memory and skills are managed separately and stay.
+      </p>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={clear.isPending}
+        onClick={() => {
+          if (window.confirm("Delete this agent's chat messages? Memory stays.")) clear.mutate();
+        }}
+      >
+        {clear.isPending ? "Clearing…" : "Clear chat"}
+      </Button>
+      {clear.isSuccess && <p className="mt-2 text-xs text-success">Chat cleared.</p>}
+      {clear.isError && <p className="mt-2 text-xs text-danger">{(clear.error as Error).message}</p>}
     </Card>
   );
 }

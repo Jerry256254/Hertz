@@ -22,7 +22,6 @@ import { registerShellRoutes } from "./routes/shells.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerUserRoutes } from "./routes/users.js";
 import { registerApprovalRoutes } from "./routes/approvals.js";
-import { registerChannelRoutes } from "./routes/channels.js";
 import { registerUpdateRoutes } from "./routes/update.js";
 import { registerScreenRoutes } from "./routes/screen.js";
 import { registerResetRoute } from "./routes/admin-reset.js";
@@ -62,7 +61,6 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerOAuthRoutes(app, ctx);
   registerUserRoutes(app, ctx);
   registerApprovalRoutes(app, ctx);
-  registerChannelRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerScreenRoutes(app, ctx);
   registerResetRoute(app, ctx);
