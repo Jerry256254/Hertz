@@ -1,6 +1,6 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-export type OAuthService = "google" | "slack";
+export type OAuthService = "google" | "slack" | "mistral";
 
 export interface OAuthStatePayload {
   service: OAuthService;
@@ -9,6 +9,8 @@ export interface OAuthStatePayload {
   projectId: string | null;
   userId: string;
   nonce: string;
+  /** PKCE verifier (Mistral flow) — carried inside the signed state. */
+  codeVerifier?: string;
 }
 
 const GOOGLE_SCOPES: Record<string, string[]> = {
@@ -121,4 +123,69 @@ export async function exchangeSlackCode(opts: {
     throw new Error(`Slack token exchange failed: ${body.error ?? (await res.text().catch(() => res.statusText))}`);
   }
   return { botToken: body.access_token, teamId: body.team.id };
+}
+
+// --- Mistral (La Plateforme / Le Pro) — OAuth2 Authorization Code + PKCE -----
+
+export const MISTRAL_AUTHORIZE_URL = "https://auth.mistral.ai/oauth/authorize";
+export const MISTRAL_TOKEN_URL = "https://api.mistral.ai/oauth/token";
+export const MISTRAL_SCOPES = ["openid", "profile", "email", "offline_access"];
+
+export function generatePkcePair(): { verifier: string; challenge: string } {
+  const verifier = base64url(randomBytes(32));
+  const challenge = base64url(createHash("sha256").update(verifier).digest());
+  return { verifier, challenge };
+}
+
+export function mistralAuthUrl(opts: { clientId: string; redirectUri: string; state: string; challenge: string }): string {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: opts.clientId,
+    redirect_uri: opts.redirectUri,
+    scope: MISTRAL_SCOPES.join(" "),
+    state: opts.state,
+    code_challenge: opts.challenge,
+    code_challenge_method: "S256",
+  });
+  return `${MISTRAL_AUTHORIZE_URL}?${params.toString()}`;
+}
+
+export async function exchangeMistralCode(opts: {
+  clientId: string;
+  redirectUri: string;
+  code: string;
+  verifier: string;
+}): Promise<{ accessToken: string; refreshToken?: string }> {
+  const res = await fetch(MISTRAL_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: opts.clientId,
+      code: opts.code,
+      redirect_uri: opts.redirectUri,
+      code_verifier: opts.verifier,
+    }),
+  });
+  if (!res.ok) throw new Error(`Mistral token exchange failed: ${await res.text()}`);
+  const body = (await res.json()) as { access_token: string; refresh_token?: string };
+  return { accessToken: body.access_token, refreshToken: body.refresh_token };
+}
+
+export async function refreshMistralToken(opts: {
+  clientId: string;
+  refreshToken: string;
+}): Promise<{ accessToken: string; refreshToken?: string }> {
+  const res = await fetch(MISTRAL_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: opts.clientId,
+      refresh_token: opts.refreshToken,
+    }),
+  });
+  if (!res.ok) throw new Error(`Mistral refresh failed: ${await res.text()}`);
+  const body = (await res.json()) as { access_token: string; refresh_token?: string };
+  return { accessToken: body.access_token, refreshToken: body.refresh_token };
 }

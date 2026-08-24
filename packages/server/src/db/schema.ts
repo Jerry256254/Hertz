@@ -416,7 +416,7 @@ export const employeeShellGrants = sqliteTable("employee_shell_grants", {
  */
 export const oauthApps = sqliteTable("oauth_apps", {
   id: text("id").primaryKey(),
-  service: text("service", { enum: ["google", "slack"] }).notNull().unique(),
+  service: text("service", { enum: ["google", "slack", "mistral"] }).notNull().unique(),
   clientId: text("client_id").notNull(),
   encryptedClientSecret: text("encrypted_client_secret").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
@@ -556,5 +556,20 @@ export const sessionParticipants = sqliteTable("session_participants", {
   agentId: text("agent_id")
     .notNull()
     .references(() => agents.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Per-user OAuth tokens for provider logins (e.g. "Sign in with Mistral") —
+ * the refresh token is encrypted at rest; the access token lives in the
+ * derived provider config's key field and is refreshed on demand.
+ */
+export const oauthTokens = sqliteTable("oauth_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  service: text("service", { enum: ["mistral"] }).notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });

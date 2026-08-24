@@ -77,13 +77,27 @@ export class DesktopManager {
       await this.computer.run(["docker", "exec", this.computer.containerName(agentId), "mkdir", "-p", "/opt/hertz", "/tmp/.X11-unix"]);
       await this.installScript(agentId);
       await this.computer.run(["docker", "exec", "-d", this.computer.containerName(agentId), "bash", "/opt/hertz/start-desktop.sh"]);
-      // Give Xvfb + websockify a moment to bind before we report status.
-      await new Promise((r) => setTimeout(r, 2_000));
+    }
+
+    // Wait for REAL readiness (websockify AND x11vnc) — the bootstrap stages
+    // take several seconds (Xvfb fonts cache, VNC port probe) and a fixed
+    // 2-second check produced false failures while the stack was still booting.
+    const deadline = Date.now() + 25_000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      const probe = await this.execInContainer(agentId, "bash", [
+        "-c",
+        "pgrep -f 'websockify.*6080' >/dev/null && pgrep x11vnc >/dev/null && echo yes || echo no",
+      ]);
+      if (probe.stdout.trim() === "yes") {
+        ready = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 600));
     }
 
     const status = await this.status(agentId);
-    const x11vncUp = await this.execInContainer(agentId, "bash", ["-c", "pgrep x11vnc >/dev/null && echo yes || echo no"]);
-    if (!status.running || !status.hostPort || x11vncUp.stdout.trim() !== "yes") {
+    if (!ready || !status.running || !status.hostPort) {
       const logs = await this.execInContainer(agentId, "bash", [
         "-c",
         "echo '--- xvfb:'; tail -5 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -5 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -5 /tmp/websockify.log 2>/dev/null; true",

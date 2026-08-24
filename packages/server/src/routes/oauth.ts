@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { mcpServers, oauthApps } from "../db/schema.js";
@@ -10,21 +10,26 @@ import { requireAuth } from "../auth/plugin.js";
 import { encryptSecret, decryptSecret, maskKey } from "../secrets/key-encryption.js";
 import {
   exchangeGoogleCode,
+  exchangeMistralCode,
   exchangeSlackCode,
+  generatePkcePair,
   googleAuthUrl,
+  mistralAuthUrl,
+  refreshMistralToken,
   signState,
   slackAuthUrl,
   verifyState,
   type OAuthService,
 } from "../oauth/oauth-service.js";
+import { providerConfigs } from "../db/schema.js";
 
 const require = createRequire(import.meta.url);
 const mcpGoogleServerPath = require.resolve("@kuclab-hertz/mcp-google/dist/server.js");
 
 const upsertAppSchema = z.object({
-  service: z.enum(["google", "slack"]),
+  service: z.enum(["google", "slack", "mistral"]),
   clientId: z.string().trim().min(1),
-  clientSecret: z.string().trim().min(1),
+  clientSecret: z.string().trim().default(""),
 });
 
 interface OAuthTarget {
@@ -60,7 +65,7 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
 
       const existing = await ctx.db.select({ id: oauthApps.id }).from(oauthApps).where(eq(oauthApps.service, parsed.data.service)).limit(1);
-      const encryptedClientSecret = encryptSecret(ctx.masterKey, parsed.data.clientSecret);
+      const encryptedClientSecret = encryptSecret(ctx.masterKey, parsed.data.clientSecret ?? '');
       if (existing[0]) {
         await ctx.db.update(oauthApps).set({ clientId: parsed.data.clientId, encryptedClientSecret }).where(eq(oauthApps.service, parsed.data.service));
       } else {
@@ -70,7 +75,7 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
     });
 
     instance.delete("/api/oauth/apps/:service", async (request, reply) => {
-      const parsed = z.enum(["google", "slack"]).safeParse((request.params as { service: string }).service);
+      const parsed = z.enum(["google", "slack", "mistral"]).safeParse((request.params as { service: string }).service);
       if (!parsed.success) return reply.code(400).send({ error: "Unknown service" });
       await ctx.db.delete(oauthApps).where(eq(oauthApps.service, parsed.data));
       return reply.code(204).send();
@@ -80,27 +85,59 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.get("/api/oauth/:service/start", async (request, reply) => {
       const { service } = request.params as { service: OAuthService };
       const { catalogId, agentId, projectId } = request.query as { catalogId?: string; agentId?: string; projectId?: string };
-      if (!catalogId) return reply.code(400).send({ error: "catalogId is required" });
+      if (!catalogId && service !== "mistral") return reply.code(400).send({ error: "catalogId is required" });
 
       const appRows = await ctx.db.select().from(oauthApps).where(eq(oauthApps.service, service)).limit(1);
       const appRow = appRows[0];
       if (!appRow) return reply.code(400).send({ error: `No ${service} OAuth app configured yet — add one in Integrations first.` });
 
       const redirectUri = `${request.protocol}://${request.headers.host}/api/oauth/${service}/callback`;
-      const state = signState(ctx.masterKey, {
+      const statePayload = {
         service,
-        catalogId,
+        catalogId: catalogId ?? "",
         agentId: agentId ?? null,
         projectId: projectId ?? null,
         userId: request.user!.id,
         nonce: randomUUID(),
-      });
+      };
+      let state = signState(ctx.masterKey, statePayload);
 
-      const url =
-        service === "google"
-          ? googleAuthUrl({ clientId: appRow.clientId, redirectUri, catalogId, state })
-          : slackAuthUrl({ clientId: appRow.clientId, redirectUri, state });
+      let url: string;
+      if (service === "mistral") {
+        const pkce = generatePkcePair();
+        state = signState(ctx.masterKey, { ...statePayload, codeVerifier: pkce.verifier });
+        url = mistralAuthUrl({ clientId: appRow.clientId, redirectUri, state, challenge: pkce.challenge });
+      } else if (service === "google") {
+        url = googleAuthUrl({ clientId: appRow.clientId, redirectUri, catalogId: catalogId ?? "", state });
+      } else {
+        url = slackAuthUrl({ clientId: appRow.clientId, redirectUri, state });
+      }
       return reply.redirect(url);
+    });
+
+    /** Refresh the Mistral OAuth access token (the provider config's key) in place. */
+    instance.post("/api/oauth/mistral/refresh", async (request, reply) => {
+      const userId = request.user!.id;
+      const { oauthTokens, providerConfigs: pc } = await import("../db/schema.js");
+      const tokenRows = await ctx.db.select().from(oauthTokens).where(and(eq(oauthTokens.userId, userId), eq(oauthTokens.service, "mistral"))).limit(1);
+      if (!tokenRows[0]) return reply.code(404).send({ error: "No Mistral OAuth login on this account" });
+      const refreshToken = decryptSecret(ctx.masterKey, tokenRows[0].encryptedRefreshToken);
+      const appRows = await ctx.db.select().from(oauthApps).where(eq(oauthApps.service, "mistral")).limit(1);
+      if (!appRows[0]) return reply.code(400).send({ error: "Mistral OAuth app removed" });
+
+      try {
+        const tokens = await refreshMistralToken({ clientId: appRows[0].clientId, refreshToken });
+        const cfgRows = await ctx.db.select().from(pc).where(and(eq(pc.userId, userId), eq(pc.label, "Mistral (Le Pro — OAuth)")));
+        if (cfgRows[0]) {
+          await ctx.db.update(pc).set({ encryptedKey: encryptSecret(ctx.masterKey, tokens.accessToken) }).where(eq(pc.id, cfgRows[0].id));
+        }
+        if (tokens.refreshToken) {
+          await ctx.db.update(oauthTokens).set({ encryptedRefreshToken: encryptSecret(ctx.masterKey, tokens.refreshToken) }).where(eq(oauthTokens.id, tokenRows[0].id));
+        }
+        return { ok: true };
+      } catch (err) {
+        return reply.code(502).send({ error: (err as Error).message });
+      }
     });
 
     // The provider redirects the browser back here after the user consents (or declines).
@@ -118,6 +155,40 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       const appRows = await ctx.db.select().from(oauthApps).where(eq(oauthApps.service, service)).limit(1);
       const appRow = appRows[0];
       if (!appRow) return back("?oauthError=app_not_configured");
+
+      if (service === "mistral") {
+        const tokens = await exchangeMistralCode({
+          clientId: appRow.clientId,
+          redirectUri: `${request.protocol}://${request.headers.host}/api/oauth/mistral/callback`,
+          code,
+          verifier: payload.codeVerifier ?? "",
+        });
+
+        // The OAuth access token IS the API key for api.mistral.ai.
+        await ctx.db.insert(providerConfigs).values({
+          id: newId(),
+          userId: payload.userId,
+          provider: "openai-compatible",
+          label: "Mistral (Le Pro — OAuth)",
+          baseUrl: "https://api.mistral.ai/v1",
+          encryptedKey: encryptSecret(ctx.masterKey, tokens.accessToken),
+          createdAt: new Date(),
+        });
+
+        if (tokens.refreshToken) {
+          const { oauthTokens } = await import("../db/schema.js");
+          await ctx.db.delete(oauthTokens).where(and(eq(oauthTokens.userId, payload.userId), eq(oauthTokens.service, "mistral")));
+          await ctx.db.insert(oauthTokens).values({
+            id: newId(),
+            userId: payload.userId,
+            service: "mistral",
+            encryptedRefreshToken: encryptSecret(ctx.masterKey, tokens.refreshToken),
+            createdAt: new Date(),
+          });
+        }
+
+        return reply.redirect("/providers?mistralConnected=1");
+      }
       const clientSecret = decryptSecret(ctx.masterKey, appRow.encryptedClientSecret);
       const redirectUri = `${request.protocol}://${request.headers.host}/api/oauth/${service}/callback`;
 

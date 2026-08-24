@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, KeyRound, Plus, Search, Trash2 } from "lucide-react";
+import { Check, KeyRound, Plus, Search, Sparkles, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import type { ModelInfo, PresetCategory, ProviderConfig, ProviderKey, ProviderPreset } from "../lib/types";
 import { Avatar, Badge, Button, Card, IconButton, Input, Label } from "../components/ui";
@@ -265,6 +265,8 @@ export function ProvidersPage() {
         </div>
       )}
 
+      <MistralOAuthCard />
+
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Add a provider</h2>
 
       <div className="relative mb-4">
@@ -318,5 +320,52 @@ export function ProvidersPage() {
         </div>
       )}
     </div>
+  );
+}
+
+
+function MistralOAuthCard() {
+  const queryClient = useQueryClient();
+  const [clientId, setClientId] = useState("");
+  const connected = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("mistralConnected");
+
+  const saveApp = useMutation({
+    mutationFn: () => api.post("/oauth/apps", { service: "mistral", clientId: clientId.trim(), clientSecret: "" }),
+    onSuccess: () => {
+      window.location.href = "/api/oauth/mistral/start";
+    },
+  });
+
+  function signIn() {
+    if (clientId.trim()) {
+      saveApp.mutate();
+    } else {
+      // Client ID already stored from a previous run — go straight to consent.
+      window.location.href = "/api/oauth/mistral/start";
+    }
+  }
+
+  return (
+    <Card className="mb-8 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Sparkles size={15} className="text-accent" />
+        <p className="text-sm font-medium text-fg">Sign in with Mistral (Le Pro)</p>
+      </div>
+      {connected && (
+        <p className="mb-3 rounded-md bg-success-wash p-2 text-xs text-success">
+          Mistral account connected — a &quot;Mistral (Le Pro — OAuth)&quot; provider was added below.
+        </p>
+      )}
+      <p className="mb-3 text-xs text-fg-muted">
+        Use your Mistral Pro subscription instead of an API key. Paste your OAuth Client ID once (La Plateforme →
+        API Keys → OAuth apps), then sign in — tokens are refreshed automatically.
+      </p>
+      <div className="flex items-center gap-2">
+        <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="OAuth Client ID" className="h-9 max-w-xs text-sm" />
+        <Button size="sm" variant="primary" onClick={signIn} disabled={saveApp.isPending}>
+          Sign in with Mistral
+        </Button>
+      </div>
+    </Card>
   );
 }

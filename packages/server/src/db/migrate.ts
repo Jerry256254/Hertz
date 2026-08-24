@@ -324,6 +324,14 @@ CREATE TABLE IF NOT EXISTS approvals (
 CREATE INDEX IF NOT EXISTS idx_approvals_project ON approvals(project_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  service TEXT NOT NULL,
+  encrypted_refresh_token TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS channel_configs (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
