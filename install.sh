@@ -136,12 +136,21 @@ else
   log "Keeping existing network config ($(cat "$DATA_DIR/config.json" | tr -d '\n'))"
 fi
 
+# Actual port from config.json (the service will bind there)
+if [ -f "$DATA_DIR/config.json" ] && command -v node >/dev/null 2>&1; then
+  CFG_PORT="$(node -p "try{require('$DATA_DIR/config.json').port}catch{}" 2>/dev/null || true)"
+  [ -n "$CFG_PORT" ] && PORT="$CFG_PORT"
+fi
+
 # --- 5. systemd service ------------------------------------------------------
 RUN_AS_USER="${RUN_AS_USER_ORIG}"
 NODE_BIN="$(command -v node)"
 
 if command -v systemctl >/dev/null 2>&1 && as_root true 2>/dev/null; then
   log "Installing systemd service '${SERVICE_NAME}' ..."
+  # Drop-in overrides (hertz.service.d/*.conf) silently replace ExecStart —
+  # a leftover from older manual setups would keep pointing at a dead path.
+  as_root rm -rf "/etc/systemd/system/${SERVICE_NAME}.service.d" 2>/dev/null || true
   if [ "$USE_WRAPPER" -eq 1 ]; then
     EXEC_LINE="/bin/bash -lc 'cd ${INSTALL_DIR} && exec node packages/cli/dist/bin.js start'"
   else
@@ -168,19 +177,44 @@ WantedBy=multi-user.target
 UNIT
   as_root systemctl daemon-reload
   as_root systemctl enable "${SERVICE_NAME}" --quiet
+  EFFECTIVE_EXEC="$(as_root systemctl show -p ExecStart --value "${SERVICE_NAME}" 2>/dev/null | head -c 300 || true)"
+  log "Effective ExecStart: ${EFFECTIVE_EXEC}"
+  case "${EFFECTIVE_EXEC}" in
+    *".nvm"*) die "ExecStart still points at nvm — a drop-in override exists. Run: sudo rm -rf /etc/systemd/system/${SERVICE_NAME}.service.d && sudo systemctl daemon-reload" ;;
+  esac
   as_root systemctl reset-failed "${SERVICE_NAME}" 2>/dev/null || true
+  # A manually-started server (pnpm start) would hold the port and crash-loop the service.
+  as_root pkill -f "packages/cli/dist/bin.js start" 2>/dev/null || true
+  sleep 1
   as_root systemctl restart "${SERVICE_NAME}"
 
-  log "Waiting for the service to come up ..."
+  log "Waiting for the WebUI to answer on port ${PORT} ..."
   up=0
-  for i in $(seq 1 20); do
-    if systemctl is-active --quiet "${SERVICE_NAME}"; then up=1; break; fi
+  for i in $(seq 1 30); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)"
+    if [ "$code" = "200" ]; then up=1; break; fi
     sleep 1
   done
+
+  if [ "$up" -ne 1 ]; then
+    # Most common crash after switching Node versions: native modules built for
+    # a different ABI. Rebuild once and give it a second chance.
+    warn "WebUI not answering yet — rebuilding native modules for this Node and retrying..."
+    (cd "$INSTALL_DIR" && pnpm rebuild >/dev/null 2>&1 || true)
+    as_root systemctl restart "${SERVICE_NAME}"
+    for i in $(seq 1 30); do
+      code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)"
+      if [ "$code" = "200" ]; then up=1; break; fi
+      sleep 1
+    done
+  fi
+
   if [ "$up" -eq 1 ]; then
     log "Service '${SERVICE_NAME}' is running in the background (survives reboot: enabled)."
   else
-    warn "Service did not come up — recent logs:"
+    warn "WebUI still not reachable — what the OS sees:"
+    ss -ltnp 2>/dev/null | grep -E ":${PORT}\b" || echo "  (nothing is listening on port ${PORT})"
+    warn "Service logs (last 40 lines):"
     as_root journalctl -u "${SERVICE_NAME}" -n 40 --no-pager || true
     die "Fix the issue above and run: sudo systemctl restart ${SERVICE_NAME}"
   fi
