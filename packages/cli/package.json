@@ -1,6 +1,6 @@
 {
   "name": "kuclab-hertz",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Self-hosted agentní vývojová platforma s WebUI, distribuovaná přes npm.",
   "license": "Apache-2.0",
   "author": "KucLab",

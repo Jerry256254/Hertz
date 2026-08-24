@@ -148,9 +148,15 @@ NODE_BIN="$(command -v node)"
 
 if command -v systemctl >/dev/null 2>&1 && as_root true 2>/dev/null; then
   log "Installing systemd service '${SERVICE_NAME}' ..."
-  # Drop-in overrides (hertz.service.d/*.conf) silently replace ExecStart —
-  # a leftover from older manual setups would keep pointing at a dead path.
+  # Unit fragments across ALL layers silently override ExecStart — a leftover
+  # from older manual setups would keep pointing at a dead path:
+  #   /etc/systemd/system/<svc>.service.d/   (drop-ins)
+  #   /run/systemd/system/<svc>*             (runtime units — survive daemon-reload!)
+  as_root systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
   as_root rm -rf "/etc/systemd/system/${SERVICE_NAME}.service.d" 2>/dev/null || true
+  as_root rm -rf "/run/systemd/system/${SERVICE_NAME}.service.d" 2>/dev/null || true
+  as_root rm -f  "/run/systemd/system/${SERVICE_NAME}.service" 2>/dev/null || true
+  as_root rm -rf "/run/systemd/transient/${SERVICE_NAME}.service" 2>/dev/null || true
   if [ "$USE_WRAPPER" -eq 1 ]; then
     EXEC_LINE="/bin/bash -lc 'cd ${INSTALL_DIR} && exec node packages/cli/dist/bin.js start'"
   else
@@ -177,11 +183,15 @@ WantedBy=multi-user.target
 UNIT
   as_root systemctl daemon-reload
   as_root systemctl enable "${SERVICE_NAME}" --quiet
-  EFFECTIVE_EXEC="$(as_root systemctl show -p ExecStart --value "${SERVICE_NAME}" 2>/dev/null | head -c 300 || true)"
-  log "Effective ExecStart: ${EFFECTIVE_EXEC}"
-  case "${EFFECTIVE_EXEC}" in
-    *".nvm"*) die "ExecStart still points at nvm — a drop-in override exists. Run: sudo rm -rf /etc/systemd/system/${SERVICE_NAME}.service.d && sudo systemctl daemon-reload" ;;
-  esac
+  log "Verifying the effective unit definition..."
+  EFFECTIVE_UNIT="$(as_root systemctl cat "${SERVICE_NAME}" 2>/dev/null || true)"
+  if echo "${EFFECTIVE_UNIT}" | grep -q "\.nvm"; then
+    warn "An .nvm ExecStart still leaks into the unit — fragments found:"
+    echo "${EFFECTIVE_UNIT}" | grep -n "ExecStart\|\.nvm" || true
+    warn "A runtime fragment survives until reboot. Run:  sudo reboot   — then re-run this installer."
+    die "Refusing to continue with a broken unit definition."
+  fi
+  log "Unit OK: $(echo "${EFFECTIVE_UNIT}" | grep -m1 '^ExecStart' || echo 'ExecStart set')"
   as_root systemctl reset-failed "${SERVICE_NAME}" 2>/dev/null || true
   # A manually-started server (pnpm start) would hold the port and crash-loop the service.
   as_root pkill -f "packages/cli/dist/bin.js start" 2>/dev/null || true
