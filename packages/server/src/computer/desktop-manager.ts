@@ -161,8 +161,8 @@ sleep 1
 # A window manager makes Chromium windows behave (move/resize/focus).
 which startxfce4 >/dev/null 2>&1 && (dbus-launch --exit-with-session startxfce4 >/dev/null 2>&1 &)
 
-x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -quiet &
+x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet &
 sleep 0.5
 
-websockify --web=/usr/share/novnc 6080 localhost:5900 >/tmp/websockify.log 2>&1 &
+websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
 `;

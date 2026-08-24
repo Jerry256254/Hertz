@@ -173,7 +173,8 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
         return;
       }
 
-      const upstream = new WebSocket(`ws://127.0.0.1:${hostPort}/websockify`, { maxPayload: 0 });
+      // websockify performs the WS upgrade at root — /websockify can 404
+      const upstream = new WebSocket(`ws://127.0.0.1:${hostPort}/`, { maxPayload: 0 });
 
       upstream.on("open", () => {
         log(agentId, "upstream open");
@@ -194,11 +195,11 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
       });
       upstream.on("close", (code, reason) => {
         log(agentId, "upstream closed:", code, reason?.toString?.().slice(0, 80));
-        if (browser.readyState === 1) browser.close(1011, "upstream closed");
+        if (browser.readyState === 1) browser.close(1011, `upstream closed (${code})`);
       });
       upstream.on("error", (err) => {
         log(agentId, "upstream error:", err.message);
-        if (browser.readyState === 1) browser.close(1011, "upstream error");
+        if (browser.readyState === 1) browser.close(1011, `upstream: ${err.message}`);
       });
     })().catch((err) => {
       console.error("[screen-proxy] fatal:", (err as Error).message);
@@ -295,8 +296,9 @@ function viewerHtml(agentId: string, token: string): string {
   window.rfb = rfb;
   rfb.addEventListener("connect", () => show("Live — you are controlling the agent desktop", "#22c55e"));
   rfb.addEventListener("disconnect", (e) => {
-    const detail = e.detail ? " (code " + e.detail.code + ")" : "";
-    show("Disconnected" + detail + " — refresh to reconnect", "#ef4444");
+    const d = e.detail || {};
+    const why = d.reason ? " — " + d.reason : "";
+    show("Disconnected (code " + d.code + ")" + why + " — refresh to reconnect", "#ef4444");
   });
   setTimeout(() => {
     if (statusEl.textContent === "Connecting…") show("Still connecting — is the desktop running? (employee page → Start desktop)", "#f59e0b");
