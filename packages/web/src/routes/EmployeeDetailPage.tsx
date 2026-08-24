@@ -234,6 +234,12 @@ function ComputerCard({ agentId, backend }: { agentId: string; backend: "local" 
           {effectiveBackend === "docker" ? data?.status ?? "?" : "local"}
         </Badge>
       </div>
+      {effectiveBackend === "docker" && data?.status === "unavailable" && (
+        <p className="mt-2 rounded-md bg-warning-wash p-2 text-xs text-warning">
+          Docker isn't accessible to the Hertz service. Re-run the installer (it adds the service user to the docker
+          group and restarts the service), then click Restart here.
+        </p>
+      )}
       {effectiveBackend === "docker" && (
         <div className="mt-3 space-y-2">
           <div className="flex gap-2">
@@ -345,9 +351,25 @@ function ScreenCard({ agentId }: { agentId: string }) {
     refetchInterval: open ? 5000 : false,
   });
 
+  const [error, setError] = useState<string | null>(null);
+
   async function openViewer() {
-    const { token } = await api.get<{ token: string }>("/agents/" + agentId + "/screen/token");
-    setIframeUrl(`/screen/${agentId}?t=${encodeURIComponent(token)}`);
+    setError(null);
+    try {
+      const { token } = await api.get<{ token: string }>("/agents/" + agentId + "/screen/token");
+      setIframeUrl(`/screen/${agentId}?t=${encodeURIComponent(token)}`);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function startDesktop() {
+    setError(null);
+    try {
+      await api.post(`/agents/${agentId}/screen/start`);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
   return (
@@ -360,18 +382,19 @@ function ScreenCard({ agentId }: { agentId: string }) {
         The bot's visible desktop (Xfce) inside its container — watch what it does, take over to log in, or install apps.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="secondary" onClick={() => void api.post(`/agents/${agentId}/screen/start`)}>
+        <Button size="sm" variant="secondary" onClick={() => void startDesktop()}>
           Start desktop
         </Button>
         <Button size="sm" variant="primary" onClick={() => { setOpen(true); void openViewer(); }}>
           Open screen
         </Button>
         {status?.running && (
-          <Button size="sm" variant="ghost" onClick={() => void api.post(`/agents/${agentId}/screen/start`)}>
+          <Button size="sm" variant="ghost" onClick={() => void startDesktop()}>
             Restart stack
           </Button>
         )}
       </div>
+      {error && <p className="mt-2 rounded-md bg-danger-wash p-2 text-xs text-danger">{error}</p>}
       {status?.tunnelUrl && (
         <p className="mt-2 break-all text-xs text-fg-muted">
           Public link:{" "}

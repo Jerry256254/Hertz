@@ -43,6 +43,11 @@ export class DesktopManager {
   /** Idempotent — starts Xvfb/x11vnc/websockify (+ an Xfce session) if not already up. */
   async start(agentId: string): Promise<DesktopStatus> {
     const state = await this.computer.status(agentId);
+    if (state === "unavailable") {
+      throw new Error(
+        "Docker isn't accessible to the Hertz service. Re-run the installer (curl -fsSL https://raw.githubusercontent.com/Jerry256254/Hertz/main/install.sh | bash) — it adds the service user to the docker group and restarts the service.",
+      );
+    }
     if (state !== "running") {
       throw new Error(
         "The agent's container isn't running yet — it starts automatically on the agent's next run. Trigger any message first, then retry.",
