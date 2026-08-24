@@ -104,11 +104,14 @@ export class ComputerManager {
     for (const p of spec.mountPaths) args.push("-v", `${p}:${p}`);
     args.push(image, "sleep", "infinity");
 
-    const result = await this.run(args);
+    // `args` holds the docker subcommand ("run …") — the executable itself
+    // must be prepended here. (A missing prefix spawned a binary literally
+    // named "run" → ENOENT, which silently broke every container since v0.8.)
+    const result = await this.run(["docker", ...args]);
     if (result.exitCode !== 0) {
       // A stale container row with a conflicting name is the common failure — remove and retry once.
       await this.run(["docker", "rm", "-f", name]);
-      const retry = await this.run(args);
+      const retry = await this.run(["docker", ...args]);
       if (retry.exitCode !== 0) {
         throw new Error(`Failed to start computer container: ${retry.stderr.trim() || retry.stdout.trim()}`);
       }
