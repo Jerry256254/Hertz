@@ -144,7 +144,6 @@ fi
 
 # --- 5. systemd service ------------------------------------------------------
 RUN_AS_USER="${RUN_AS_USER_ORIG}"
-NODE_BIN="$(command -v node)"
 
 if command -v systemctl >/dev/null 2>&1 && as_root true 2>/dev/null; then
   log "Installing systemd service '${SERVICE_NAME}' ..."
@@ -185,8 +184,25 @@ UNIT
   as_root systemctl enable "${SERVICE_NAME}" --quiet
   log "Verifying the effective unit definition..."
   EFFECTIVE_UNIT="$(as_root systemctl cat "${SERVICE_NAME}" 2>/dev/null || true)"
+
+  # SELF-HEAL: if ANY fragment layer still carries an .nvm ExecStart, rewrite
+  # that exact fragment in place: systemctl cat marks each fragment with a
+  # "# /path" header, so we know precisely which file to fix.
   if echo "${EFFECTIVE_UNIT}" | grep -q "\.nvm"; then
-    warn "An .nvm ExecStart still leaks into the unit — hunting every layer:"
+    warn "An .nvm ExecStart leaked into the unit — self-healing the offending fragments..."
+    echo "${EFFECTIVE_UNIT}" | grep '^# ' | awk '{print $2}' | while read -r frag; do
+      [ -f "$frag" ] || continue
+      if grep -q "\.nvm" "$frag" 2>/dev/null; then
+        warn "  fixing ${frag}"
+        as_root sed -i "s|^ExecStart=.*|ExecStart=${EXEC_LINE}|" "$frag" || true
+      fi
+    done
+    as_root systemctl daemon-reload
+    EFFECTIVE_UNIT="$(as_root systemctl cat "${SERVICE_NAME}" 2>/dev/null || true)"
+  fi
+
+  if echo "${EFFECTIVE_UNIT}" | grep -q "\.nvm"; then
+    warn "An .nvm ExecStart STILL leaks after self-healing — hunting every layer:"
     echo "--- on-disk /etc unit:";   grep -n "ExecStart" "/etc/systemd/system/${SERVICE_NAME}.service" 2>/dev/null || true
     echo "--- /run fragments:";      ls -la /run/systemd/system/ 2>/dev/null | grep -i hertz || echo "  (none)"
     echo "--- systemd-delta:";       as_root systemd-delta --type=extended 2>/dev/null | grep -i hertz || echo "  (none)"
