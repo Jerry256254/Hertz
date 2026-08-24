@@ -131,41 +131,69 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
   });
 
   // Authenticated-by-token WS proxy into the container's noVNC websocket.
-  app.get("/ws/agents/:agentId/screen", { websocket: true }, (conn: WebSocket, request) => {
+  // NOTE: depending on @fastify/websocket's major, the handler receives either
+  // the raw WebSocket or a SocketStream wrapper (.socket) — support both.
+  app.get("/ws/agents/:agentId/screen", { websocket: true }, (conn: unknown, request) => {
+    const log = (...parts: unknown[]) => console.log("[screen-proxy]", ...parts);
     const { agentId } = request.params as { agentId: string };
     const { t } = request.query as { t?: string };
-    if (!t || !verifyScreenToken(ctx.masterKey, t, agentId)) {
-      conn.close(4403, "invalid token");
+
+    // Normalize the browser-side socket across plugin versions.
+    const maybe = conn as { socket?: WebSocket } & Partial<WebSocket>;
+    const browser: WebSocket = (typeof maybe.send === "function" && typeof maybe.readyState === "number"
+      ? (maybe as WebSocket)
+      : maybe.socket!) as WebSocket;
+
+    const tokenOk = !!t && verifyScreenToken(ctx.masterKey, t, agentId);
+    log(agentId, "upgrade:", tokenOk ? "token ok" : "TOKEN INVALID");
+    if (!tokenOk) {
+      browser.close(4403, "invalid token");
       return;
     }
 
     void (async () => {
       const hostPort = await ctx.desktop.resolveHostPort(agentId);
+      log(agentId, "hostPort:", hostPort ?? "(none)");
       if (!hostPort) {
-        conn.close(1011, "desktop not running");
-        return;
-      }
-      let upstream: WebSocket | undefined;
-      try {
-        upstream = new WebSocket(`ws://127.0.0.1:${hostPort}/websockify`, { maxPayload: 0 });
-      } catch {
-        conn.close(1011, "cannot reach desktop");
+        browser.close(1011, "desktop not running");
         return;
       }
 
+      const upstream = new WebSocket(`ws://127.0.0.1:${hostPort}/websockify`, { maxPayload: 0 });
+
       upstream.on("open", () => {
-        conn.on("message", (data: Buffer, isBinary: boolean) => {
-          if (upstream!.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+        log(agentId, "upstream open");
+        browser.on("message", (data: Buffer, isBinary: boolean) => {
+          if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
         });
-        conn.on("close", () => upstream?.close());
-        conn.on("error", () => upstream?.close());
+        browser.on("close", () => {
+          log(agentId, "browser closed");
+          upstream.close();
+        });
+        browser.on("error", (err: Error) => {
+          log(agentId, "browser error:", err.message);
+          upstream.close();
+        });
       });
       upstream.on("message", (data: Buffer, isBinary: boolean) => {
-        if (conn.readyState === 1) conn.send(data, { binary: isBinary });
+        if (browser.readyState === 1) browser.send(data, { binary: isBinary });
       });
-      upstream.on("close", () => conn.close());
-      upstream.on("error", () => conn.close());
-    })();
+      upstream.on("close", (code, reason) => {
+        log(agentId, "upstream closed:", code, reason?.toString?.().slice(0, 80));
+        if (browser.readyState === 1) browser.close(1011, "upstream closed");
+      });
+      upstream.on("error", (err) => {
+        log(agentId, "upstream error:", err.message);
+        if (browser.readyState === 1) browser.close(1011, "upstream error");
+      });
+    })().catch((err) => {
+      console.error("[screen-proxy] fatal:", (err as Error).message);
+      try {
+        browser.close(1011, "proxy error");
+      } catch {
+        /* ignore */
+      }
+    });
   });
 }
 
