@@ -114,22 +114,37 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       return { ok: true };
     });
 
-    /** Status of the agent's own computer (docker container) — surfaced on the employee page. */
+    /** Status of the agent's own computer — auto-creates the container when missing. */
     instance.get("/api/agents/:id/computer", async (request, reply) => {
       const { id } = request.params as { id: string };
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = rows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
-      if (agent.computerBackend !== "docker") {
-        return { backend: "local", status: "local", image: null as string | null };
+
+      const dockerState = await ctx.computer.status(id);
+      if (dockerState === "unavailable") {
+        return { backend: "docker", status: "unavailable", image: agent.computerImage ?? null, containerName: ctx.computer.containerName(id) };
       }
+
+      // Auto-setup: no container yet (or stopped) → bring it up right here.
+      if (dockerState === "missing" || dockerState === "stopped") {
+        try {
+          const rootRows = await ctx.db.select({ absolutePath: projectRoots.absolutePath }).from(projectRoots).where(eq(projectRoots.projectId, agent.projectId));
+          const mainRoot = rootRows[0]?.absolutePath;
+          await ensureEmployeeDirs(ctx.paths, agent.projectId, agent.id);
+          await ctx.computer.ensureContainer({
+            agentId: agent.id,
+            image: agent.computerImage,
+            mountPaths: [...new Set([...(mainRoot ? [mainRoot] : []), employeeDir(ctx.paths, agent.projectId, agent.id)])],
+          });
+          void ctx.desktop.start(agent.id).catch(() => {});
+        } catch (err) {
+          return { backend: "docker", status: dockerState, image: agent.computerImage ?? null, containerName: ctx.computer.containerName(id), error: (err as Error).message };
+        }
+      }
+
       const state = await ctx.computer.status(id);
-      return {
-        backend: "docker",
-        status: state,
-        image: agent.computerImage ?? null,
-        containerName: ctx.computer.containerName(id),
-      };
+      return { backend: "docker", status: state, image: agent.computerImage ?? null, containerName: ctx.computer.containerName(id) };
     });
 
     /** Restart (recreate) the agent's computer — e.g. after a broken state or to pick up a new image. */

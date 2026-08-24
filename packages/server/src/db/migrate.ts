@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS agents (
   job_description TEXT,
   approval_status TEXT NOT NULL DEFAULT 'approved',
   pending_termination INTEGER NOT NULL DEFAULT 0,
-  computer_backend TEXT NOT NULL DEFAULT 'local',
+  computer_backend TEXT NOT NULL DEFAULT 'docker',
   computer_image TEXT,
   mascot TEXT,
   heartbeat_minutes INTEGER NOT NULL DEFAULT 0,
@@ -369,7 +369,7 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE sessions ADD COLUMN peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
   "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'",
   "ALTER TABLE messages ADD COLUMN sender_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
-  "ALTER TABLE agents ADD COLUMN computer_backend TEXT NOT NULL DEFAULT 'local'",
+  "ALTER TABLE agents ADD COLUMN computer_backend TEXT NOT NULL DEFAULT 'docker'",
   "ALTER TABLE agents ADD COLUMN computer_image TEXT",
   "ALTER TABLE agents ADD COLUMN heartbeat_minutes INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE agents ADD COLUMN heartbeat_prompt TEXT",
@@ -387,6 +387,8 @@ const INDEX_MIGRATIONS: string[] = [
 ];
 
 export async function runMigrations(client: Client): Promise<void> {
+  // Docker-only platform: every agent gets its own computer.
+  await client.execute("UPDATE agents SET computer_backend = 'docker' WHERE computer_backend != 'docker'").catch(() => {});
   const statements = BOOTSTRAP_SQL.split(";")
     .map((s) => s.trim())
     .filter(Boolean);

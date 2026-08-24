@@ -520,7 +520,7 @@ export function SessionPage() {
               e.preventDefault();
               void onFiles(e.dataTransfer.files);
             }}
-            className="relative mx-auto flex max-w-3xl items-end gap-1 rounded-full border border-border bg-bg-raised py-1.5 pl-2 pr-1.5 shadow-sm focus-within:border-border-strong"
+            className="relative mx-auto flex max-w-3xl items-center gap-1 rounded-full border border-border bg-bg-raised py-1 pl-2 pr-1.5 shadow-sm focus-within:border-border-strong"
           >
             {showJumpToBottom && (
               <button
@@ -554,20 +554,23 @@ export function SessionPage() {
             <textarea
               ref={textareaRef}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                const el = e.target as HTMLTextAreaElement;
+                el.style.height = "24px";
+                el.style.height = Math.min(el.scrollHeight, 120) + "px";
+              }}
               onKeyDown={onKeyDown}
               onPaste={(e) => void onFiles(e.clipboardData.files)}
               placeholder={
                 data?.pendingQuestion && data.session.status === "awaiting_input"
-                  ? "The agent is waiting for your answer above — or send it a new message"
+                  ? "Answer the agent's question…"
                   : isPaused
-                    ? "Paused — the agent will read this after you resume"
-                    : isRunning
-                      ? "Type to message the agent — it will answer without stopping its work"
-                      : "Message the agent — drop or paste images, Enter to send, /compact to shrink context"
+                    ? "Paused — resume to continue"
+                    : `Message ${data?.agent?.name ?? "the agent"}…`
               }
               rows={1}
-              className="max-h-[200px] w-full resize-none self-center border-0 bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle outline-none disabled:opacity-60"
+              className="max-h-[120px] min-h-[24px] w-full resize-none border-0 bg-transparent px-2 py-1 text-sm leading-6 text-fg placeholder:text-fg-subtle outline-none disabled:opacity-60"
             />
             <div className="flex items-center gap-1 px-1">
               <div className="flex items-center gap-1">

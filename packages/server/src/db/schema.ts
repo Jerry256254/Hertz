@@ -65,7 +65,7 @@ export const agents = sqliteTable("agents", {
    * machine). The container mounts the project root and the agent's personal
    * directory at their host paths, so tools work unchanged.
    */
-  computerBackend: text("computer_backend", { enum: ["local", "docker"] }).notNull().default("local"),
+  computerBackend: text("computer_backend", { enum: ["local", "docker"] }).notNull().default("docker"),
   /** Override of the default computer image for docker-backend agents. */
   computerImage: text("computer_image"),
   /** The agent's mascot emoji — its face everywhere in the UI (animated avatar). */

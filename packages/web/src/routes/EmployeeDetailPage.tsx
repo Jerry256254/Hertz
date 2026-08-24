@@ -191,73 +191,50 @@ export function EmployeeDetailPage() {
   );
 }
 
-type ComputerStatus = { backend: "local" | "docker"; status: string; image: string | null; containerName?: string };
+type ComputerStatus = { backend: "docker"; status: string; image: string | null; containerName?: string; error?: string };
 
 function ComputerCard({ agentId, backend }: { agentId: string; backend: "local" | "docker" }) {
   const queryClient = useQueryClient();
-  const [image, setImage] = useState("");
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["computer", agentId],
     queryFn: () => api.get<ComputerStatus>(`/agents/${agentId}/computer`),
-    refetchInterval: 10_000,
+    refetchInterval: 8000,
   });
 
-  const patch = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.patch(`/agents/${agentId}`, body),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["agent", agentId] });
-      void queryClient.invalidateQueries({ queryKey: ["computer", agentId] });
-    },
-  });
   const restart = useMutation({
     mutationFn: () => api.post(`/agents/${agentId}/computer/restart`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["computer", agentId] }),
   });
-  const effectiveBackend = data?.backend ?? backend;
+
+  const statusTone = data?.status === "running" ? "success" : data?.status === "unavailable" ? "danger" : "warning";
+  const statusLabel =
+    data?.status === "running" ? "running" :
+    data?.status === "missing" ? "creating on first use…" :
+    data?.status === "stopped" ? "starting…" :
+    data?.status === "unavailable" ? "docker unreachable" : data?.status ?? "…";
 
   return (
     <Card className="p-4">
-      <p className="text-sm font-medium text-fg">Bot computer</p>
-      <p className="mb-3 text-xs text-fg-subtle">
-        Docker = an isolated container with its own filesystem, shells, and browser (requires the kuclab-hertz-computer image).
-      </p>
-      <div className="flex items-center gap-2">
-        <select
-          value={effectiveBackend}
-          onChange={(e) => patch.mutate({ computerBackend: e.target.value })}
-          className="h-9 flex-1 rounded-md border border-border bg-bg-raised px-3 text-sm text-fg outline-none focus:border-accent"
-        >
-          <option value="local">local — on the host machine</option>
-          <option value="docker">docker — dedicated container</option>
-        </select>
-        <Badge tone={effectiveBackend === "docker" ? (data?.status === "running" ? "success" : "warning") : "neutral"}>
-          {effectiveBackend === "docker" ? data?.status ?? "?" : "local"}
-        </Badge>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-fg">Bot computer</p>
+        <Badge tone={statusTone}>{isLoading ? "…" : statusLabel}</Badge>
       </div>
-      {effectiveBackend === "docker" && data?.status === "unavailable" && (
-        <p className="mt-2 rounded-md bg-warning-wash p-2 text-xs text-warning">
-          Docker isn't accessible to the Hertz service. Re-run the installer (it adds the service user to the docker
-          group and restarts the service), then click Restart here.
+      <p className="mb-3 text-xs text-fg-subtle">
+        Every bot gets its own isolated computer (Docker container with Xfce desktop, shells and browser) — set up
+        automatically, no configuration needed.
+      </p>
+      {data?.status === "unavailable" && (
+        <p className="mb-2 rounded-md bg-warning-wash p-2 text-xs text-warning">
+          Docker isn't reachable from the Hertz service. Re-run the installer — it grants access automatically.
         </p>
       )}
-      {effectiveBackend === "docker" && (
-        <div className="mt-3 space-y-2">
-          <div className="flex gap-2">
-            <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="kuclab-hertz-computer:latest" className="h-8 text-xs" />
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                patch.mutate({ computerImage: image.trim() || null });
-                restart.mutate();
-              }}
-            >
-              Restart
-            </Button>
-          </div>
-          {data?.containerName && <p className="mono truncate text-xs text-fg-subtle">{data.containerName}</p>}
-        </div>
-      )}
+      {data?.error && <p className="mb-2 rounded-md bg-danger-wash p-2 text-xs text-danger">{data.error}</p>}
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="secondary" onClick={() => restart.mutate()} disabled={restart.isPending}>
+          {restart.isPending ? "Recreating…" : "Recreate computer"}
+        </Button>
+        {data?.containerName && <span className="mono truncate text-xs text-fg-subtle">{data.containerName}</span>}
+      </div>
     </Card>
   );
 }

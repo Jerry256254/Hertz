@@ -11,6 +11,7 @@ import { buildSystemPrompt } from "../agents/system-prompt.js";
 import type { JobQueue, JobHandler } from "../queue/job-queue.js";
 import type { ComputerManager } from "../computer/computer-manager.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
+import { maybeConsolidateMemory } from "../memory/consolidation.js";
 import { runGroupTurn } from "../groups.js";
 
 /** Text of the most recent real (non-tool-result) user message — the group trigger. */
@@ -230,5 +231,12 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
       },
       payload.userMessage ?? [],
     );
+
+    // Smart memory: periodically let the agent consolidate its own memory
+    // (dedupe episodes into facts, update soul.md). Fire-and-forget.
+    void maybeConsolidateMemory(
+      { db: deps.db, paths: deps.paths, providers: deps.providers },
+      agent.id,
+    ).catch(() => {});
   };
 }

@@ -3,6 +3,7 @@ import type { Database } from "../db/client.js";
 import { agentMemory, agents } from "../db/schema.js";
 import { recentConversationMessagesFor } from "../conversations.js";
 import { skillsIndexFor, type SkillIndexEntry } from "../tools/skill-tools.js";
+import { loadSoul } from "../memory/consolidation.js";
 import type { HertzPaths } from "../paths.js";
 
 const RECENT_MESSAGE_COUNT = 5;
@@ -82,6 +83,13 @@ export async function buildSystemPrompt(
   const notes = selectRelevantMemories([...allNotesDesc].reverse(), contextTail);
 
   let prompt = agent.systemPrompt ?? "";
+
+  if (opts.paths) {
+    const soul = await loadSoul(opts.paths, agent.id);
+    if (soul) {
+      prompt += `\n\n## Your soul (self-maintained)\n${soul}\nKeep this current — it is your living self-image.`;
+    }
+  }
 
   if (opts.visionSupport !== undefined) {
     prompt += opts.visionSupport

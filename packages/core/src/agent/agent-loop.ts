@@ -79,6 +79,24 @@ function safeJsonParse(raw: string): unknown {
   }
 }
 
+/**
+ * Trivial exchanges ("hi", "thanks", one-word pings) carry zero long-term
+ * value — auto-capturing them is what made memory feel like a log of noise.
+ * Deliberate remember/save_skill notes are unaffected.
+ */
+function isTrivialExchange(userMessage: ContentBlock[], statusLine: string): boolean {
+  const text = userMessage
+    .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join(" ")
+    .trim();
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (words > 0 && words <= 3) return true;
+  if (/^(aho[jy]|čau|cau|zdravím|zdravim|hi\b|hello\b|hey\b|dík|dik|díky|diky|thanks?|ok\b|pokec)/i.test(text)) return true;
+  if (/^(done|hotovo|ok)\.?$/i.test(statusLine.trim())) return true;
+  return false;
+}
+
 function isAbortError(err: unknown): boolean {
   return !!err && typeof err === "object" && (err as Error).name === "AbortError";
 }
@@ -611,7 +629,7 @@ export class AgentLoopManager {
         // Auto-captured, in addition to whatever the agent chose to remember itself via
         // the remember tool — the point is every exchange leaves *something* behind,
         // not just the ones the model happened to judge worth a deliberate note.
-        if (!config.suppressAutoMemory) {
+        if (!config.suppressAutoMemory && !isTrivialExchange(userMessage, statusLine)) {
           await persistence.appendMemoryNote(
             config.agentId,
             `Was told: ${extractTextSummary(userMessage, 200)} — ${statusLine}`,
