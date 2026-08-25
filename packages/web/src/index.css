@@ -2,11 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
-
-/* Agent mascot avatars — static emoji faces (no animation) */
+/* Squircle avatar — less generic than perfect circle */
 .agent-mascot {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
-  border: 1px solid var(--border, #2a2d33);
+  background: color-mix(in srgb, var(--color-bg-sunken) 92%, white 8%);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
   cursor: default;
   user-select: none;
+}
+
+/* Container — keeps content from stretching edge-to-edge on wide monitors */
+.container-app {
+  width: min(1240px, 100% - 32px);
+  margin-inline: auto;
+}
+@media (min-width: 768px) {
+  .container-app { width: min(1240px, 100% - 48px); }
 }

@@ -322,13 +322,13 @@ export function SessionPage() {
   return (
     <div className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-1 ${showFiles || showScreen ? "md:grid-cols-[1fr_340px]" : "md:grid-cols-[1fr_0px]"}`}>
       <div className="flex min-w-0 flex-col">
-        <header className="flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border px-6">
+        <header className="flex h-[52px] shrink-0 items-center justify-between gap-3 border-b border-border bg-bg/80 backdrop-blur-[8px] px-4 md:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             {data?.agent ? (
               <>
                 <Avatar label={data.agent.name} mascot={data.agent.mascot} />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-fg">{data.agent.name}</p>
+                  <p className="truncate text-[14px] font-[650] tracking-[-0.015em] text-fg">{data.agent.name}</p>
                   <p className="truncate text-[11px] text-fg-subtle">{isRunning ? "working…" : data.session.status === "awaiting_input" ? "waiting for you" : "online"}</p>
                 </div>
               </>
@@ -384,9 +384,9 @@ export function SessionPage() {
             )}
             {budget && budget.used > 0 && (
               <div className="flex items-center gap-2">
-                <div className="h-1.5 w-28 overflow-hidden rounded-full bg-bg-sunken">
+                <div className="h-1 w-24 overflow-hidden rounded-full bg-bg-sunken">
                   <div
-                    className="h-full rounded-full bg-accent transition-[width] duration-300"
+                    className="h-full rounded-full bg-fg-muted transition-[width] duration-300"
                     style={{ width: `${Math.min(100, budget.percent)}%` }}
                   />
                 </div>
@@ -536,7 +536,7 @@ export function SessionPage() {
               e.preventDefault();
               void onFiles(e.dataTransfer.files);
             }}
-            className="relative mx-auto flex max-w-3xl items-center gap-1 rounded-full border border-border bg-bg-raised py-1 pl-2 pr-1.5 shadow-sm focus-within:border-border-strong"
+            className="relative mx-auto flex max-w-3xl items-center gap-1 rounded-[16px] border border-border bg-bg-raised py-1.5 pl-2 pr-1.5 shadow-sm focus-within:border-border-strong focus-within:shadow-md"
           >
             {showJumpToBottom && (
               <button

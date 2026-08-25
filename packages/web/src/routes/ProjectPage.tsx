@@ -243,18 +243,18 @@ export function ProjectPage() {
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-1 md:grid-cols-[1fr_320px]">
       <div className="overflow-auto px-4 py-6 md:px-6">
-        <div className="mb-6 flex items-center gap-2">
-          <FolderGit2 size={18} className="text-accent" />
-          <div>
-            <h1 className="text-base font-semibold leading-tight text-fg">{project?.name}</h1>
-            <p className="mono text-xs leading-tight text-fg-subtle">{project?.roots[0]?.absolutePath}</p>
+        <div className="mb-7 flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-bg-sunken text-fg-subtle"><FolderGit2 size={16} strokeWidth={1.7} /></span>
+          <div className="min-w-0">
+            <h1 className="font-serif text-[20px] font-[600] tracking-[-0.02em] leading-none text-fg">{project?.name}</h1>
+            <p className="mono mt-0.5 text-[12px] leading-none text-fg-subtle truncate">{project?.roots[0]?.absolutePath}</p>
           </div>
         </div>
 
         {user?.role === "admin" && projectId && <ProjectAccessSection projectId={projectId} />}
 
         {project && (
-          <Card className="mb-6 flex items-center justify-between p-3">
+          <Card className="mb-6 flex items-center justify-between gap-4 p-4">
             <div>
               <p className="text-sm font-medium text-fg">Auto-approve manager requests</p>
               <p className="text-xs text-fg-subtle">
@@ -295,7 +295,7 @@ export function ProjectPage() {
 
         {manager && (
           <div className="mb-6">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Manager</h2>
+            <h2 className="mb-2 px-0.5 text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">Manager</h2>
             <Card className="flex items-center justify-between p-3">
               <button
                 onClick={() => navigate(`/projects/${projectId}/agents/${manager.id}`)}
@@ -322,7 +322,7 @@ export function ProjectPage() {
 
         {pendingTerminations.length > 0 && (
           <div className="mb-6">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            <h2 className="mb-2 text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">
               Pending termination · {pendingTerminations.length}
             </h2>
             <ul className="space-y-2">
@@ -366,7 +366,7 @@ export function ProjectPage() {
         )}
 
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Team</h2>
+          <h2 className="text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">Team</h2>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowGroupDialog(true)}
@@ -440,7 +440,7 @@ export function ProjectPage() {
         )}
 
         <div className="mb-3 mt-8 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Meetings</h2>
+          <h2 className="text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">Meetings</h2>
           <button
             onClick={() => setShowMeetingDialog(true)}
             disabled={employees.length < 1}
@@ -474,7 +474,7 @@ export function ProjectPage() {
         )}
 
         <div className="mb-3 mt-8 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Tasks</h2>
+          <h2 className="text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">Tasks</h2>
           <button
             onClick={() => setShowTaskDialog(true)}
             disabled={employees.length < 1}
@@ -498,7 +498,7 @@ export function ProjectPage() {
         )}
 
         <div className="mb-3 mt-8 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Routines</h2>
+          <h2 className="text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">Routines</h2>
           <button
             onClick={() => setShowRoutineDialog(true)}
             disabled={employees.length < 1}
@@ -548,7 +548,7 @@ export function ProjectPage() {
 
         {conversations.length > 0 && (
           <>
-            <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            <h2 className="mb-3 mt-8 text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">
               Direct messages
             </h2>
             <Card className="max-h-64 space-y-1 overflow-y-auto p-2">

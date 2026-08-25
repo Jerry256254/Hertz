@@ -10,17 +10,17 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "outline";
 type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: "bg-gradient-accent text-accent-fg shadow-lg shadow-accent-glow hover:shadow-md hover:shadow-accent-glow transition-all",
-  secondary: "bg-bg-raised text-fg border border-border hover:bg-bg-hover hover:border-border-strong transition-all",
-  ghost: "text-fg-muted hover:text-fg hover:bg-bg-hover transition-all",
-  danger: "bg-danger-wash text-danger hover:bg-danger hover:text-danger-fg transition-all",
-  outline: "text-accent border border-accent hover:bg-accent-wash hover:text-accent-fg transition-all",
+  primary: "bg-accent text-accent-fg shadow-sm hover:bg-accent-hover hover:shadow-md active:scale-[0.98] active:translate-y-px",
+  secondary: "bg-bg-raised text-fg border border-border hover:bg-bg-hover hover:border-border-strong active:scale-[0.98]",
+  ghost: "text-fg-muted hover:text-fg hover:bg-bg-hover active:scale-[0.98]",
+  danger: "bg-danger-wash text-danger border border-transparent hover:bg-danger hover:text-white hover:border-danger active:scale-[0.98]",
+  outline: "text-fg border border-border-strong hover:border-fg-muted hover:bg-bg-hover active:scale-[0.98]",
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: "h-7 px-3 text-xs gap-1.5",
-  md: "h-9 px-4 text-sm gap-2",
-  lg: "h-11 px-6 text-base gap-2.5",
+  sm: "h-[30px] px-3 text-[13px] gap-1.5 rounded-[10px]",
+  md: "h-9 px-4 text-[14px] gap-2 rounded-[12px]",
+  lg: "h-11 px-6 text-[15px] gap-2.5 rounded-[12px]",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -32,7 +32,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = "secondary", size = "md", className = "", ...props }, ref) => (
     <button
       ref={ref}
-      className={`inline-flex items-center justify-center rounded-lg font-medium disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={`inline-flex items-center justify-center font-[550] tracking-[-0.01em] disabled:cursor-not-allowed disabled:opacity-50 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
       {...props}
     />
   ),
@@ -43,7 +43,7 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
   ({ className = "", ...props }, ref) => (
     <button
       ref={ref}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-accent transition-all disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-[10px] text-fg-muted hover:bg-bg-hover hover:text-fg active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
       {...props}
     />
   ),
@@ -54,7 +54,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ({ className = "", ...props }, ref) => (
     <input
       ref={ref}
-      className={`h-9 w-full rounded-md border border-border bg-bg-raised px-3.5 text-base text-fg placeholder:text-fg-subtle outline-none transition-all focus:border-accent focus:shadow-glow-sm disabled:opacity-50 ${className}`}
+      className={`h-9 w-full rounded-[12px] border border-border bg-bg-raised px-3.5 text-[14.5px] text-fg placeholder:text-fg-subtle outline-none focus:border-border-strong focus:bg-bg-raised disabled:opacity-50 ${className}`}
       {...props}
     />
   ),
@@ -65,7 +65,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   ({ className = "", ...props }, ref) => (
     <textarea
       ref={ref}
-      className={`w-full resize-none rounded-md border border-border bg-bg-raised px-3.5 py-2.5 text-base text-fg placeholder:text-fg-subtle outline-none transition-all focus:border-accent focus:shadow-glow-sm disabled:opacity-50 ${className}`}
+      className={`w-full resize-none rounded-[12px] border border-border bg-bg-raised px-3.5 py-2.5 text-[14.5px] text-fg placeholder:text-fg-subtle outline-none focus:border-border-strong disabled:opacity-50 ${className}`}
       {...props}
     />
   ),
@@ -73,23 +73,23 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
 Textarea.displayName = "Textarea";
 
 export function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <label className={`mb-2 block text-sm font-medium text-fg-muted ${className}`}>{children}</label>;
+  return <label className={`mb-1.5 block text-[12.5px] font-[550] tracking-[-0.01em] text-fg-muted ${className}`}>{children}</label>;
 }
 
 type BadgeTone = "neutral" | "accent" | "success" | "warning" | "danger";
 
 const BADGE_TONE_CLASSES: Record<BadgeTone, string> = {
-  neutral: "bg-bg-sunken text-fg-muted",
-  accent: "bg-accent-wash text-accent",
-  success: "bg-success-wash text-success",
-  warning: "bg-warning-wash text-warning",
-  danger: "bg-danger-wash text-danger",
+  neutral: "bg-bg-sunken text-fg-muted border border-border",
+  accent: "bg-accent-wash text-fg border border-border",
+  success: "bg-success-wash text-success border border-transparent",
+  warning: "bg-warning-wash text-warning border border-transparent",
+  danger: "bg-danger-wash text-danger border border-transparent",
 };
 
 export function Badge({ children, tone = "neutral", className = "" }: { children: ReactNode; tone?: BadgeTone; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium leading-none ${BADGE_TONE_CLASSES[tone]} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-[8px] px-2 py-1 text-[11px] font-[600] leading-none tracking-[0.01em] ${BADGE_TONE_CLASSES[tone]} ${className}`}
     >
       {children}
     </span>
@@ -133,7 +133,7 @@ export function Avatar({
 
 export function Card({ children, className = "", padded = true }: { children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <div className={`rounded-xl border border-border bg-bg-raised shadow-sm ${padded ? "p-5" : ""} ${className}`}>
+    <div className={`rounded-[16px] border border-border bg-bg-raised ${padded ? "p-5" : ""} ${className}`}>
       {children}
     </div>
   );
@@ -176,10 +176,10 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 px-8 py-16 text-center">
-      {icon && <div className="text-fg-subtle text-4xl">{icon}</div>}
+      {icon && <div className="rounded-[16px] bg-bg-sunken p-4 text-fg-subtle">{icon}</div>}
       <div>
-        <p className="text-lg font-semibold text-fg">{title}</p>
-        {description && <p className="mx-auto mt-2 max-w-md text-base text-fg-muted">{description}</p>}
+        <p className="text-[15px] font-[650] tracking-[-0.02em] text-fg">{title}</p>
+        {description && <p className="mx-auto mt-1.5 max-w-[36ch] text-[14px] leading-relaxed text-fg-muted">{description}</p>}
       </div>
       {action && <div className="mt-2">{action}</div>}
     </div>
@@ -191,10 +191,10 @@ export function Separator({ className = "" }: { className?: string }) {
   return <div className={`h-px w-full bg-border ${className}`} />;
 }
 
-// Modern hover card
+// Hover card — spotlight border on hover, subtle lift
 export function HoverCard({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-lg border border-border bg-bg-raised p-4 shadow-sm transition-all hover:border-border-strong hover:shadow-md ${className}`}>
+    <div className={`group rounded-[14px] border border-border bg-bg-raised p-4 hover:border-border-strong hover:bg-bg-raised hover:shadow-sm active:scale-[0.99] ${className}`}>
       {children}
     </div>
   );

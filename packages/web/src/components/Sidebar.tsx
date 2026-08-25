@@ -4,24 +4,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight,
   Search,
-  Cog,
-  FolderGit2,
-  Loader2,
+  Settings2,
+  Folder,
   LogOut,
   MessagesSquare,
-  Pause,
   Plug,
   Plus,
   RefreshCw,
   ShieldCheck,
   Users,
   X,
-} from "lucide-react";import { api } from "../lib/api";
+} from "lucide-react";
+import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { HertzSession, Project } from "../lib/types";
 import { Avatar, Button, IconButton } from "./ui";
-import { agentColor } from "../lib/agent-color";
-import { DeleteButton } from "./DeleteButton";
 
 interface SidebarSession extends HertzSession {
   agentName: string;
@@ -48,14 +45,6 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
     refetchInterval: 6000,
   });
 
-  const deleteSession = useMutation({
-    mutationFn: (sessionId: string) => api.delete(`/sessions/${sessionId}`),
-    onSuccess: (_data, sessionId) => {
-      void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
-      if (params.sessionId === sessionId) navigate(`/projects/${params.projectId}`);
-    },
-  });
-
   const sessionsByProject = useMemo(() => {
     const q = query.trim().toLowerCase();
     const map = new Map<string, SidebarSession[]>();
@@ -80,13 +69,18 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   const projects = projectsData?.projects ?? [];
 
   return (
-    <aside className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border bg-bg-sidebar">
-      <div className="flex h-14 flex-shrink-0 items-center gap-3 px-4">
-        <span className="text-base font-semibold tracking-tight text-fg">Hertz Jobs</span>
+    <aside className="flex h-full w-full flex-col bg-bg-sidebar">
+      {/* Header — wordmark, not centered, with subtle baseline */}
+      <div className="flex h-[56px] shrink-0 items-center gap-3 border-b border-border px-4">
+        <div className="flex h-7 w-7 items-center justify-center rounded-[9px] bg-fg text-bg text-[13px] font-[700] tracking-[-0.02em]">H</div>
+        <div className="min-w-0 leading-none">
+          <div className="text-[14px] font-[650] tracking-[-0.02em] text-fg">Hertz</div>
+          <div className="text-[11px] font-medium text-fg-subtle -mt-0.5">workspace</div>
+        </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-accent md:hidden transition-all"
+            className="ml-auto flex h-8 w-8 items-center justify-center rounded-[10px] text-fg-subtle hover:bg-bg-hover hover:text-fg md:hidden"
             aria-label="Close menu"
           >
             <X size={16} />
@@ -94,62 +88,58 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
         )}
       </div>
 
-      <div className="space-y-2 px-3">
-        <div className="flex h-9 items-center gap-2 rounded-xl border border-border bg-bg-raised px-3 focus-within:border-border-strong">
-          <Search size={14} className="flex-shrink-0 text-fg-subtle" />
+      {/* Search + new */}
+      <div className="p-3">
+        <label className="flex h-9 items-center gap-2.5 rounded-[12px] border border-border bg-bg-raised px-3 focus-within:border-border-strong focus-within:bg-bg-raised">
+          <Search size={14} className="shrink-0 text-fg-subtle" strokeWidth={1.9} />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search chats"
-            className="w-full border-0 bg-transparent text-sm text-fg placeholder:text-fg-subtle outline-none"
+            placeholder="Search"
+            className="w-full bg-transparent text-[13.5px] text-fg placeholder:text-fg-subtle outline-none"
           />
-        </div>
+        </label>
         <button
           onClick={() => navigate("/")}
-          className="flex w-full items-center gap-2.5 rounded-xl bg-bg-raised px-3.5 py-2.5 text-sm font-medium text-fg shadow-sm transition-all hover:bg-bg-hover group"
+          className="mt-2 flex h-9 w-full items-center justify-center gap-2 rounded-[12px] border border-border bg-bg-raised text-[13.5px] font-[550] tracking-[-0.01em] text-fg hover:border-border-strong hover:bg-bg-hover active:scale-[0.99]"
         >
-          <Plus size={16} className="text-accent group-hover:scale-110 transition-transform" />
-          Create new
+          <Plus size={14} strokeWidth={2} /> New project
         </button>
       </div>
 
-      <nav className="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Projects</p>
+      {/* Projects — generous whitespace, not cramped */}
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+        <div className="mb-2 mt-1 px-1 text-[11.5px] font-[600] tracking-[-0.01em] text-fg-subtle">Projects</div>
         {projects.length === 0 && (
-          <p className="px-2 py-2 text-xs text-fg-subtle">No projects yet — create one from the dashboard.</p>
+          <p className="px-1 py-2 text-[13px] leading-relaxed text-fg-subtle">No projects yet — create one from the dashboard.</p>
         )}
-        <ul>
+        <ul className="space-y-1">
           {projects.map((project) => {
             const sessions = (sessionsByProject.get(project.id) ?? []).slice(0, 8);
             const isCollapsed = collapsed.has(project.id);
             const isActiveProject = params.projectId === project.id;
             return (
-              <li key={project.id} className="mb-0.5">
+              <li key={project.id}>
                 <div
-                  className={`group flex items-center gap-1.5 rounded-lg px-2 py-1.5 ${
-                    isActiveProject && !params.sessionId ? "bg-bg-hover" : "hover:bg-bg-hover"
-                  } transition-colors`}
+                  className={`group flex items-center gap-1 rounded-[10px] px-1 py-1 ${isActiveProject ? "bg-bg-raised" : "hover:bg-bg-raised"}`}
                 >
-                  <button onClick={() => toggle(project.id)} className="text-fg-subtle hover:text-fg transition-colors">
-                    <ChevronRight
-                      size={14}
-                      className={`transition-transform duration-200 ${isCollapsed ? "" : "rotate-90"}`}
-                    />
+                  <button
+                    onClick={() => toggle(project.id)}
+                    className="flex h-6 w-6 items-center justify-center rounded-[7px] text-fg-subtle hover:bg-bg-hover hover:text-fg"
+                    aria-label={isCollapsed ? "Expand" : "Collapse"}
+                  >
+                    <ChevronRight size={13} strokeWidth={1.9} className={`transition-transform duration-150 ${isCollapsed ? "" : "rotate-90"}`} />
                   </button>
                   <Link
                     to={`/projects/${project.id}`}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-sm text-fg hover:text-accent transition-colors"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-[8px] px-1 py-1 text-[13.5px] font-[500] tracking-[-0.01em] text-fg hover:text-fg"
                   >
-                    <FolderGit2 size={15} className="flex-shrink-0 text-fg-subtle" />
-                    <span className="truncate font-medium">{project.name}</span>
+                    <Folder size={14} strokeWidth={1.85} className="shrink-0 text-fg-subtle group-hover:text-fg-muted" />
+                    <span className="truncate">{project.name}</span>
                   </Link>
                 </div>
-                                {!isCollapsed && (
-                  <ProjectContacts
-                    projectId={project.id}
-                    activeSessionId={params.sessionId}
-                    sessions={sessions}
-                  />
+                {!isCollapsed && (
+                  <ProjectContacts projectId={project.id} activeSessionId={params.sessionId} sessions={sessions} />
                 )}
               </li>
             );
@@ -157,45 +147,33 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
         </ul>
       </nav>
 
-      <div className="flex-shrink-0 border-t border-border p-2">
-        <Link
-          to="/approvals"
-          className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
-        >
-          <ShieldCheck size={15} />
-          Approvals
-        </Link>
-        {user?.role === "admin" && <UpdateButton />}
-        <Link
-          to="/integrations"
-          className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
-        >
-          <Plug size={15} />
-          Integrations
-        </Link>
-        <Link
-          to="/providers"
-          className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
-        >
-          <Cog size={15} />
-          Providers
-        </Link>
-        {user?.role === "admin" && (
-          <Link
-            to="/users"
-            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-fg-muted hover:bg-bg-hover hover:text-accent transition-colors"
-          >
-            <Users size={15} />
-            Users
+      {/* Bottom — quiet, not a wall of links. Single accent only via Update. */}
+      <div className="shrink-0 border-t border-border p-2">
+        <div className="space-y-0.5">
+          <Link to="/approvals" className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
+            <ShieldCheck size={14} strokeWidth={1.85} /> Approvals
           </Link>
-        )}
-        <div className="mt-2 flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 bg-bg-raised">
-          <Link to="/account" className="flex min-w-0 flex-1 items-center gap-2 hover:opacity-80">
+          {user?.role === "admin" && <UpdateButton />}
+          <Link to="/integrations" className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
+            <Plug size={14} strokeWidth={1.85} /> Integrations
+          </Link>
+          <Link to="/providers" className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
+            <Settings2 size={14} strokeWidth={1.85} /> Providers
+          </Link>
+          {user?.role === "admin" && (
+            <Link to="/users" className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
+              <Users size={14} strokeWidth={1.85} /> Users
+            </Link>
+          )}
+        </div>
+
+        <div className="mt-2 flex items-center gap-2 rounded-[12px] border border-border bg-bg-raised px-2 py-2">
+          <Link to="/account" className="flex min-w-0 flex-1 items-center gap-2.5">
             <Avatar label={user?.email ?? "?"} />
-            <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{user?.email}</span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] font-[500] tracking-[-0.01em] text-fg-muted">{user?.email}</span>
           </Link>
-          <IconButton title="Log out" onClick={() => void logout()}>
-            <LogOut size={14} />
+          <IconButton title="Log out" onClick={() => void logout()} className="h-7 w-7 rounded-[9px]">
+            <LogOut size={13} strokeWidth={1.85} />
           </IconButton>
         </div>
       </div>
@@ -229,7 +207,6 @@ function UpdateButton() {
     refetchInterval: open ? 2000 : false,
   });
 
-  // When the update finishes (health poll line appears), reload into the new version.
   const finished = data?.log.includes("UPDATE OK") ?? false;
   useEffect(() => {
     if (finished) {
@@ -250,67 +227,47 @@ function UpdateButton() {
           if (!startUpdate.isPending && !data?.running && !finished) startUpdate.mutate();
           setOpen(true);
         }}
-        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors disabled:opacity-50 ${
-          updateAvailable
-            ? "bg-accent-wash text-accent font-medium hover:bg-accent hover:text-accent-fg"
-            : "text-fg-muted hover:bg-bg-hover hover:text-accent"
+        className={`flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-[13px] font-[500] ${
+          updateAvailable ? "bg-fg text-bg hover:bg-fg/90" : "text-fg-muted hover:bg-bg-raised hover:text-fg"
         }`}
       >
-        <RefreshCw size={15} className={data?.running ? "animate-spin" : ""} />
-        Update Hertz
-        {updateAvailable && (
-          <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-fg">
-            NEW
-          </span>
-        )}
+        <RefreshCw size={13} strokeWidth={1.9} className={data?.running ? "animate-spin" : ""} />
+        Update
+        {updateAvailable && <span className="ml-auto rounded-[7px] bg-bg px-1.5 py-0.5 text-[10px] font-[700] tracking-wide text-fg">NEW</span>}
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !data?.running && setOpen(false)}>
-          <div className="w-full max-w-lg rounded-xl border border-border bg-bg-raised p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center gap-2">
-              <RefreshCw size={15} className={data?.running ? "animate-spin text-accent" : "text-accent"} />
-              <span className="text-sm font-medium text-fg">
-                {data?.running ? "Updating Hertz…" : finished ? "Updated — reloading…" : "Update Hertz"}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay p-4 backdrop-blur-[6px]" onClick={() => !data?.running && setOpen(false)}>
+          <div className="w-full max-w-[560px] rounded-[16px] border border-border bg-bg-raised p-4 shadow-popover" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-2.5">
+              <RefreshCw size={14} strokeWidth={1.9} className={data?.running ? "animate-spin text-fg" : "text-fg-subtle"} />
+              <span className="text-[13.5px] font-[600] tracking-[-0.01em] text-fg">
+                {data?.running ? "Updating…" : finished ? "Updated — reloading" : "Update Hertz"}
               </span>
             </div>
-            {updateAvailable && (
-              <div className="mb-3 rounded-md bg-accent-wash px-3 py-2 text-xs font-medium text-accent">
-                Update available — click the button below, watch the log, the page reconnects when done.
-              </div>
-            )}
             {versions && (
-              <div className="mb-3 rounded-md bg-bg-sunken px-3 py-2 text-xs text-fg-muted">
-                Installed: <span className="mono text-fg">v{versions.current.version}</span> ({versions.current.sha || "?"})
+              <div className="mb-3 rounded-[10px] bg-bg-sunken px-3 py-2.5 text-[12.5px] leading-relaxed text-fg-muted">
+                Installed <span className="mono font-medium text-fg">v{versions.current.version}</span> <span className="text-fg-subtle">({versions.current.sha || "?"})</span>
                 {versions.latest && (
                   <>
-                    {" · "}Latest release:{" "}
-                    <a href={versions.latest.url} target="_blank" rel="noreferrer" className="text-accent underline">
+                    {" · "}Latest{" "}
+                    <a href={versions.latest.url} target="_blank" rel="noreferrer" className="underline decoration-border-strong underline-offset-4 hover:text-fg">
                       {versions.latest.tag}
                     </a>
-                    {updateAvailable && <span className="ml-1 font-medium text-warning">— update available</span>}
+                    {updateAvailable && <span className="ml-1 font-[600] text-fg">— update available</span>}
                   </>
                 )}
               </div>
             )}
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-bg-sunken p-3 text-[11px] text-fg-muted">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-[12px] border border-border bg-bg-sunken p-3 text-[11.5px] leading-relaxed text-fg-muted">
               {data?.log || "Starting…"}
             </pre>
-            <div className="mt-3 flex items-center justify-between">
+            <div className="mt-3 flex items-center justify-end gap-2">
               {!data?.running && !finished && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => startUpdate.mutate()}
-                  disabled={startUpdate.isPending}
-                >
+                <Button variant="primary" size="sm" onClick={() => startUpdate.mutate()} disabled={startUpdate.isPending}>
                   <RefreshCw size={13} /> Update now
                 </Button>
               )}
-              <span className="flex-1" />
-              <button
-                className="rounded-md px-3 py-1.5 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg"
-                onClick={() => setOpen(false)}
-              >
+              <button className="rounded-[10px] px-3 py-1.5 text-[13px] font-medium text-fg-muted hover:bg-bg-hover hover:text-fg" onClick={() => setOpen(false)}>
                 {data?.running ? "Hide" : "Close"}
               </button>
             </div>
@@ -330,11 +287,6 @@ interface ContactAgent {
   lastStatus: string | null;
 }
 
-/**
- * Contacts model: under each project the sidebar lists its AGENTS (contacts),
- * not raw chats. Clicking a contact opens that agent's ONE permanent thread
- * (created on first touch). Group chats are listed below the contacts.
- */
 function ProjectContacts({
   projectId,
   activeSessionId,
@@ -363,64 +315,57 @@ function ProjectContacts({
   const groups = sessions.filter((s) => s.kind === "group");
 
   return (
-    <div className="ml-4 border-l border-border pl-2">
-      <p className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Contacts</p>
-      <ul>
+    <div className="ml-[18px] mt-1 border-l border-border pl-3">
+      <ul className="space-y-0.5">
         {(agentsData?.agents ?? []).map((a) => {
           const running = a.status === "running";
           return (
             <li key={a.id}>
               <button
                 onClick={() => ensureChat.mutate(a.id)}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
-                  running ? "bg-bg-hover" : "hover:bg-bg-hover"
-                }`}
+                className={`flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left hover:bg-bg-raised ${running ? "bg-bg-raised" : ""}`}
                 title={a.lastStatus ?? a.role}
               >
                 <Avatar label={a.name} mascot={a.mascot} animate={running} />
-                <span className="min-w-0 flex-1">
+                <span className="min-w-0 flex-1 leading-none">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-sm text-fg">{a.name}</span>
+                    <span className="truncate text-[13px] font-[550] tracking-[-0.01em] text-fg">{a.name}</span>
                     {a.role === "manager" && (
-                      <span className="flex-shrink-0 rounded bg-bg-sunken px-1 text-[9px] font-semibold uppercase text-fg-subtle">
-                        lead
-                      </span>
+                      <span className="rounded-[6px] border border-border bg-bg-sunken px-1 py-0.5 text-[10px] font-[600] leading-none tracking-wide text-fg-subtle">lead</span>
                     )}
                   </span>
-                  <span className="block truncate text-xs text-fg-subtle">{a.lastStatus ?? a.role}</span>
+                  <span className="block truncate text-[11.5px] leading-none text-fg-subtle mt-1">{a.lastStatus ?? a.role}</span>
                 </span>
-                {running && <span className="h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-accent" />}
+                {running && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-fg" />}
               </button>
             </li>
           );
         })}
         {(agentsData?.agents ?? []).length === 0 && (
-          <li className="px-2 py-1.5 text-xs text-fg-subtle">No bots yet — open the project to hire.</li>
+          <li className="px-2 py-1 text-[12.5px] text-fg-subtle">No bots yet — open the project.</li>
         )}
       </ul>
 
       {groups.length > 0 && (
-        <>
-          <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Groups</p>
-          <ul>
+        <div className="mt-3">
+          <div className="px-2 pb-1 text-[11px] font-[600] tracking-[0.02em] text-fg-subtle">Groups</div>
+          <ul className="space-y-0.5">
             {groups.map((session) => {
               const isActive = activeSessionId === session.id;
               return (
                 <li key={session.id}>
                   <Link
                     to={`/projects/${projectId}/sessions/${session.id}`}
-                    className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
-                      isActive ? "bg-accent-wash text-accent" : "text-fg-muted hover:bg-bg-hover hover:text-fg"
-                    }`}
+                    className={`flex items-center gap-2 rounded-[10px] px-2 py-1.5 text-[13px] ${isActive ? "bg-fg text-bg" : "text-fg-muted hover:bg-bg-raised hover:text-fg"}`}
                   >
-                    <MessagesSquare size={13} className="flex-shrink-0 text-fg-subtle" />
-                    <span className="truncate">{session.title}</span>
+                    <MessagesSquare size={13} strokeWidth={1.85} className={isActive ? "text-bg/70" : "text-fg-subtle"} />
+                    <span className="truncate font-[500]">{session.title}</span>
                   </Link>
                 </li>
               );
             })}
           </ul>
-        </>
+        </div>
       )}
     </div>
   );
