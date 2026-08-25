@@ -14,6 +14,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers: body !== undefined ? { "content-type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401) { try { window.location.href = "/login"; } catch {} }
   if (!res.ok) {
     let message = res.statusText;
     try {

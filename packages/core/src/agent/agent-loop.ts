@@ -501,8 +501,7 @@ export class AgentLoopManager {
       // the UI) and continue with the fresh, small history. Runs at most once
       // per turn, before the model call.
       if (history.length > 12) {
-        const last = history[history.length - 1]!;
-        const budget = computeBudget([last]);
+        const budget = computeBudget(history);
         if (needsSummarization(budget, 85)) {
           this.emit(config.sessionId, { type: "notice", message: "Context window nearly full — auto-compacting the conversation." });
           try {
@@ -774,7 +773,7 @@ export class AgentLoopManager {
       // decision arrives via the approvals inbox, a chat answer, or a channel.
       if (pendingAwait) {
         const meta = (await persistence.getSessionMetadata(config.sessionId)) ?? {};
-        await persistence.setSessionMetadata(config.sessionId, { ...meta, pendingQuestion: pendingAwait.question });
+        await persistence.setSessionMetadata(config.sessionId, { ...meta, pendingQuestion: pendingAwait.question, pendingQuestionAgentId: config.agentId });
         await persistence.updateSessionStatus(config.sessionId, "awaiting_input");
         this.emit(config.sessionId, { type: "awaiting_input", question: pendingAwait.question });
         return;
@@ -830,22 +829,16 @@ export class AgentLoopManager {
  */
 export async function repairSessionHistory(persistence: PersistencePort, sessionId: string): Promise<boolean> {
   const history = await persistence.listMessages(sessionId);
-  const last = history[history.length - 1];
-  if (!last || last.role !== "assistant") return false;
-
-  const toolUseIds = last.content
-    .filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use")
-    .map((b) => b.id);
-  if (toolUseIds.length === 0) return false;
-
+  // Scan entire history for any tool_use without matching tool_result (not just last message)
+  const allToolUses: string[] = [];
   const covered = new Set<string>();
-  for (const message of history.slice(history.indexOf(last) + 1)) {
+  for (const message of history) {
     for (const block of message.content) {
+      if (block.type === "tool_use") allToolUses.push(block.id);
       if (block.type === "tool_result") covered.add(block.toolUseId);
     }
   }
-
-  const missing = toolUseIds.filter((id) => !covered.has(id));
+  const missing = allToolUses.filter((id) => !covered.has(id));
   if (missing.length === 0) return false;
 
   await persistence.appendMessage({

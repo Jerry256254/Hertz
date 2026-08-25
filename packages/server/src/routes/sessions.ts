@@ -11,7 +11,20 @@ import { createPersistenceAdapter } from "../persistence/persistence-adapter.js"
 import { listConversations, pickConversationActor } from "../conversations.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import { createGroupSession, listGroupParticipants } from "../groups.js";
-import { hasProjectAccess } from "../auth/project-access.js";
+import { accessibleProjectIds, hasProjectAccess } from "../auth/project-access.js";
+
+function clearPendingMetadata(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const meta = JSON.parse(raw) as Record<string, unknown>;
+    delete meta.pendingQuestion;
+    delete meta.pendingQuestionAgentId;
+    delete meta.pendingTakeover;
+    const keys = Object.keys(meta);
+    return keys.length === 0 ? null : JSON.stringify(meta);
+  } catch { return null; }
+}
+
 
 const DEFAULT_TITLE = "New chat";
 
@@ -117,8 +130,10 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     return reply.code(201).send({ id });
   });
 
-  instance.get("/api/sessions", async () => {
+  instance.get("/api/sessions", async (request) => {
     const peer = aliasedTable(agents, "peer");
+    // Non-admin users only see sessions in projects they can access
+    const accessible = request.user!.role === "admin" ? ("all" as const) : await accessibleProjectIds(ctx.db, request.user!);
     const rows = await ctx.db
       .select({
         id: sessions.id,
@@ -140,11 +155,17 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       .innerJoin(projects, eq(sessions.projectId, projects.id))
       .orderBy(desc(sessions.updatedAt))
       .limit(200);
+    if (accessible !== "all") {
+      const allowed = accessible as Set<string>;
+      const filtered = (rows as Array<{ projectId: string }>).filter((r) => allowed.has(r.projectId));
+      return { sessions: filtered as typeof rows };
+    }
     return { sessions: rows };
   });
 
-  instance.get("/api/projects/:projectId/sessions", async (request) => {
+  instance.get("/api/projects/:projectId/sessions", async (request, reply) => {
     const { projectId } = request.params as { projectId: string };
+    if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
     const rows = await ctx.db.select().from(sessions).where(eq(sessions.projectId, projectId));
     return { sessions: rows };
   });
@@ -163,8 +184,9 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   /** Direct agent ↔ agent chats — a conversation is a session with kind = "conversation", so this is a thin list wrapper. */
-  instance.get("/api/projects/:projectId/conversations", async (request) => {
+  instance.get("/api/projects/:projectId/conversations", async (request, reply) => {
     const { projectId } = request.params as { projectId: string };
+    if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
     return { conversations: await listConversations(ctx.db, projectId) };
   });
 
@@ -173,6 +195,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const session = sessionRows[0];
     if (!session) return reply.code(404).send({ error: "Session not found" });
+    if (!(await hasProjectAccess(ctx.db, request.user!, session.projectId))) return reply.code(403).send({ error: "No access to this project" });
 
     const adapter = createPersistenceAdapter(ctx.db);
     const messages = await adapter.listMessages(id);
@@ -199,11 +222,9 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       budget,
       running: ctx.agentLoop.isRunning(id),
       paused: ctx.agentLoop.isPaused(id),
-      pendingQuestion: session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null,
-      pendingQuestionAgentId: session.metadata ? (JSON.parse(session.metadata).pendingQuestionAgentId as string | undefined) ?? null : null,
-      pendingTakeover: session.metadata
-        ? ((JSON.parse(session.metadata).pendingTakeover as { reason?: string } | undefined) ?? null)
-        : null,
+      pendingQuestion: (() => { try { return session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null; } catch { return null; } })(),
+      pendingQuestionAgentId: (() => { try { return session.metadata ? (JSON.parse(session.metadata).pendingQuestionAgentId as string | undefined) ?? null : null; } catch { return null; } })(),
+      pendingTakeover: (() => { try { return session.metadata ? ((JSON.parse(session.metadata).pendingTakeover as { reason?: string } | undefined) ?? null) : null; } catch { return null; } })(),
       agent,
       peerAgent,
       participants,
@@ -212,6 +233,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   instance.post("/api/sessions/:id/pause", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const sessRows = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (sessRows[0] && !(await hasProjectAccess(ctx.db, request.user!, sessRows[0].projectId))) return reply.code(403).send({ error: "No access" });
     const ok = await ctx.agentLoop.pause(id);
     if (!ok) return reply.code(409).send({ error: "Session isn't running" });
     return { ok: true };
@@ -219,6 +242,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   instance.post("/api/sessions/:id/resume", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const rSessRows = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (rSessRows[0] && !(await hasProjectAccess(ctx.db, request.user!, rSessRows[0].projectId))) return reply.code(403).send({ error: "No access" });
     if (!(await ctx.agentLoop.resume(id))) {
       // Not live in memory — either not running, or paused before a server
       // restart. Durable resume: a persisted 'paused' session restarts via the
@@ -236,6 +261,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   /** Hard-stops the current run: aborts the in-flight model call and finalizes the session. */
   instance.post("/api/sessions/:id/stop", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const sRows = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (sRows[0] && !(await hasProjectAccess(ctx.db, request.user!, sRows[0].projectId))) return reply.code(403).send({ error: "No access" });
     if (!ctx.agentLoop.isRunning(id)) return reply.code(409).send({ error: "Session isn't running" });
     ctx.agentLoop.stop(id);
     return { ok: true };
@@ -243,16 +270,20 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   instance.patch("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const pSess = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (pSess[0] && !(await hasProjectAccess(ctx.db, request.user!, pSess[0].projectId))) return reply.code(403).send({ error: "No access" });
     const parsed = renameSessionSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
 
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     if (!sessionRows[0]) return reply.code(404).send({ error: "Session not found" });
 
+    const trimmedTitle = parsed.data.title?.trim();
+    if (trimmedTitle !== undefined && trimmedTitle.length === 0) return reply.code(400).send({ error: "Title cannot be empty" });
     await ctx.db
       .update(sessions)
       .set({
-        ...(parsed.data.title ? { title: parsed.data.title } : {}),
+        ...(trimmedTitle ? { title: trimmedTitle } : {}),
         updatedAt: new Date(),
       })
       .where(eq(sessions.id, id));
@@ -261,6 +292,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   instance.delete("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const dSess = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (dSess[0] && !(await hasProjectAccess(ctx.db, request.user!, dSess[0].projectId))) return reply.code(403).send({ error: "No access" });
     if (ctx.agentLoop.isRunning(id)) {
       return reply.code(409).send({ error: "Can't delete a session while it's running" });
     }
@@ -273,6 +306,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   instance.post("/api/sessions/:id/compact", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const cSess = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (cSess[0] && !(await hasProjectAccess(ctx.db, request.user!, cSess[0].projectId))) return reply.code(403).send({ error: "No access" });
     if (ctx.agentLoop.isRunning(id)) {
       return reply.code(409).send({ error: "Session is already running" });
     }
@@ -309,6 +344,12 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const session = sessionRows[0];
     if (!session) return reply.code(404).send({ error: "Session not found" });
+    if (!(await hasProjectAccess(ctx.db, request.user!, session.projectId))) return reply.code(403).send({ error: "No access" });
+    if (parsed.data.images.length > 5) return reply.code(400).send({ error: "At most 5 images per message" });
+    for (const img of parsed.data.images) {
+      if (img.data.length > 5_000_000) return reply.code(400).send({ error: "Image too large (max ~3.5 MB)" });
+      if (!/^image\/(png|jpeg|jpg|webp|gif)$/.test(img.mimeType)) return reply.code(400).send({ error: `Unsupported image type: ${img.mimeType}` });
+    }
 
     const content: ContentBlock[] = [];
     if (parsed.data.text) content.push({ type: "text", text: parsed.data.text });
@@ -355,11 +396,12 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       excludeTools = ["message_employee", "ask_user"];
     } else {
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
-      // New message supersedes any pending ask_user question.
+      // New message supersedes any pending ask_user question — preserve other metadata (todos etc).
       if (session.status === "awaiting_input") {
+        const cleared = clearPendingMetadata(session.metadata);
         await ctx.db
           .update(sessions)
-          .set({ status: "active", metadata: null, updatedAt: new Date() })
+          .set({ status: "active", metadata: cleared, updatedAt: new Date() })
           .where(eq(sessions.id, id));
       }
     }
@@ -394,6 +436,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const session = sessionRows[0];
     if (!session) return reply.code(404).send({ error: "Session not found" });
+    if (!(await hasProjectAccess(ctx.db, request.user!, session.projectId))) return reply.code(403).send({ error: "No access" });
     if (session.status !== "awaiting_input") {
       return reply.code(409).send({ error: "The agent isn't waiting for an answer right now" });
     }
@@ -413,9 +456,10 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         /* ignore */
       }
     }
+    const clearedAnswer = clearPendingMetadata(session.metadata);
     await ctx.db
       .update(sessions)
-      .set({ status: "active", metadata: null, updatedAt: new Date() })
+      .set({ status: "active", metadata: clearedAnswer, updatedAt: new Date() })
       .where(eq(sessions.id, id));
 
     try {

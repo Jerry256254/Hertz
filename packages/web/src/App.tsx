@@ -44,8 +44,8 @@ export function App() {
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/account" element={<AccountPage />} />
-        <Route path="/users" element={<UsersPage />} />
-        <Route path="/approvals" element={<ApprovalsPage />} />
+        <Route path="/users" element={user.role === "admin" ? <UsersPage /> : <Navigate to="/" replace />} />
+        <Route path="/approvals" element={user.role === "admin" ? <ApprovalsPage /> : <Navigate to="/" replace />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/agents/:agentId" element={<EmployeeDetailPage />} />
         <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />

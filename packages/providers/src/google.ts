@@ -17,6 +17,9 @@ import pricingTable from "./pricing/google.json" with { type: "json" };
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 function toGeminiContents(messages: ChatRequest["messages"]) {
+  // Build map of tool_use id -> name for tool_result name lookup (Gemini needs NAME, not ID)
+  const idToName = new Map<string, string>();
+  for (const m of messages) for (const b of m.content) if (b.type === "tool_use") idToName.set(b.id, b.name);
   return messages.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: m.content.map((block) => {
@@ -28,7 +31,7 @@ function toGeminiContents(messages: ChatRequest["messages"]) {
         case "tool_use":
           return { functionCall: { name: block.name, args: block.input } };
         case "tool_result":
-          return { functionResponse: { name: block.toolUseId, response: { content: block.content } } };
+          return { functionResponse: { name: idToName.get(block.toolUseId) ?? block.toolUseId, response: { content: block.content } } };
       }
     }),
   }));
@@ -151,10 +154,11 @@ export function createGoogleAdapter(creds: ProviderCredentials): ProviderAdapter
   }
 
   async function countTokens(req: ChatRequest): Promise<number> {
+    const body2 = buildBody(req);
     const res = await fetch(`${API_BASE}/models/${req.model}:countTokens?key=${key}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ contents: toGeminiContents(req.messages) }),
+      body: JSON.stringify({ contents: body2.contents, systemInstruction: body2.systemInstruction, tools: body2.tools }),
     });
     if (!res.ok) {
       throw new ProviderError("google", `countTokens failed: ${await res.text()}`, res.status);

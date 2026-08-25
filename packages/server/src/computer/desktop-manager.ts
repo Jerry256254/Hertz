@@ -26,7 +26,7 @@ export class DesktopManager {
     const state = await this.computer.status(agentId);
     if (state !== "running") return { running: false, containerName };
     const probe = await this.execInContainer(agentId, "bash", ["-c", "pgrep -f 'websockify.*6080' >/dev/null && echo yes || echo no"]);
-    const running = probe.stdout.trim() === "yes";
+    const running = probe.exitCode === 0 && probe.stdout.trim() === "yes";
     return { running, containerName, ...(running ? { hostPort: await this.resolveHostPort(agentId) } : {}) };
   }
 
@@ -66,34 +66,39 @@ export class DesktopManager {
     ]);
     await new Promise((r) => setTimeout(r, 500));
 
-    // 1. Xvfb
-    await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
-      "Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1"]);
-    // Wait for X socket
-    await this.computer.run(["docker", "exec", cn, "bash", "-c",
-      "for i in $(seq 1 60); do [ -S /tmp/.X11-unix/X99 ] && exit 0; sleep 0.25; done; exit 1",
-    ]).catch(() => {});
+    // 1. Xvfb — main process is Xvfb itself (not bash) so Docker never kills it
+    await this.computer.run(["docker", "exec", "-d", cn, "Xvfb", ":99", "-screen", "0", "1440x900x24", "-nolisten", "tcp"]);
+    // Wait for X socket (fail loudly if never appears)
+    {
+      const r = await this.computer.run(["docker", "exec", cn, "bash", "-c",
+        "for i in $(seq 1 60); do [ -S /tmp/.X11-unix/X99 ] && exit 0; sleep 0.25; done; exit 1"]);
+      if (r.exitCode !== 0) throw new Error(`Xvfb never created /tmp/.X11-unix/X99 — xvfb log: ${(await this.execInContainer(agentId,"bash",["-c","cat /tmp/xvfb.log 2>/dev/null | tail -5"])).stdout.trim()}`);
+    }
 
-    // 2. Desktop environment (xfce + wm fallback)
+    // 2. Desktop environment — xfce via dbus, wm fallback, terminal
+    // dbus+xsession must be its own exec -d so session survives
     await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
-      "xsetroot -solid '#2b2f36' 2>/dev/null; if command -v startxfce4 >/dev/null; then dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1; fi; command -v xfwm4 >/dev/null && (pgrep xfwm4 >/dev/null || xfwm4 >/tmp/xfwm4.log 2>&1); nohup xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 & sleep 3; exit 0",
-    ]);
+      "export DISPLAY=:99; xsetroot -solid '#2b2f36' 2>/dev/null; dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1 || xfwm4 --daemon >/tmp/xfwm4.log 2>&1; sleep 2"]);
     await new Promise((r) => setTimeout(r, 3_000));
-
-    // 3. x11vnc
+    // terminal as separate daemon
     await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
-      "x11vnc -display :99 -forever -shared -rfbport 5900 -nopw -listen 0.0.0.0 -quiet >/tmp/x11vnc.log 2>&1",
-    ]);
+      "export DISPLAY=:99; xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 & sleep 1; exit 0"]);
+
+    // 3. x11vnc — main process is x11vnc
+    await this.computer.run(["docker", "exec", "-d", cn, "x11vnc", "-display", ":99", "-forever", "-shared", "-rfbport", "5900", "-nopw", "-listen", "0.0.0.0", "-quiet"]);
     // Wait for VNC port
-    await this.computer.run(["docker", "exec", cn, "bash", "-c",
-      "for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/5900) 2>/dev/null && exit 0; sleep 0.25; done; exit 1",
-    ]).catch(() => {});
+    {
+      const r = await this.computer.run(["docker", "exec", cn, "bash", "-c",
+        "for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/5900) 2>/dev/null && exit 0; sleep 0.25; done; exit 1"]);
+      if (r.exitCode !== 0) {
+        const vlog = (await this.execInContainer(agentId,"bash",["-c","cat /tmp/x11vnc.log 2>/dev/null | tail -8"])).stdout.trim();
+        throw new Error(`x11vnc never opened 5900: ${vlog || "(no log)"}`);
+      }
+    }
 
-    // 4. websockify
-    await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
-      "websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1",
-    ]);
-    await new Promise((r) => setTimeout(r, 1_000));
+    // 4. websockify — main process is websockify
+    await this.computer.run(["docker", "exec", "-d", cn, "websockify", "--web=/usr/share/novnc", "0.0.0.0:6080", "127.0.0.1:5900"]);
+    await new Promise((r) => setTimeout(r, 1_200));
 
     // Verify all three processes are alive
     const deadline = Date.now() + 30_000;
@@ -134,10 +139,16 @@ export class DesktopManager {
   async resolveHostPort(agentId: string): Promise<number | undefined> {
     const out = await this.computer.run(["docker", "port", this.computer.containerName(agentId), "6080"]);
     if (out.exitCode !== 0) return undefined;
-    const match = /:(\d+)\s*$/m.exec(out.stdout.trim());
-    if (!match) return undefined;
-    const port = Number(match[1]);
-    return Number.isFinite(port) ? port : undefined;
+    // docker port can output "0.0.0.0:49153" or ":::49153" or multiple lines — take last :port
+    const lines = out.stdout.trim().split("\n");
+    for (const line of lines.reverse()) {
+      const m = /:(\d+)\s*$/.exec(line.trim());
+      if (m) {
+        const port = Number(m[1]);
+        if (Number.isFinite(port)) return port;
+      }
+    }
+    return undefined;
   }
 
   async execInContainer(agentId: string, command: string, args: string[]) {

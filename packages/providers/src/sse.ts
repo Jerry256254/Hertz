@@ -15,6 +15,8 @@ export async function* parseSSEStream(
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      // Handle both \n\n and \r\n\r\n (some gateways use CRLF)
+      buffer = buffer.replace(/\r\n/g, "\n");
       let idx: number;
       while ((idx = buffer.indexOf("\n\n")) !== -1) {
         const raw = buffer.slice(0, idx);
@@ -33,7 +35,7 @@ function parseFrame(raw: string): SSEFrame {
   const dataLines: string[] = [];
   for (const line of raw.split("\n")) {
     if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
   }
   return { event, data: dataLines.join("\n") };
 }

@@ -113,7 +113,7 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
           : path.join("core", rest);
     if (!novncPkgDir) return reply.code(404).send("noVNC assets unavailable");
     const filePath = path.join(novncPkgDir, rel);
-    if (!filePath.startsWith(novncPkgDir) || !fsSync.existsSync(filePath) || !fsSync.statSync(filePath).isFile()) {
+    if ((filePath !== novncPkgDir && !filePath.startsWith(novncPkgDir + path.sep)) || !fsSync.existsSync(filePath) || !fsSync.statSync(filePath).isFile()) {
       return reply.code(404).send("not found");
     }
     reply.type(rest.endsWith(".js") ? "text/javascript" : "application/octet-stream");
@@ -127,7 +127,7 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
     if (!novncPkgDir) return reply.code(404).send("noVNC assets unavailable");
     const rest = (request.params as { "*": string })["*"] ?? "";
     const filePath = path.join(novncPkgDir, "vendor", rest);
-    if (!filePath.startsWith(novncPkgDir) || !fsSync.existsSync(filePath) || !fsSync.statSync(filePath).isFile()) {
+    if ((filePath !== novncPkgDir && !filePath.startsWith(novncPkgDir + path.sep)) || !fsSync.existsSync(filePath) || !fsSync.statSync(filePath).isFile()) {
       return reply.code(404).send("not found");
     }
     reply.type(rest.endsWith(".js") ? "text/javascript" : "application/octet-stream");
@@ -174,7 +174,7 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
       }
 
       // websockify performs the WS upgrade at root — /websockify can 404
-      const upstream = new WebSocket(`ws://127.0.0.1:${hostPort}/`, { maxPayload: 0 });
+      const upstream = new WebSocket(`ws://127.0.0.1:${hostPort}/`, { maxPayload: 1 << 20 });
 
       upstream.on("open", () => {
         log(agentId, "upstream open");
@@ -227,11 +227,13 @@ export async function findPendingTakeoverSession(
   ctx: AppContext,
   agentId: string,
 ): Promise<{ sessionId: string; metadata: Record<string, unknown> } | undefined> {
+  const { desc } = await import("drizzle-orm");
   const rows = await ctx.db
     .select({ id: sessionsTable.id, metadata: sessionsTable.metadata })
     .from(sessionsTable)
-    .where(eq(sessionsTable.agentId, agentId));
-  for (const row of [...rows].reverse()) {
+    .where(eq(sessionsTable.agentId, agentId))
+    .orderBy(desc(sessionsTable.updatedAt));
+  for (const row of rows) {
     if (!row.metadata) continue;
     try {
       const meta = JSON.parse(row.metadata) as Record<string, unknown>;

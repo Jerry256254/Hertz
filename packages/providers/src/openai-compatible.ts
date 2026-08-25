@@ -27,6 +27,7 @@ function toOpenAIMessages(system: string | undefined, messages: ChatRequest["mes
   for (const msg of messages) {
     const textAndImageParts: Array<Record<string, unknown>> = [];
     const toolCalls: OpenAIMessage["tool_calls"] = [];
+    const toolResults: OpenAIMessage[] = [];
 
     for (const block of msg.content) {
       if (block.type === "text") {
@@ -43,7 +44,7 @@ function toOpenAIMessages(system: string | undefined, messages: ChatRequest["mes
           function: { name: block.name, arguments: JSON.stringify(block.input) },
         });
       } else if (block.type === "tool_result") {
-        out.push({
+        toolResults.push({
           role: "tool",
           tool_call_id: block.toolUseId,
           content: block.content,
@@ -62,6 +63,8 @@ function toOpenAIMessages(system: string | undefined, messages: ChatRequest["mes
       if (toolCalls.length > 0) entry.tool_calls = toolCalls;
       out.push(entry);
     }
+    // Tool results must immediately follow the assistant message that made the calls (OpenAI requirement)
+    for (const tr of toolResults) out.push(tr);
   }
   return out;
 }
@@ -117,7 +120,7 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
 
   async function listModels(): Promise<ModelInfo[]> {
     if (opts.listModelsOverride) return opts.listModelsOverride();
-    const res = await fetch(`${opts.baseUrl}/models`, { headers });
+    const res = await fetch(`${opts.baseUrl.replace(/\/$/, "")}/models`, { headers });
     if (!res.ok) {
       throw new ProviderError(opts.id, `listModels failed: ${await res.text()}`, res.status);
     }
@@ -138,7 +141,12 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
     const body = (await res.json()) as any;
     const choice = body.choices[0];
     const content: ContentBlock[] = [];
-    if (choice.message.content) content.push({ type: "text", text: choice.message.content });
+    if (choice.message.content) {
+      if (typeof choice.message.content === "string") content.push({ type: "text", text: choice.message.content });
+      else if (Array.isArray(choice.message.content)) {
+        for (const part of choice.message.content) if (part.type === "text" && part.text) content.push({ type: "text", text: part.text });
+      }
+    }
     for (const call of choice.message.tool_calls ?? []) {
       content.push({
         type: "tool_use",
@@ -183,11 +191,13 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
         yield { type: "text_delta", text: delta.content };
       }
       for (const call of delta.tool_calls ?? []) {
-        const idx = call.index;
+        const idx = call.index ?? 0;
         if (call.id) {
           toolCallIds.set(idx, call.id);
-          toolCallNames.set(idx, call.function?.name ?? "");
-          yield { type: "tool_use_start", id: call.id, name: call.function?.name ?? "" };
+          toolCallNames.set(idx, call.function?.name ?? toolCallNames.get(idx) ?? "");
+          yield { type: "tool_use_start", id: call.id, name: call.function?.name ?? toolCallNames.get(idx) ?? "" };
+        } else if (call.function?.name && toolCallIds.has(idx)) {
+          toolCallNames.set(idx, call.function.name);
         }
         if (call.function?.arguments) {
           const id = toolCallIds.get(idx);
@@ -213,7 +223,8 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
     const table = opts.pricingTable;
     if (!table) return undefined;
     if (table[model]) return table[model];
-    const prefixMatch = Object.keys(table).find((k) => model.startsWith(k));
+    const sorted = Object.keys(table).sort((a, b) => b.length - a.length);
+    const prefixMatch = sorted.find((k) => model.startsWith(k));
     return prefixMatch ? table[prefixMatch] : undefined;
   }
 

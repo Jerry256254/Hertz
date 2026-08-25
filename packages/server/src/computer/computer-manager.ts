@@ -41,8 +41,8 @@ export class ComputerManager {
     if (cached && Date.now() - cached.at < AVAILABILITY_CACHE_MS) return cached.value;
     const value = await new Promise<boolean>((resolve) => {
       const child = spawn("docker", ["info", "--format", "{{.ServerVersion}}"], { stdio: "ignore" });
-      child.on("error", () => resolve(false));
-      child.on("close", (code) => resolve(code === 0));
+      child.once("error", () => resolve(false));
+      child.once("close", (code) => resolve(code === 0));
     });
     this.dockerAvailable = { value, at: Date.now() };
     return value;
@@ -60,7 +60,12 @@ export class ComputerManager {
   async status(agentId: string): Promise<"missing" | "running" | "stopped" | "unavailable"> {
     if (!(await this.isDockerAvailable())) return "unavailable";
     const out = await this.run(["docker", "inspect", "-f", "{{.State.Running}}", this.containerName(agentId)]);
-    if (out.exitCode !== 0) return "missing";
+    if (out.exitCode !== 0) {
+      if (out.stderr.includes("No such object") || out.stderr.includes("No such container")) return "missing";
+      // permission or other error — treat as unavailable to surface real issue
+      if (out.stderr.toLowerCase().includes("permission")) return "unavailable";
+      return "missing";
+    }
     return out.stdout.trim() === "true" ? "running" : "stopped";
   }
 
@@ -72,7 +77,14 @@ export class ComputerManager {
 
     if (state === "stopped") {
       await this.run(["docker", "start", name]);
-      return { containerName: name, created: false };
+      // After restart, verify desktop port still published — else recreate
+      const portOut = await this.run(["docker", "port", name, "6080"]);
+      if (portOut.exitCode !== 0 || !portOut.stdout.trim()) {
+        await this.run(["docker", "rm", "-f", name]);
+        // fall through to create new container below
+      } else {
+        return { containerName: name, created: false };
+      }
     }
     if (state === "unavailable") {
       throw new Error("Docker isn't available on this machine — switch the agent to the 'local' backend or install Docker");
@@ -101,7 +113,12 @@ export class ComputerManager {
       "-p",
       "127.0.0.1::6080",
     ];
-    for (const p of spec.mountPaths) args.push("-v", `${p}:${p}`);
+    for (const p of spec.mountPaths) {
+      if (p.includes(":") || p.includes("\n")) throw new Error(`Invalid mount path: ${p}`);
+      // Ensure host dir exists before bind-mount (Docker would create as root otherwise)
+      try { await fs.mkdir(p, { recursive: true }); } catch { /* ignore */ }
+      args.push("-v", `${p}:${p}`);
+    }
     args.push(image, "sleep", "infinity");
 
     // `args` holds the docker subcommand ("run …") — the executable itself
@@ -122,11 +139,13 @@ export class ComputerManager {
 
   /** Copies the Playwright daemon into the container (/opt/hertz/browser.mjs). Idempotent per container start. */
   /** Copies arbitrary text content into the container (used for bootstrap scripts). */  async writeFileInto(agentId: string, containerPath: string, content: string): Promise<void> {
-    const tmp = path.join(os.tmpdir(), `hertz-cp-${agentId}-${path.basename(containerPath)}`);
+    const { randomUUID } = await import("node:crypto");
+    const tmp = path.join(os.tmpdir(), `hertz-cp-${agentId}-${randomUUID()}-${path.basename(containerPath)}`);
     await fs.writeFile(tmp, content, "utf8");
     await this.run(["docker", "exec", this.containerName(agentId), "mkdir", "-p", path.posix.dirname(containerPath)]);
-    await this.run(["docker", "cp", tmp, `${this.containerName(agentId)}:${containerPath}`]);
+    const cp = await this.run(["docker", "cp", tmp, `${this.containerName(agentId)}:${containerPath}`]);
     await fs.rm(tmp, { force: true });
+    if (cp.exitCode !== 0) throw new Error(`docker cp failed: ${cp.stderr.trim() || cp.stdout.trim()}`);
   }
 
   /** Low-level docker runner shared with DesktopManager. */

@@ -45,7 +45,10 @@ export async function reconcileOnBoot(deps: RunJobsDeps): Promise<{ requeuedJobs
       .from(messages)
       .where(eq(messages.sessionId, session.id))
       .limit(1);
-    if (anyMessage.length === 0) continue;
+    if (anyMessage.length === 0) {
+      await deps.db.update(sessions).set({ status: "completed", updatedAt: new Date() }).where(eq(sessions.id, session.id));
+      continue;
+    }
     await enqueueAgentRun(deps, { sessionId: session.id }, { maxAttempts: 2 });
     resumedSessions++;
   }

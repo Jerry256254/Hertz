@@ -30,14 +30,15 @@ for f in hertz.db hertz.db-journal config.json master.key; do
 done
 echo "[hertz-update] backup -> ${BACKUP_DIR}"
 
-git fetch origin main --quiet
-git reset --hard origin/main --quiet
+BRANCH="${HERTZ_BRANCH:-main}"
+git fetch origin "$BRANCH" --quiet
+git reset --hard "origin/$BRANCH" --quiet
 NEW_SHA="$(git rev-parse --short HEAD)"
 pnpm install --frozen-lockfile >/dev/null 2>&1 || pnpm install
 if ! pnpm build >/dev/null; then
   echo "[hertz-update] BUILD FAILED — rolling code back to ${OLD_SHA}. Data untouched."
   git reset --hard "$OLD_SHA" --quiet
-  pnpm install --silent || true
+  pnpm install --frozen-lockfile --silent 2>/dev/null || pnpm install --silent || true
   pnpm build --silent || true
   exit 3
 fi
@@ -47,12 +48,15 @@ echo "[hertz-update] updated: v${OLD_VER} (${OLD_SHA}) -> v${NEW_VER} (${NEW_SHA
 
 ls -1dt "${DATA_DIR}/backups/"* 2>/dev/null | tail -n +6 | xargs -r rm -rf
 
+SERVICE_NAME="${HERTZ_SERVICE_NAME:-hertz}"
+SERVICE_NAME="$(printf '%s' "$SERVICE_NAME" | tr -cd 'a-z0-9-' | head -c 32)"
+[ -z "$SERVICE_NAME" ] && SERVICE_NAME="hertz"
 if command -v systemctl >/dev/null 2>&1; then
-  if sudo -n systemctl restart hertz 2>/dev/null || systemctl restart hertz 2>/dev/null; then
+  if sudo -n systemctl restart "$SERVICE_NAME" 2>/dev/null || systemctl restart "$SERVICE_NAME" 2>/dev/null; then
     echo "[hertz-update] service restarted"
   else
     echo "[hertz-update] WARNING: could not restart the service automatically."
-    echo "[hertz-update] Run manually:  sudo systemctl restart hertz"
+    echo "[hertz-update] Run manually:  sudo systemctl restart $SERVICE_NAME"
     exit 2
   fi
 else
@@ -60,9 +64,14 @@ else
 fi
 
 # Health poll — the WebUI dialog keys off the final UPDATE OK line.
+PORT="${HERTZ_UPDATE_PORT:-}"
+if [ -z "$PORT" ] && [ -f "${DATA_DIR}/config.json" ]; then
+  PORT="$(node -p "try{JSON.parse(require('fs').readFileSync('${DATA_DIR}/config.json','utf8')).port}catch{}" 2>/dev/null || echo 4173)"
+fi
+PORT="${PORT:-4173}"
 HEALTH="down"
 for i in $(seq 1 30); do
-  code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${HERTZ_UPDATE_PORT:-4173}/api/health" 2>/dev/null || true)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)"
   if [ "$code" = "200" ]; then HEALTH="up"; break; fi
   sleep 1
 done

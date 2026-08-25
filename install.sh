@@ -12,7 +12,10 @@ REPO_URL="${HERTZ_REPO_URL:-https://github.com/Jerry256254/Hertz.git}"
 export GIT_CONFIG_GLOBAL="$(mktemp)"
 printf '[safe]\n\tdirectory = *\n' > "$GIT_CONFIG_GLOBAL"
 INSTALL_DIR="${HERTZ_INSTALL_DIR:-$HOME/Hertz}"
-SERVICE_NAME="${HERTZ_SERVICE_NAME:-hertz}"
+# Sanitize service name to [a-z0-9-] only to prevent path traversal
+SERVICE_NAME_RAW="${HERTZ_SERVICE_NAME:-hertz}"
+SERVICE_NAME="$(printf '%s' "$SERVICE_NAME_RAW" | tr -cd 'a-z0-9-' | head -c 32)"
+[ -z "$SERVICE_NAME" ] && SERVICE_NAME="hertz"
 PORT="${HERTZ_PORT:-4173}"
 BRANCH="${HERTZ_BRANCH:-main}"
 
@@ -91,7 +94,7 @@ if command -v docker >/dev/null 2>&1; then
   if ! docker info >/dev/null 2>&1; then
     log "Granting Docker access to user '$RUN_AS_USER_ORIG' (docker group)..."
     as_root usermod -aG docker "${RUN_AS_USER_ORIG}" || true
-    DOCKER="sudo -E docker"
+    DOCKER="sudo -n -E docker"
     warn "Docker commands below use sudo; the background service gets group access on restart."
   fi
 fi
@@ -99,6 +102,10 @@ fi
 # --- 2. clone or update ------------------------------------------------------
 if [ -d "$INSTALL_DIR/.git" ]; then
   log "Updating existing checkout at $INSTALL_DIR ..."
+  if [ -n "$(git -C "$INSTALL_DIR" status --porcelain 2>/dev/null)" ]; then
+    warn "Local changes in $INSTALL_DIR will be discarded (stash them first if needed)."
+    git -C "$INSTALL_DIR" stash push -m "hertz-install auto-stash $(date -Is)" 2>/dev/null || true
+  fi
   git -C "$INSTALL_DIR" fetch origin "$BRANCH" --quiet
   git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH" --quiet
 else
@@ -114,9 +121,17 @@ pnpm build > /tmp/hertz-build.log 2>&1 || { tail -40 /tmp/hertz-build.log; die "
 
 # Build the agent-computer image too (desktop + browser inside every bot).
 # Best-effort: agents fall back to local backend when Docker/image is missing.
-if command -v docker >/dev/null 2>&1 && ! $DOCKER image inspect kuclab-hertz-computer:latest >/dev/null 2>&1; then
+# Rebuild if missing OR Dockerfile newer than image
+NEED_IMAGE=0
+if command -v docker >/dev/null 2>&1; then
+  if ! $DOCKER image inspect kuclab-hertz-computer:latest >/dev/null 2>&1; then NEED_IMAGE=1
+  elif [ docker/computer.Dockerfile -nt "$DATA_DIR/.hertz-image-built" 2>/dev/null ]; then NEED_IMAGE=1
+  fi
+fi
+if [ "$NEED_IMAGE" -eq 1 ]; then
   log "Building agent computer image (kuclab-hertz-computer) ..."
   if $DOCKER build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile . > /tmp/hertz-image.log 2>&1; then
+    date -Is > "$DATA_DIR/.hertz-image-built" 2>/dev/null || true
     log "Computer image ready."
   else
     warn "Computer image build failed — last lines:"
@@ -137,8 +152,9 @@ else
 fi
 
 # Actual port from config.json (the service will bind there)
-if [ -f "$DATA_DIR/config.json" ] && command -v node >/dev/null 2>&1; then
-  CFG_PORT="$(node -p "try{require('$DATA_DIR/config.json').port}catch{}" 2>/dev/null || true)"
+if [ -f "$DATA_DIR/config.json" ] && [ -n "$SYSTEM_NODE$NODE_BIN" ]; then
+  _NODE="${SYSTEM_NODE:-$NODE_BIN}"
+  CFG_PORT="$(HERTZ_DATA_DIR="$DATA_DIR" "$_NODE" -p "try{JSON.parse(require('fs').readFileSync(process.env.HERTZ_DATA_DIR+'/config.json','utf8')).port}catch{}" 2>/dev/null || true)"
   [ -n "$CFG_PORT" ] && PORT="$CFG_PORT"
 fi
 
@@ -157,7 +173,8 @@ if command -v systemctl >/dev/null 2>&1 && as_root true 2>/dev/null; then
   as_root rm -f  "/run/systemd/system/${SERVICE_NAME}.service" 2>/dev/null || true
   as_root rm -rf "/run/systemd/transient/${SERVICE_NAME}.service" 2>/dev/null || true
   if [ "$USE_WRAPPER" -eq 1 ]; then
-    EXEC_LINE="/bin/bash -lc 'cd ${INSTALL_DIR} && exec node packages/cli/dist/bin.js start'"
+    _ESCAPED_DIR="$(printf '%q' "$INSTALL_DIR")"
+    EXEC_LINE="/bin/bash -lc 'cd ${_ESCAPED_DIR} && exec node packages/cli/dist/bin.js start'"
   else
     EXEC_LINE="${NODE_BIN} ${INSTALL_DIR}/packages/cli/dist/bin.js start"
   fi
@@ -213,7 +230,8 @@ UNIT
   log "Unit OK: $(echo "${EFFECTIVE_UNIT}" | grep -m1 '^ExecStart' || echo 'ExecStart set')"
   as_root systemctl reset-failed "${SERVICE_NAME}" 2>/dev/null || true
   # A manually-started server (pnpm start) would hold the port and crash-loop the service.
-  as_root pkill -f "packages/cli/dist/bin.js start" 2>/dev/null || true
+  pkill -f "packages/cli/dist/bin.js start" 2>/dev/null || true
+  as_root pkill -u "$RUN_AS_USER" -f "packages/cli/dist/bin.js start" 2>/dev/null || true
   sleep 1
   as_root systemctl restart "${SERVICE_NAME}"
 

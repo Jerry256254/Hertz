@@ -24,6 +24,8 @@ export interface GroupDeps {
   persistence: PersistencePort;
   agentLoop: AgentLoopManager;
   fallbackUserId: () => Promise<string>;
+  computer?: { runtime: (agentId: string) => any; browserSession: (agentId: string) => any; ensureContainer: (spec: any) => Promise<any> };
+  providers?: { getAdapter: (id: string) => Promise<any> };
 }
 
 export async function createGroupSession(
@@ -101,10 +103,19 @@ export async function runGroupTurn(deps: GroupDeps, sessionId: string, triggerTe
     if (!agent || agent.approvalStatus !== "approved" || agent.status === "terminated") continue;
 
     await ensureEmployeeDirs(paths, session.projectId, agent.id);
+    let computer: any = undefined;
+    let browser: any = undefined;
+    if ((deps as any).computer && agent.computerBackend === "docker") {
+      try {
+        await (deps as any).computer.ensureContainer({ agentId: agent.id, image: agent.computerImage, mountPaths: [mainRoot.absolutePath, employeeDir(paths, session.projectId, agent.id)] });
+        computer = (deps as any).computer.runtime(agent.id);
+        browser = (deps as any).computer.browserSession(agent.id);
+      } catch { /* fallback to local */ }
+    }
     sandboxRegistry.register(sessionId, {
       [mainRoot.rootId]: mainRoot.absolutePath,
       self: employeeDir(paths, session.projectId, agent.id),
-    });
+    }, computer, browser);
 
     await db.update(sessions).set({ status: "active", updatedAt: new Date() }).where(eq(sessions.id, sessionId));
 

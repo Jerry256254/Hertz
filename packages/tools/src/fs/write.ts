@@ -16,6 +16,7 @@ export const writeFileTool: ToolDef<Input> = {
     "Create or overwrite a file with the given content. Creates parent directories as needed. Pass root: 'self' to write into your own personal folder instead of the shared project.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
+    if (Buffer.byteLength(input.content, "utf8") > 5_000_000) throw new Error(`Content too large — max 5000000 bytes`);
     const abs = ctx.pathGuard.resolve(ctx.actor, input.root ?? ctx.rootId, input.path);
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, input.content, "utf8");

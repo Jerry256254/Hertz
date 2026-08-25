@@ -142,7 +142,7 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
     // turn (or only the @mentioned ones), sharing one history.
     if (session.kind === "group") {
       const triggerText = await extractLastUserText(deps, session.id);
-      await runGroupTurn(deps, session.id, triggerText, payload.forceAgentId);
+      await runGroupTurn({ ...deps, computer: deps.computer as any } as any, session.id, triggerText, payload.forceAgentId);
       return;
     }
 

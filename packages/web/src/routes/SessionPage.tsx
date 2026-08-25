@@ -236,7 +236,7 @@ export function SessionPage() {
   }
 
   const doneTakeover = useMutation({
-    mutationFn: () => api.post(`/agents/${data!.session.agentId}/takeover/done`),
+    mutationFn: () => api.post(`/agents/${data?.session.agentId ?? agentIdForScreen}/takeover/done`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }),
   });
 
@@ -615,7 +615,7 @@ export function SessionPage() {
         </div>
       </div>
       {showScreen && agentIdForScreen && (
-        <div className="hidden min-h-0 flex-col overflow-y-auto border-l border-border bg-bg-sidebar md:flex">
+        <div className="fixed inset-0 z-20 flex flex-col bg-bg md:static md:z-auto md:min-h-0 md:flex-col md:overflow-y-auto md:border-l md:border-border md:bg-bg-sidebar flex">
           <ScreenPanel agentId={agentIdForScreen} agentName={data?.agent?.name ?? "Bot"} />
         </div>
       )}
@@ -688,11 +688,7 @@ function ScreenPanel({ agentId, agentName }: { agentId: string; agentName: strin
 }
 
 function AgentRoutines({ agentId }: { agentId: string }) {
-  const { data: sessionData } = useQuery({
-    queryKey: ["session-agent-project"],
-    queryFn: () => api.get<{ session: { projectId: string } }>(`/sessions/${window.location.pathname.split("/").pop()}`),
-  });
-  const projectId = sessionData?.session.projectId;
+  const { projectId } = useParams<{ projectId: string; sessionId: string }>();
   const { data } = useQuery({
     queryKey: ["routines", projectId],
     queryFn: () => api.get<{ routines: Array<{ id: string; title: string; schedule: string; enabled: boolean; agentId: string }> }>(`/projects/${projectId}/routines`),

@@ -88,6 +88,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = rows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });
       if (agent.approvalStatus !== "pending") {
         return reply.code(400).send({ error: "This hire has already been decided" });
       }
@@ -109,6 +110,11 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) {
         return reply.code(403).send({ error: "No access to this project" });
       }
+      if (parsed.data.providerConfigId) {
+        const { providerConfigs } = await import("../db/schema.js");
+        const pc = await ctx.db.select({ id: providerConfigs.id }).from(providerConfigs).where(eq(providerConfigs.id, parsed.data.providerConfigId)).limit(1);
+        if (!pc[0]) return reply.code(400).send({ error: "Provider config not found" });
+      }
 
       await ctx.db.update(agents).set(parsed.data).where(eq(agents.id, id));
       return { ok: true };
@@ -120,6 +126,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = rows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });
 
       const dockerState = await ctx.computer.status(id);
       if (dockerState === "unavailable") {
@@ -162,6 +169,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = agentRows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
       if (agent.approvalStatus !== "approved") return reply.code(400).send({ error: `${agent.name} isn't approved` });
       if (agent.status === "terminated") return reply.code(400).send({ error: `${agent.name} has been terminated` });
 
@@ -194,6 +202,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const parsed = ensureChatSchema.safeParse(request.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
       const projectId = parsed.data.projectId;
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access" });
 
       const chatRows = await ctx.db
         .select({ id: sessions.id })
@@ -214,6 +223,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = rows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });
       if (agent.computerBackend !== "docker") {
         return reply.code(400).send({ error: "This agent runs locally — nothing to restart" });
       }
@@ -242,6 +252,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = rows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });
       if (!agent.pendingTermination) return reply.code(400).send({ error: "This agent has no pending termination request" });
 
       if (parsed.data.decision === "approved") {
@@ -255,19 +266,28 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     /** The agent's personal skill library (index only — full text lives on disk). */
     instance.get("/api/agents/:id/skills", async (request, reply) => {
       const { id } = request.params as { id: string };
-      const rows = await ctx.db.select({ id: agents.id }).from(agents).where(eq(agents.id, id)).limit(1);
+      const rows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!rows[0]) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, (rows[0] as any).projectId))) return reply.code(403).send({ error: "No access" });
       return { skills: await skillsIndexFor(ctx.paths, id) };
     });
 
     // All agents company-wide (across every project) — used by the cross-project
     // "attach an existing employee" picker, since employees aren't confined to
     // their home project.
-    instance.get("/api/agents", async () => {
+    instance.get("/api/agents", async (request) => {
       const rows = await ctx.db
         .select({ agent: agents, homeProjectName: projects.name })
         .from(agents)
         .innerJoin(projects, eq(agents.projectId, projects.id));
+      if (request.user!.role !== "admin") {
+        const { accessibleProjectIds } = await import("../auth/project-access.js");
+        const allowed = await accessibleProjectIds(ctx.db, request.user!);
+        if (allowed !== "all") {
+          const filtered = rows.filter((r) => (allowed as Set<string>).has(r.agent.projectId));
+          return { agents: filtered.map((r) => ({ ...r.agent, homeProjectName: r.homeProjectName })) };
+        }
+      }
       return { agents: rows.map((r) => ({ ...r.agent, homeProjectName: r.homeProjectName })) };
     });
 
@@ -297,6 +317,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     // Attach an existing employee (hired anywhere) to this project's roster.
     instance.post("/api/projects/:projectId/agents/:agentId/attach", async (request, reply) => {
       const { projectId, agentId } = request.params as { projectId: string; agentId: string };
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access" });
       const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
       const agent = agentRows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
@@ -317,6 +338,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     // Detach (without deleting the agent, which still belongs to its home project).
     instance.delete("/api/projects/:projectId/agents/:agentId/attach", async (request, reply) => {
       const { projectId, agentId } = request.params as { projectId: string; agentId: string };
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access" });
       await ctx.db
         .delete(agentProjects)
         .where(and(eq(agentProjects.agentId, agentId), eq(agentProjects.projectId, projectId)));
@@ -328,13 +350,15 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const row = rows[0];
       if (!row) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, row.projectId))) return reply.code(403).send({ error: "No access" });
       return row;
     });
 
     instance.get("/api/agents/:id/memory", async (request, reply) => {
       const { id } = request.params as { id: string };
-      const agentRows = await ctx.db.select({ id: agents.id }).from(agents).where(eq(agents.id, id)).limit(1);
+      const agentRows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!agentRows[0]) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agentRows[0].projectId))) return reply.code(403).send({ error: "No access" });
 
       const notes = await ctx.db
         .select()
@@ -346,14 +370,17 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
 
     instance.delete("/api/agents/:id/memory/:noteId", async (request, reply) => {
       const { id, noteId } = request.params as { id: string; noteId: string };
+      const aRows = await ctx.db.select({ projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
+      if (aRows[0] && !(await hasProjectAccess(ctx.db, request.user!, aRows[0].projectId))) return reply.code(403).send({ error: "No access" });
       await ctx.db.delete(agentMemory).where(and(eq(agentMemory.id, noteId), eq(agentMemory.agentId, id)));
       return reply.code(204).send();
     });
 
     instance.delete("/api/agents/:id", async (request, reply) => {
       const { id } = request.params as { id: string };
-      const rows = await ctx.db.select({ id: agents.id }).from(agents).where(eq(agents.id, id)).limit(1);
+      const rows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!rows[0]) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, (rows[0] as any).projectId))) return reply.code(403).send({ error: "No access" });
 
       const sessionRows = await ctx.db.select({ id: sessions.id }).from(sessions).where(eq(sessions.agentId, id));
       if (sessionRows.some((s) => ctx.agentLoop.isRunning(s.id))) {

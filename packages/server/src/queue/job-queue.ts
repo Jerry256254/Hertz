@@ -103,21 +103,21 @@ export class JobQueue {
     return this.active;
   }
 
-  /** Jobs left 'running' by a previous process are requeued once at boot. */
+  /** Jobs left 'running' by a previous process are requeued once at boot — respects maxAttempts. */
   async recoverStaleRunning(): Promise<number> {
-    const stale = await this.db.select({ id: jobs.id }).from(jobs).where(eq(jobs.status, "running"));
+    const stale = await this.db.select().from(jobs).where(eq(jobs.status, "running"));
     if (stale.length === 0) return 0;
+    let requeued = 0;
     const now = new Date();
-    await this.db
-      .update(jobs)
-      .set({ status: "queued", runAt: now, updatedAt: now })
-      .where(
-        inArray(
-          jobs.id,
-          stale.map((j) => j.id),
-        ),
-      );
-    return stale.length;
+    for (const job of stale) {
+      if (job.attempts >= job.maxAttempts) {
+        await this.db.update(jobs).set({ status: "failed", lastError: "Exceeded max attempts before crash", updatedAt: now }).where(eq(jobs.id, job.id));
+      } else {
+        await this.db.update(jobs).set({ status: "queued", runAt: now, updatedAt: now }).where(eq(jobs.id, job.id));
+        requeued++;
+      }
+    }
+    return requeued;
   }
 
   private kick(): void {

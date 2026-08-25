@@ -20,17 +20,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     async function init() {
-      const status = await api.get<{ needsSetup: boolean }>("/setup/status").catch(() => ({ needsSetup: false }));
-      if (status.needsSetup) {
-        setNeedsSetup(true);
+      try {
+        const status = await api.get<{ needsSetup: boolean }>("/setup/status").catch((e) => {
+          // Network failure is not "setup done" — surface as setup needed to avoid login loop
+          if (e instanceof ApiError && e.status === 0) throw e;
+          return { needsSetup: false } as { needsSetup: boolean };
+        });
+        if (status.needsSetup) {
+          setNeedsSetup(true);
+          return;
+        }
+        await api
+          .get<{ user: User }>("/auth/me")
+          .then((res) => setUser(res.user))
+          .catch(() => setUser(undefined));
+      } catch {
+        // Network unreachable — keep needsSetup false, loading will show retry
+      } finally {
         setLoading(false);
-        return;
       }
-      await api
-        .get<{ user: User }>("/auth/me")
-        .then((res) => setUser(res.user))
-        .catch(() => setUser(undefined));
-      setLoading(false);
     }
     void init();
   }, []);
@@ -43,6 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function logout() {
     await api.post("/auth/logout");
     setUser(undefined);
+    // Force reload to clear all cached queries for next login
+    try { window.location.reload(); } catch {}
   }
 
   async function bootstrap(email: string, password: string) {

@@ -66,7 +66,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
       map.set(session.projectId, list);
     }
     return map;
-  }, [sessionsData]);
+  }, [sessionsData, query]);
 
   function toggle(projectId: string) {
     setCollapsed((prev) => {
@@ -209,7 +209,7 @@ function UpdateButton() {
   const { data: versions } = useQuery({
     queryKey: ["update-version"],
     queryFn: () => api.get<{ current: { version: string; sha: string }; latest: { tag: string; url: string } | null }>("/update/version"),
-    enabled: open,
+    enabled: true,
   });
   const updateAvailable = (() => {
     if (!versions?.latest?.tag) return false;
@@ -225,7 +225,7 @@ function UpdateButton() {
   const { data } = useQuery({
     queryKey: ["update-status"],
     queryFn: () => api.get<{ running: boolean; log: string }>("/update/status"),
-    enabled: open,
+    enabled: true,
     refetchInterval: open ? 2000 : false,
   });
 
