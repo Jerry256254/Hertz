@@ -50,7 +50,19 @@ export async function startServer(ctx: AppContext, config: HertzConfig): Promise
   }
 
   const app = await buildApp(ctx, { webDistDir });
-  await app.listen({ host: config.host, port: config.port });
+  try {
+    await app.listen({ host: config.host, port: config.port });
+  } catch (err: any) {
+    if (err && (err.code === "EADDRINUSE" || String(err.message).includes("EADDRINUSE"))) {
+      console.error(kleur.red(`\nPort ${config.port} is already in use (address ${config.host}:${config.port} busy).`));
+      console.error(`Another Hertz (or other process) is still running.`);
+      console.error(`  pkill -f 'packages/cli/dist/bin.js start'`);
+      console.error(`  fuser -k ${config.port}/tcp   # or: lsof -i :${config.port}`);
+      console.error(`Or set a different port:  HERTZ_PORT=4174 node packages/cli/dist/bin.js start\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
 
   console.log(kleur.bold(kleur.green(`\nKucLab Hertz is running at http://${config.host}:${config.port}\n`)));
 

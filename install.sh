@@ -276,6 +276,16 @@ UNIT
 
 else
   warn "systemd not available — starting in foreground. Install tmux/systemd for background operation."
+  # Free the port if a previous Hertz instance is still running (common after re-install)
+  pkill -f "packages/cli/dist/bin.js start" 2>/dev/null || true
+  sleep 1
+  if ss -ltn 2>/dev/null | grep -q ":${PORT} " || curl -s -o /dev/null "http://127.0.0.1:${PORT}/api/health" 2>/dev/null; then
+    warn "Port ${PORT} still busy — trying fuser -k ${PORT}/tcp ..."
+    if command -v fuser >/dev/null 2>&1; then fuser -k "${PORT}/tcp" 2>/dev/null || true; sleep 1; fi
+  fi
+  if ss -ltn 2>/dev/null | grep -q ":${PORT} " || curl -s -o /dev/null "http://127.0.0.1:${PORT}/api/health" 2>/dev/null; then
+    die "Port ${PORT} is still in use. Stop the old server first:  pkill -f 'packages/cli/dist/bin.js start'  or  fuser -k ${PORT}/tcp  — then re-run this command."
+  fi
   exec node packages/cli/dist/bin.js start
 fi
 
