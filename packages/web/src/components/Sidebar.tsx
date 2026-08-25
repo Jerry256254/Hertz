@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight,
+  Check,
+  Copy,
   Search,
   Settings2,
   Folder,
@@ -10,7 +12,6 @@ import {
   MessagesSquare,
   Plug,
   Plus,
-  RefreshCw,
   ShieldCheck,
   Users,
   X,
@@ -18,7 +19,7 @@ import {
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { HertzSession, Project } from "../lib/types";
-import { Avatar, Button, IconButton } from "./ui";
+import { Avatar, IconButton } from "./ui";
 
 interface SidebarSession extends HertzSession {
   agentName: string;
@@ -147,13 +148,13 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
         </ul>
       </nav>
 
-      {/* Bottom — quiet, not a wall of links. Single accent only via Update. */}
+      {/* Bottom — system */}
       <div className="shrink-0 border-t border-border p-2">
         <div className="space-y-0.5">
           <Link to="/approvals" className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
             <ShieldCheck size={14} strokeWidth={1.85} /> Approvals
           </Link>
-          {user?.role === "admin" && <UpdateButton />}
+          <CopyInstallButton />
           <Link to="/integrations" className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
             <Plug size={14} strokeWidth={1.85} /> Integrations
           </Link>
@@ -181,100 +182,35 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   );
 }
 
-function UpdateButton() {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const { data: versions } = useQuery({
-    queryKey: ["update-version"],
-    queryFn: () => api.get<{ current: { version: string; sha: string }; latest: { tag: string; url: string } | null }>("/update/version"),
-    enabled: true,
-  });
-  const updateAvailable = (() => {
-    if (!versions?.latest?.tag) return false;
-    const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
-    const cur = parse(versions.current.version);
-    const lat = parse(versions.latest.tag);
-    const cMaj = cur[0] ?? 0, cMin = cur[1] ?? 0, cPat = cur[2] ?? 0;
-    const lMaj = lat[0] ?? 0, lMin = lat[1] ?? 0, lPat = lat[2] ?? 0;
-    if (lMaj !== cMaj) return lMaj > cMaj;
-    if (lMin !== cMin) return lMin > cMin;
-    return lPat > cPat;
-  })();
-  const { data } = useQuery({
-    queryKey: ["update-status"],
-    queryFn: () => api.get<{ running: boolean; log: string }>("/update/status"),
-    enabled: true,
-    refetchInterval: open ? 2000 : false,
-  });
-
-  const finished = data?.log.includes("UPDATE OK") ?? false;
-  useEffect(() => {
-    if (finished) {
-      const t = setTimeout(() => window.location.reload(), 2500);
-      return () => clearTimeout(t);
+function CopyInstallButton() {
+  const [copied, setCopied] = useState(false);
+  const cmd = "curl -fsSL https://raw.githubusercontent.com/Jerry256254/Hertz/main/install.sh | bash";
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+      const el = document.createElement("textarea");
+      el.value = cmd;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
-  }, [finished]);
-
-  const startUpdate = useMutation({
-    mutationFn: () => api.post("/update"),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["update-status"] }),
-  });
-
+  }
   return (
-    <>
-      <button
-        onClick={() => {
-          if (!startUpdate.isPending && !data?.running && !finished) startUpdate.mutate();
-          setOpen(true);
-        }}
-        className={`flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-[13px] font-[500] ${
-          updateAvailable ? "bg-fg text-bg hover:bg-fg/90" : "text-fg-muted hover:bg-bg-raised hover:text-fg"
-        }`}
-      >
-        <RefreshCw size={13} strokeWidth={1.9} className={data?.running ? "animate-spin" : ""} />
-        Update
-        {updateAvailable && <span className="ml-auto rounded-[7px] bg-bg px-1.5 py-0.5 text-[10px] font-[700] tracking-wide text-fg">NEW</span>}
-      </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay p-4 backdrop-blur-[6px]" onClick={() => !data?.running && setOpen(false)}>
-          <div className="w-full max-w-[560px] rounded-[16px] border border-border bg-bg-raised p-4 shadow-popover" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center gap-2.5">
-              <RefreshCw size={14} strokeWidth={1.9} className={data?.running ? "animate-spin text-fg" : "text-fg-subtle"} />
-              <span className="text-[13.5px] font-[600] tracking-[-0.01em] text-fg">
-                {data?.running ? "Updating…" : finished ? "Updated — reloading" : "Update Hertz"}
-              </span>
-            </div>
-            {versions && (
-              <div className="mb-3 rounded-[10px] bg-bg-sunken px-3 py-2.5 text-[12.5px] leading-relaxed text-fg-muted">
-                Installed <span className="mono font-medium text-fg">v{versions.current.version}</span> <span className="text-fg-subtle">({versions.current.sha || "?"})</span>
-                {versions.latest && (
-                  <>
-                    {" · "}Latest{" "}
-                    <a href={versions.latest.url} target="_blank" rel="noreferrer" className="underline decoration-border-strong underline-offset-4 hover:text-fg">
-                      {versions.latest.tag}
-                    </a>
-                    {updateAvailable && <span className="ml-1 font-[600] text-fg">— update available</span>}
-                  </>
-                )}
-              </div>
-            )}
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-[12px] border border-border bg-bg-sunken p-3 text-[11.5px] leading-relaxed text-fg-muted">
-              {data?.log || "Starting…"}
-            </pre>
-            <div className="mt-3 flex items-center justify-end gap-2">
-              {!data?.running && !finished && (
-                <Button variant="primary" size="sm" onClick={() => startUpdate.mutate()} disabled={startUpdate.isPending}>
-                  <RefreshCw size={13} /> Update now
-                </Button>
-              )}
-              <button className="rounded-[10px] px-3 py-1.5 text-[13px] font-medium text-fg-muted hover:bg-bg-hover hover:text-fg" onClick={() => setOpen(false)}>
-                {data?.running ? "Hide" : "Close"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <button
+      onClick={copy}
+      className="flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg"
+      title={cmd}
+    >
+      {copied ? <Check size={14} strokeWidth={1.85} className="text-success" /> : <Copy size={14} strokeWidth={1.85} />}
+      {copied ? "Copied" : "Copy install command"}
+    </button>
   );
 }
 
