@@ -12,7 +12,6 @@ export function FileExplorer({
   agentId,
 }: {
   projectId: string;
-  /** "self" browses one employee's own folder (notes/materials/data) instead of the shared project root — requires agentId. */
   root?: "main" | "self";
   agentId?: string;
 }) {
@@ -22,12 +21,7 @@ export function FileExplorer({
   const queryClient = useQueryClient();
 
   const createFolder = useMutation({
-    mutationFn: (name: string) =>
-      api.post(`/projects/${projectId}/files/dir`, {
-        path: currentPath === "." ? name : `${currentPath}/${name}`,
-        root,
-        agentId,
-      }),
+    mutationFn: (name: string) => api.post(`/projects/${projectId}/files/dir`, { path: currentPath === "." ? name : `${currentPath}/${name}`, root, agentId }),
     onSuccess: (_data, name) => {
       queryClient.invalidateQueries({ queryKey: ["files", projectId, root, agentId] });
       setPreviewPath(undefined);
@@ -36,117 +30,66 @@ export function FileExplorer({
   });
 
   function promptNewFolder() {
-    const name = window.prompt("New folder name")?.trim();
+    const name = window.prompt("Název nové složky")?.trim();
     if (!name || name === "." || name === ".." || name.includes("/")) return;
     createFolder.mutate(name);
   }
 
-  useEffect(() => {
-    setCurrentPath(".");
-    setPreviewPath(undefined);
-  }, [root, agentId]);
+  useEffect(() => { setCurrentPath("."); setPreviewPath(undefined); }, [root, agentId]);
 
   const { data: listing, isFetching } = useQuery({
     queryKey: ["files", projectId, root, agentId, currentPath],
-    queryFn: () =>
-      api.get<{ entries: FileEntry[] }>(
-        `/projects/${projectId}/files?path=${encodeURIComponent(currentPath)}${scopeParam}`,
-      ),
+    queryFn: () => api.get<{ entries: FileEntry[] }>(`/projects/${projectId}/files?path=${encodeURIComponent(currentPath)}${scopeParam}`),
     refetchInterval: 4000,
   });
-
   const { data: preview } = useQuery({
     queryKey: ["file-content", projectId, root, agentId, previewPath],
-    queryFn: () =>
-      api.get<{ content: string; truncated: boolean }>(
-        `/projects/${projectId}/file-content?path=${encodeURIComponent(previewPath!)}${scopeParam}`,
-      ),
+    queryFn: () => api.get<{ content: string; truncated: boolean }>(`/projects/${projectId}/file-content?path=${encodeURIComponent(previewPath!)}${scopeParam}`),
     enabled: !!previewPath,
   });
 
   function goUp() {
     if (currentPath === ".") return;
-    const parts = currentPath.split("/");
-    parts.pop();
+    const parts = currentPath.split("/"); parts.pop();
     setCurrentPath(parts.length ? parts.join("/") : ".");
     setPreviewPath(undefined);
   }
-
   function open(entry: FileEntry) {
     const nextPath = currentPath === "." ? entry.name : `${currentPath}/${entry.name}`;
-    if (entry.type === "directory") {
-      setCurrentPath(nextPath);
-      setPreviewPath(undefined);
-    } else {
-      setPreviewPath(nextPath);
-    }
+    if (entry.type === "directory") { setCurrentPath(nextPath); setPreviewPath(undefined); } else setPreviewPath(nextPath);
   }
 
   return (
-    <div className="flex h-full flex-col border-l border-border">
-      <div className="flex h-8 flex-shrink-0 items-center gap-2 border-b border-border px-2">
-        <button
-          onClick={goUp}
-          disabled={currentPath === "."}
-          className="flex items-center text-fg-muted hover:text-fg disabled:opacity-30"
-        >
-          <ChevronUp size={13} />
-        </button>
-        <span className="mono truncate text-xs text-fg-muted">{currentPath === "." ? "/" : currentPath}</span>
-        <button
-          onClick={promptNewFolder}
-          disabled={createFolder.isPending}
-          title="New folder"
-          className="ml-auto flex items-center text-fg-muted hover:text-fg disabled:opacity-30"
-        >
-          <FolderPlus size={13} />
-        </button>
-        {isFetching && <span className="h-1 w-1 flex-shrink-0 rounded-full bg-fg-subtle" />}
+    <div className="flex h-full flex-col bg-bg-raised">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2">
+        <button onClick={goUp} disabled={currentPath === "."} className="flex h-7 w-7 items-center justify-center rounded-[8px] border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><ChevronUp size={13} /></button>
+        <span className="mono truncate text-[11px] font-[500] tracking-wide text-fg-muted">{currentPath === "." ? "/" : currentPath}</span>
+        <button onClick={promptNewFolder} disabled={createFolder.isPending} title="Nová složka" className="ml-auto flex h-7 w-7 items-center justify-center rounded-[8px] border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><FolderPlus size={13} /></button>
+        {isFetching && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-live pulse-live" />}
       </div>
-      {createFolder.isError && (
-        <p className="flex-shrink-0 border-b border-border px-2 py-1 text-xs text-danger">
-          {(createFolder.error as Error).message}
-        </p>
-      )}
+      {createFolder.isError && <p className="shrink-0 border-b border-danger/20 bg-danger-wash px-2 py-1.5 mono text-[11px] text-danger">{(createFolder.error as Error).message}</p>}
       <div className="min-h-0 flex-1 overflow-auto">
         {previewPath ? (
           <div className="flex h-full flex-col">
-            <button
-              onClick={() => setPreviewPath(undefined)}
-              className="flex flex-shrink-0 items-center gap-1 px-2 py-1.5 text-xs text-fg-muted hover:text-fg"
-            >
-              <ArrowLeft size={12} /> back
-            </button>
+            <button onClick={() => setPreviewPath(undefined)} className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 mono text-[11px] font-[600] tracking-wide text-fg-muted hover:text-fg"><ArrowLeft size={12} /> zpět</button>
             <div className="min-h-0 flex-1 overflow-auto">
-              {preview && (
-                <Suspense fallback={<p className="p-2 text-xs text-fg-subtle">Loading…</p>}>
-                  <CodeViewer path={previewPath} content={preview.content} />
-                </Suspense>
-              )}
+              {preview && <Suspense fallback={<p className="p-3 mono text-[11px] text-fg-subtle">Načítám…</p>}><CodeViewer path={previewPath} content={preview.content} /></Suspense>}
             </div>
-            {preview?.truncated && (
-              <p className="flex-shrink-0 border-t border-border px-2 py-1.5 text-xs text-warning">
-                Truncated preview.
-              </p>
-            )}
+            {preview?.truncated && <p className="shrink-0 border-t border-warning/20 bg-warning-wash px-2 py-1.5 mono text-[11px] text-warning">Náhled zkrácen.</p>}
           </div>
         ) : (
-          <ul>
+          <ul className="divide-y divide-border/60">
             {listing?.entries.map((entry) => (
               <li key={entry.name}>
-                <button
-                  onClick={() => open(entry)}
-                  className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs hover:bg-bg-hover"
-                >
-                  {entry.type === "directory" ? (
-                    <Folder size={12} className="flex-shrink-0 text-fg-subtle" />
-                  ) : (
-                    <File size={12} className="flex-shrink-0 text-fg-subtle" />
-                  )}
-                  <span className="mono truncate">{entry.name}</span>
+                <button onClick={() => open(entry)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-sunken">
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-[7px] border ${entry.type === "directory" ? "border-fg bg-fg text-bg-raised" : "border-border bg-bg-sunken text-fg-subtle"}`}>
+                    {entry.type === "directory" ? <Folder size={11} strokeWidth={1.8} /> : <File size={11} strokeWidth={1.8} />}
+                  </span>
+                  <span className="mono truncate text-[12px] tracking-[-0.01em] text-fg">{entry.name}</span>
                 </button>
               </li>
             ))}
+            {listing && listing.entries.length === 0 && <li className="px-3 py-8 text-center mono text-[11px] text-fg-subtle">Prázdná složka</li>}
           </ul>
         )}
       </div>

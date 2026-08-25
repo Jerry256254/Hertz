@@ -30,9 +30,8 @@ export function registerUpdateRoutes(app: FastifyInstance, _ctx?: unknown): void
       return { running: lines[lines.length - 1]?.includes("update started") === true, log: lines.slice(-60).join("\n") };
     });
 
-    /** Current vs latest available version — powers the Update dialog. */
-    instance.get("/api/update/version", async (request, reply) => {
-      if (request.user?.role !== "admin") return reply.code(403).send({ error: "Admin only" });
+    /** Current vs latest available version — powers the Check-updates block (any authenticated user may read). */
+    instance.get("/api/update/version", async (_request, _reply) => {
 
       const { execFile } = await import("node:child_process");
       const sha = await new Promise<string>((resolve) => {

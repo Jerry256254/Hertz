@@ -3,13 +3,13 @@ import remarkGfm from "remark-gfm";
 
 export function Markdown({ children }: { children: string }) {
   return (
-    <div className="markdown-body text-[15px] leading-relaxed text-fg">
+    <div className="markdown-body text-[13.5px] leading-relaxed text-fg">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">
+            <a href={href} target="_blank" rel="noreferrer" className="font-[600] text-fg underline decoration-border-strong underline-offset-2 hover:decoration-fg">
               {children}
             </a>
           ),
@@ -20,7 +20,7 @@ export function Markdown({ children }: { children: string }) {
           h2: ({ children }) => <h2 className="mb-2 mt-4 text-base font-semibold first:mt-0">{children}</h2>,
           h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
           blockquote: ({ children }) => (
-            <blockquote className="mb-3 border-l-2 border-border-strong pl-3 text-fg-muted last:mb-0">
+            <blockquote className="mb-3 border-l-2 border-fg pl-3 text-fg-muted last:mb-0">
               {children}
             </blockquote>
           ),

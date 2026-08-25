@@ -3,12 +3,6 @@ import { useAuth, ApiError } from "../lib/auth";
 import { api } from "../lib/api";
 import { Button, Input, Label } from "../components/ui";
 
-/**
- * First-run wizard, zero-config style:
- * 1. CEO account
- * 2. (optional) connect tools once — GitHub / PostgreSQL — saved as ready-to-use
- *    MCP servers right here, so nothing ever has to be configured by hand later.
- */
 export function SetupPage() {
   const { bootstrap } = useAuth();
   const [step, setStep] = useState<"account" | "connectors">("account");
@@ -21,67 +15,38 @@ export function SetupPage() {
   async function onAccountSubmit(e: FormEvent) {
     e.preventDefault();
     setError(undefined);
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Passwords don't match.");
-      return;
-    }
+    if (password.length < 8) { setError("Heslo musí mít alespoň 8 znaků."); return; }
+    if (password !== confirm) { setError("Hesla se neshodují."); return; }
     setSubmitting(true);
-    try {
-      await bootstrap(email, password);
-      setStep("connectors");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Setup failed");
-    } finally {
-      setSubmitting(false);
-    }
+    try { await bootstrap(email, password); setStep("connectors"); } catch (err) { setError(err instanceof ApiError ? err.message : "Založení selhalo"); } finally { setSubmitting(false); }
   }
 
-  if (step === "connectors") {
-    return <ConnectorsStep />;
-  }
+  if (step === "connectors") return <ConnectorsStep />;
 
   return (
-    <div className="flex h-full items-center justify-center bg-bg-sidebar px-4">
-      <form onSubmit={onAccountSubmit} className="w-full max-w-sm rounded-lg border border-border bg-bg-raised p-7 shadow-md">
-        <div className="mb-6 flex items-center gap-2.5">
-          <div>
-            <p className="text-sm font-semibold leading-none text-fg">Hertz Jobs</p>
-            <p className="text-[11px] leading-none text-fg-subtle">AI Agent Platform</p>
+    <div className="flex h-full items-center justify-center bg-bg px-4 py-8">
+      <form onSubmit={onAccountSubmit} className="w-full max-w-[420px] rounded-[18px] border border-border bg-bg-raised p-6 shadow-sm md:p-7">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center bg-fg text-bg-raised mono text-[12px] font-[700] tracking-[0.08em]">H</div>
+          <div className="leading-none">
+            <p className="mono text-[11px] font-[700] tracking-[0.16em] text-fg">HERTZ</p>
+            <p className="mono text-[10px] font-[500] tracking-[0.1em] text-fg-subtle">NASTAVENÍ</p>
           </div>
         </div>
 
-        <h1 className="mb-1 text-base font-semibold text-fg">Create your admin account</h1>
-        <p className="mb-6 text-sm text-fg-muted">
-          This runs on your own machine — no cloud account, no telemetry. You'll add a model provider next.
-        </p>
+        <h1 className="font-display text-[22px] leading-none tracking-[-0.03em] text-fg">Založ admin účet</h1>
+        <p className="mono mt-1.5 text-[11px] leading-relaxed text-fg-muted">Běží jen u tebe — žádný cloud. V dalším kroku přidáš poskytovatele modelu.</p>
 
-        <div className="mb-3">
-          <Label>Email</Label>
-          <Input type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        <div className="mb-3">
-          <Label>Password</Label>
-          <Input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        <div className="mb-5">
-          <Label>Confirm password</Label>
-          <Input type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        <div className="mt-6 space-y-3">
+          <div><Label>EMAIL</Label><Input type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@firma.cz" /></div>
+          <div><Label>HESLO</Label><Input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+          <div><Label>POTVRĎ HESLO</Label><Input type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>
         </div>
 
-        {error && <p className="mb-3 text-xs text-danger">{error}</p>}
+        {error && <p className="mt-3 rounded-[8px] border border-danger/20 bg-danger-wash px-3 py-2 mono text-[12px] text-danger">{error}</p>}
 
-        <Button type="submit" variant="primary" size="md" disabled={submitting} className="w-full">
-          {submitting ? "Creating account…" : "Create account & continue"}
+        <Button type="submit" variant="primary" size="md" disabled={submitting} className="mt-5 w-full">
+          {submitting ? "Zakládám…" : "Vytvořit účet → pokračovat"}
         </Button>
       </form>
     </div>
@@ -98,83 +63,39 @@ function ConnectorsStep() {
     setError(undefined);
     try {
       if (kind === "github") {
-        await api.post("/mcp-servers", {
-          name: "GitHub",
-          transport: "stdio",
-          command: "npx",
-          argsJson: ["-y", "@modelcontextprotocol/server-github"],
-          env: { GITHUB_PERSONAL_ACCESS_TOKEN: githubPat },
-          enabled: true,
-        });
-        setSaved((s) => [...s, "GitHub"]);
-        setGithubPat("");
+        await api.post("/mcp-servers", { name: "GitHub", transport: "stdio", command: "npx", argsJson: ["-y", "@modelcontextprotocol/server-github"], env: { GITHUB_PERSONAL_ACCESS_TOKEN: githubPat }, enabled: true });
+        setSaved((s) => [...s, "GitHub"]); setGithubPat("");
       } else {
-        await api.post("/mcp-servers", {
-          name: "PostgreSQL",
-          transport: "stdio",
-          command: "npx",
-          argsJson: ["-y", "@modelcontextprotocol/server-postgres", postgresUrl],
-          env: {},
-          enabled: true,
-        });
-        setSaved((s) => [...s, "PostgreSQL"]);
-        setPostgresUrl("");
+        await api.post("/mcp-servers", { name: "PostgreSQL", transport: "stdio", command: "npx", argsJson: ["-y", "@modelcontextprotocol/server-postgres", postgresUrl], env: {}, enabled: true });
+        setSaved((s) => [...s, "PostgreSQL"]); setPostgresUrl("");
       }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Couldn't save ${kind} connector`);
-    }
+    } catch (err) { setError(err instanceof ApiError ? err.message : `Nepodařilo se uložit ${kind}`); }
   }
 
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg-sidebar px-4 py-10">
-      <div className="w-full max-w-md rounded-lg border border-border bg-bg-raised p-7 shadow-md">
-        <h1 className="mb-1 text-base font-semibold text-fg">Connect tools (optional)</h1>
-        <p className="mb-5 text-sm text-fg-muted">
-          Paste a token once and every bot can use it immediately. You can add more apps later under Integrations — nothing else ever needs manual config.
-        </p>
+    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg px-4 py-8">
+      <div className="w-full max-w-[420px] rounded-[18px] border border-border bg-bg-raised p-6 shadow-sm md:p-7">
+        <h1 className="font-display text-[20px] leading-none tracking-[-0.03em] text-fg">Napoj nástroje <span className="mono text-[11px] font-[500] tracking-wide text-fg-subtle">(volitelné)</span></h1>
+        <p className="mono mt-1.5 text-[11px] leading-relaxed text-fg-muted">Vlož token jednou — každý bot ho hned umí použít. Další doplníš v Integracích.</p>
 
-        {error && <p className="mb-3 rounded-md bg-danger-wash p-2 text-xs text-danger">{error}</p>}
-        {saved.length > 0 && (
-          <p className="mb-4 rounded-md bg-success-wash p-2 text-xs text-success">Connected: {saved.join(", ")}</p>
-        )}
+        {error && <p className="mt-3 rounded-[8px] border border-danger/20 bg-danger-wash px-3 py-2 mono text-[11px] text-danger">{error}</p>}
+        {saved.length > 0 && <p className="mt-3 rounded-[8px] border border-live/20 bg-live-wash px-3 py-2 mono text-[11px] font-[600] text-live">Připojeno: {saved.join(", ")}</p>}
 
-        <div className="mb-5 space-y-3">
-          <div>
-            <Label>GitHub personal access token</Label>
-            <Input value={githubPat} onChange={(e) => setGithubPat(e.target.value)} placeholder="ghp_…" autoComplete="off" />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="mt-2"
-              disabled={!githubPat.trim()}
-              onClick={() => void saveConnector("github")}
-            >
-              Connect GitHub
-            </Button>
+        <div className="mt-5 space-y-4">
+          <div className="rounded-[12px] border border-border bg-bg-sunken p-3">
+            <Label>GITHUB PAT</Label>
+            <Input value={githubPat} onChange={(e) => setGithubPat(e.target.value)} placeholder="ghp_…" autoComplete="off" className="mono" />
+            <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={!githubPat.trim()} onClick={() => void saveConnector("github")}>Připojit GitHub</Button>
           </div>
-          <div className="pt-2">
-            <Label>PostgreSQL connection URL</Label>
-            <Input value={postgresUrl} onChange={(e) => setPostgresUrl(e.target.value)} placeholder="postgresql://user:pass@host/db" autoComplete="off" />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="mt-2"
-              disabled={!postgresUrl.trim()}
-              onClick={() => void saveConnector("postgres")}
-            >
-              Connect PostgreSQL
-            </Button>
+          <div className="rounded-[12px] border border-border bg-bg-sunken p-3">
+            <Label>POSTGRESQL URL</Label>
+            <Input value={postgresUrl} onChange={(e) => setPostgresUrl(e.target.value)} placeholder="postgresql://user:pass@host/db" autoComplete="off" className="mono" />
+            <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={!postgresUrl.trim()} onClick={() => void saveConnector("postgres")}>Připojit PostgreSQL</Button>
           </div>
         </div>
 
-        <Button variant="primary" size="md" className="w-full" onClick={() => window.location.reload()}>
-          Finish setup → open Hertz
-        </Button>
-        <p className="mt-3 text-center text-xs text-fg-subtle">
-          Next screen: Providers — paste one AI API key (Anthropic, OpenAI, Google, OpenRouter…) and you're done.
-        </p>
+        <Button variant="primary" size="md" className="mt-6 w-full" onClick={() => window.location.reload()}>Dokončit → otevřít Hertz</Button>
+        <p className="mono mt-2 text-center text-[10px] leading-relaxed text-fg-faint">Další obrazovka: Provideři — vlož jeden AI klíč a máš hotovo.</p>
       </div>
     </div>
   );
