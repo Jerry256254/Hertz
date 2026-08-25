@@ -114,6 +114,8 @@ else
 fi
 
 # --- 3. build ----------------------------------------------------------------
+DATA_DIR="${HOME}/.kuclab-hertz"
+mkdir -p "$DATA_DIR"
 log "Installing dependencies & building (this can take a few minutes)..."
 cd "$INSTALL_DIR"
 pnpm install --frozen-lockfile > /tmp/hertz-install.log 2>&1 || { tail -30 /tmp/hertz-install.log; die "pnpm install failed — see /tmp/hertz-install.log"; }
@@ -141,8 +143,6 @@ if [ "$NEED_IMAGE" -eq 1 ]; then
 fi
 
 # --- 4. non-interactive network config --------------------------------------
-DATA_DIR="${HOME}/.kuclab-hertz"
-mkdir -p "$DATA_DIR"
 if [ ! -f "$DATA_DIR/config.json" ]; then
   # Network-accessible by default (LAN/Tailscale). Change later in this file.
   printf '{\n  "host": "0.0.0.0",\n  "port": %s\n}\n' "$PORT" > "$DATA_DIR/config.json"
