@@ -24,9 +24,34 @@ if (!pw) {
 }
 
 const { chromium } = pw;
-const headless = !process.env.DISPLAY; // with DISPLAY set, run headed on the visible desktop
-const browser = await chromium.launch({ headless, args: ["--no-sandbox"] });
-const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "cs-CZ" });
+const headless = !process.env.DISPLAY;
+const chromeArgs = [
+  "--no-sandbox",
+  "--disable-blink-features=AutomationControlled",
+  "--disable-infobars",
+  "--disable-dev-shm-usage",
+  "--start-maximized",
+];
+// Try Chrome channel first (google-chrome-stable), fall back to bundled Chromium
+let launchOpts = { headless, args: chromeArgs };
+try {
+  const test = await chromium.launch({ ...launchOpts, channel: "chrome" }).then(b => b.close().then(() => true)).catch(() => false);
+  if (test) launchOpts = { ...launchOpts, channel: "chrome" };
+} catch {}
+const browser = await chromium.launch(launchOpts);
+const context = await browser.newContext({
+  viewport: { width: 1440, height: 900 },
+  locale: "cs-CZ",
+  userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  extraHTTPHeaders: { "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8" },
+});
+await context.addInitScript(() => {
+  Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+  // @ts-ignore
+  window.chrome = window.chrome || { runtime: {} };
+  Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
+  Object.defineProperty(navigator, "languages", { get: () => ["cs-CZ", "cs", "en"] });
+});
 const page = await context.newPage();
 
 function selectorText(sel) {

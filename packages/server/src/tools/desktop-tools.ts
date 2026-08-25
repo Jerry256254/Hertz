@@ -100,7 +100,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
   const openApp: OrgToolDef = {
     name: "desktop_open_app",
     description:
-      "Launch a GUI application on YOUR desktop in the background ('thunar' file manager, 'xfce4-terminal', 'chromium https://example.com', or any installer like 'apt install -y gimp'). Returns immediately.",
+      "Launch a GUI application on YOUR desktop in the background ('thunar' file manager, 'xterm', 'google-chrome https://example.com' or 'chromium https://example.com', or any installer like 'apt install -y gimp'). Returns immediately.",
     inputSchema: z.object({ command: z.string().min(1).max(300) }),
     async execute(rawInput, ctx) {
       const input = z.object({ command: z.string() }).parse(rawInput);

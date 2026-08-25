@@ -1,38 +1,41 @@
 # KucLab Hertz — "computer" image for docker-backend agents.
 #
 # Each agent with computer_backend = "docker" gets a container from this image:
-# its own filesystem workspace, shells, a full desktop environment (Xfce on a
-# virtual display, watchable/streamable from the WebUI), and preinstalled
-# Playwright Chromium for browser automation that runs ON that desktop.
+# its own filesystem workspace, shells, a minimal lightweight desktop
+# (openbox + tint2, terminal + file manager + browser only), and preinstalled
+# Playwright Chromium + Google Chrome for reliable Google sign-in.
 # Project roots and the agent's personal directory are bind-mounted at their
-# host-absolute paths by the server, so tool code needs no path translation.
-#
-# Build once on the host running Hertz:
-#   docker build -t kuclab-hertz-computer:latest -f docker/computer.Dockerfile .
+# host-absolute paths by the server.
+
 FROM mcr.microsoft.com/playwright:v1.49.0-noble
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Core CLI tooling agents expect: build tools, VCS/GitHub CLI, search, scripting,
-# plus the desktop stack: Xvfb (virtual display), x11vnc (VNC server),
-# noVNC/websockify (browser client), and a lightweight Xfce desktop.
+# Core CLI tools + minimal desktop stack:
+# - Xvfb/x11vnc/novnc/websockify for streaming
+# - openbox (window manager, ~1 MB) + tint2 (panel) — NO full xfce4
+# - xterm + thunar (terminal + file manager only)
+# - dbus/xdotool for automation
+# - Google Chrome stable for Google sign-in (Chromium is often blocked as insecure)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git gh jq ripgrep python3 python3-pip python3-venv \
-      build-essential sqlite3       unzip zip tree procps net-tools scrot \
+      ca-certificates curl gnupg wget git gh jq ripgrep python3 python3-pip python3-venv \
+      build-essential sqlite3 unzip zip tree procps net-tools scrot \
       xvfb x11vnc novnc websockify \
-      xfce4 xfce4-terminal thunar \
-      dbus-x11 x11-utils xdotool wmctrl \
+      openbox tint2 xterm thunar \
+      dbus-x11 x11-utils xdotool wmctrl menu \
       fonts-liberation fonts-noto-color-emoji \
-    && rm -rf /var/lib/apt/lists/*
+    && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium \
+    && ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium-browser \
+    && ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome
 
-# Playwright browsers are baked into the base image at /ms-playwright.
+# Playwright browsers baked at /ms-playwright
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# The matching playwright npm library, globally — so the browser daemon
-# resolves it out of the box (no per-agent self-repair needed).
 RUN npm i -g playwright@1.49.0 --no-audit --no-fund
 
 WORKDIR /workspace
-
-# Long-lived "computer": the server exec's into it; the entrypoint just idles.
 CMD ["sleep", "infinity"]

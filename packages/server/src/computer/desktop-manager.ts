@@ -62,7 +62,7 @@ export class DesktopManager {
     // of its own exec session (Docker never kills exec session main processes).
     const cn = this.computer.containerName(agentId);
     await this.computer.run(["docker", "exec", cn, "bash", "-c",
-      "pkill -f 'Xvfb :99' 2>/dev/null; pkill x11vnc 2>/dev/null; pkill -f 'websockify.*6080' 2>/dev/null; pkill xfce4-session 2>/dev/null; pkill xfwm4 2>/dev/null; rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock; exit 0",
+      "pkill -f 'Xvfb :99' 2>/dev/null; pkill x11vnc 2>/dev/null; pkill -f 'websockify.*6080' 2>/dev/null; pkill openbox 2>/dev/null; pkill tint2 2>/dev/null; pkill xterm 2>/dev/null; rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock; exit 0",
     ]);
     await new Promise((r) => setTimeout(r, 500));
 
@@ -75,14 +75,13 @@ export class DesktopManager {
       if (r.exitCode !== 0) throw new Error(`Xvfb never created /tmp/.X11-unix/X99 — xvfb log: ${(await this.execInContainer(agentId,"bash",["-c","cat /tmp/xvfb.log 2>/dev/null | tail -5"])).stdout.trim()}`);
     }
 
-    // 2. Desktop environment — xfce via dbus, wm fallback, terminal
-    // dbus+xsession must be its own exec -d so session survives
+    // 2. Lightweight desktop: openbox (WM) + tint2 (panel) — only terminal, file manager, browser
     await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
-      "export DISPLAY=:99; xsetroot -solid '#2b2f36' 2>/dev/null; dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1 || xfwm4 --daemon >/tmp/xfwm4.log 2>&1; sleep 2"]);
-    await new Promise((r) => setTimeout(r, 3_000));
-    // terminal as separate daemon
+      "export DISPLAY=:99; xsetroot -solid '#1e2128' 2>/dev/null; openbox >/tmp/openbox.log 2>&1 & sleep 1; tint2 >/tmp/tint2.log 2>&1 & sleep 1; exit 0"]);
+    await new Promise((r) => setTimeout(r, 2_000));
+    // terminal + file manager shortcuts on desktop
     await this.computer.run(["docker", "exec", "-d", cn, "bash", "-c",
-      "export DISPLAY=:99; xfce4-terminal --geometry=110x32 >/tmp/terminal.log 2>&1 & sleep 1; exit 0"]);
+      "export DISPLAY=:99; xterm -geometry 110x32+60+60 >/tmp/xterm.log 2>&1 & thunar --daemon >/tmp/thunar.log 2>&1 & sleep 1; exit 0"]);
 
     // 3. x11vnc — main process is x11vnc
     await this.computer.run(["docker", "exec", "-d", cn, "x11vnc", "-display", ":99", "-forever", "-shared", "-rfbport", "5900", "-nopw", "-listen", "0.0.0.0", "-quiet"]);
@@ -114,7 +113,7 @@ export class DesktopManager {
     const status = await this.status(agentId);
     if (!ready || !status.running || !status.hostPort) {
       const logs = await this.execInContainer(agentId, "bash", ["-c",
-        "echo '--- xvfb:'; tail -8 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -8 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -8 /tmp/websockify.log 2>/dev/null; echo '--- xfce:'; tail -8 /tmp/xfce.log 2>/dev/null; echo '--- procs:'; ps aux | grep -E 'Xvfb|x11vnc|websockify' | grep -v grep; true",
+        "echo '--- xvfb:'; tail -8 /tmp/xvfb.log 2>/dev/null; echo '--- x11vnc:'; tail -8 /tmp/x11vnc.log 2>/dev/null; echo '--- websockify:'; tail -8 /tmp/websockify.log 2>/dev/null; echo '--- openbox:'; tail -8 /tmp/openbox.log 2>/dev/null; echo '--- tint2:'; tail -8 /tmp/tint2.log 2>/dev/null; echo '--- procs:'; ps aux | grep -E 'Xvfb|x11vnc|websockify' | grep -v grep; true",
       ]);
       throw new Error(`Desktop failed to start. Logs:\n${logs.stdout.trim() || "(empty)"}`);
     }
@@ -132,7 +131,7 @@ export class DesktopManager {
 
   async stop(agentId: string): Promise<void> {
     await this.execInContainer(agentId, "bash", ["-c",
-      "pkill -f 'Xvfb :99'; pkill x11vnc; pkill -f 'websockify.*6080'; pkill xfce4-session; exit 0",
+      "pkill -f 'Xvfb :99'; pkill x11vnc; pkill -f 'websockify.*6080'; pkill openbox; pkill tint2; exit 0",
     ]);
   }
 
