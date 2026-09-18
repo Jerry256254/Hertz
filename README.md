@@ -27,6 +27,7 @@ Prefer manual control? [Clone and run it yourself](#4-installing-hertz-jobs-git-
 9. [Updating](#9-updating)
 10. [Where your data lives](#10-where-your-data-lives)
 11. [Troubleshooting](#11-troubleshooting)
+12. [New in v0.15](#12-new-in-v015-grok-bot--museai-parity)
 
 ---
 
@@ -301,6 +302,18 @@ Everything is local, in `~/.kuclab-hertz/`:
 | Port already in use | Rerun `pnpm setup`, or edit `~/.kuclab-hertz/config.json` |
 
 Found a bug? Please [open an issue](https://github.com/Jerry256254/Hertz/issues).
+
+---
+
+## 12. New in v0.15 (Grok-bot & Muse.ai parity)
+
+- **Telegram & Discord channels that actually work** — connect a bot on the Channels page, chat from your phone, approve sensitive actions with one tap. See [GUIDE §7–8](docs/GUIDE.md).
+- **New bot tools** — `web_search` (free DuckDuckGo, upgrades via Tavily/Brave/Serper keys), `generate_image` (free FLUX, upgrades to DALL-E), `transcribe_audio` and `speak_text` (free local engines, upgrades to OpenAI). [GUIDE §14](docs/GUIDE.md).
+- **Public share links** — publish any chat as a read-only page from the chat header. [GUIDE §15](docs/GUIDE.md).
+- **API tokens** — `htz_…` Bearer credentials on your Account page for scripts and integrations. [GUIDE §16](docs/GUIDE.md).
+- **Monthly budgets** — per-user AI spend caps with 402 enforcement. [GUIDE §17](docs/GUIDE.md).
+- **WebUI upgrades** — ⌘K command palette, light/dark/system theme toggle, installable PWA, document attachments in chat. [GUIDE §18](docs/GUIDE.md).
+- **Tests & CI** — 24 unit tests (`pnpm test`) plus a GitHub Actions build matrix (Node 20/22).
 
 ---
 

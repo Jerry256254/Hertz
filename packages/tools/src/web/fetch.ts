@@ -60,7 +60,7 @@ function bufferEncodingFor(contentType: string): BufferEncoding {
 export const webFetchTool: ToolDef<Input> = {
   name: "web_fetch",
   description:
-    "Fetch a URL over HTTP(S) and return its text content (HTML is stripped to plain text). Not a search engine — pass a specific URL. Google's search results page actively blocks non-browser requests and will not work; for web search use https://html.duckduckgo.com/html/?q=<query> instead, or fetch a specific known page directly.",
+    "Fetch a URL over HTTP(S) and return its text content (HTML is stripped to plain text). Not a search engine — pass a specific URL (use web_search to find pages first). Search-result pages that block non-browser requests will not work; fetch a specific page directly instead.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
     const url = new URL(input.url);

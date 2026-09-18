@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Files, Monitor, Paperclip, Pause, Play, Settings, Square, TriangleAlert, X, Hash } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Files, Link2Off, Monitor, Paperclip, Pause, Play, Settings, Share2, Square, TriangleAlert, X, Hash } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Budget, HertzSession, PersistedMessage } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
@@ -70,6 +70,7 @@ export function SessionPage() {
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [images, setImages] = useState<Array<{ mimeType: string; data: string }>>([]);
+  const [docFiles, setDocFiles] = useState<Array<{ name: string; mimeType: string; data: string }>>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -113,15 +114,15 @@ export function SessionPage() {
   useEffect(() => { const el = textareaRef.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 180)}px`; }, [text]);
 
   async function send() {
-    if (!text && images.length === 0) return;
+    if (!text && images.length === 0 && docFiles.length === 0) return;
     if (text.trim() === "/compact") {
       setIsRunning(true); setRunError(undefined); setText("");
       try { await api.post(`/sessions/${sessionId}/compact`); } catch (err) { setRunError(err instanceof ApiError ? err.message : "Nešlo zkompaktnout"); } finally { setIsRunning(false); void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }); }
       return;
     }
-    const payload = { text, images, mode };
-    setText(""); setImages([]);
-    try { await api.post(`/sessions/${sessionId}/messages`, payload); } catch (err) { setRunError(err instanceof ApiError ? err.message : "Zprávu se nepodařilo odeslat"); setText(payload.text); setImages(payload.images); return; }
+    const payload = { text, images, files: docFiles, mode };
+    setText(""); setImages([]); setDocFiles([]);
+    try { await api.post(`/sessions/${sessionId}/messages`, payload); } catch (err) { setRunError(err instanceof ApiError ? err.message : "Zprávu se nepodařilo odeslat"); setText(payload.text); setImages(payload.images); setDocFiles(payload.files); return; }
     void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
   }
 
@@ -155,8 +156,22 @@ export function SessionPage() {
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }
   async function onFiles(files: FileList | null) {
     if (!files) return;
-    const next = await Promise.all(Array.from(files).filter((f) => f.type.startsWith("image/")).map(async (f) => ({ mimeType: f.type, data: await fileToBase64(f) })));
-    setImages((prev) => [...prev, ...next]);
+    const list = Array.from(files);
+    const nextImages = await Promise.all(
+      list.filter((f) => f.type.startsWith("image/")).map(async (f) => ({ mimeType: f.type, data: await fileToBase64(f) })),
+    );
+    setImages((prev) => [...prev, ...nextImages]);
+    const textish = list.filter(
+      (f) => !f.type.startsWith("image/") && (f.type.startsWith("text/") || /json|csv|javascript|markdown/.test(f.type) || /\.(txt|md|markdown|csv|json|ts|js|py|log)$/i.test(f.name)),
+    );
+    if (textish.length > 0) {
+      const nextDocs = await Promise.all(
+        textish.slice(0, 5).map(async (f) => ({ name: f.name, mimeType: f.type || "text/plain", data: await fileToBase64(f) })),
+      );
+      setDocFiles((prev) => [...prev, ...nextDocs]);
+    }
+    const skipped = list.length - nextImages.length - textish.slice(0, 5).length;
+    if (skipped > 0) setRunError("Některé soubory jsem přeskočil — umím obrázky a textové dokumenty (txt, md, csv, json).");
   }
 
   const budget = data?.budget;
@@ -229,6 +244,7 @@ export function SessionPage() {
             <IconButton title="Obrazovka" onClick={() => { setShowScreen((v) => !v); setShowFiles(false); }} className={showScreen ? "bg-fg text-bg-raised border-fg" : "border border-border bg-bg-raised"}><Monitor size={14} /></IconButton>
             <IconButton title="Soubory" onClick={() => { setShowFiles((v) => !v); setShowScreen(false); }} className={showFiles ? "bg-fg text-bg-raised border-fg" : "border border-border bg-bg-raised"}><Files size={14} /></IconButton>
             {data?.agent && projectId && <IconButton title="Nastavení bota" onClick={() => navigate(`/projects/${projectId}/agents/${data.agent!.id}`)} className="border border-border bg-bg-raised"><Settings size={14} /></IconButton>}
+            {sessionId && <ShareButton sessionId={sessionId} />}
           </div>
         </header>
 
@@ -302,6 +318,16 @@ export function SessionPage() {
                 ))}
               </div>
             )}
+            {docFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-1 pt-1">
+                {docFiles.map((f, i) => (
+                  <span key={i} className="mono flex items-center gap-1.5 rounded-[8px] border border-border bg-bg-sunken px-2 py-1 text-[11px] text-fg-muted">
+                    📎 {f.name}
+                    <button type="button" onClick={() => setDocFiles((p) => p.filter((_, idx) => idx !== i))} className="text-fg-subtle hover:text-fg"><X size={11} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 ref={textareaRef}
@@ -314,7 +340,7 @@ export function SessionPage() {
                 className="max-h-[140px] min-h-[24px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-[13.5px] leading-6 text-fg placeholder:text-fg-subtle outline-none"
               />
               <div className="flex shrink-0 items-center gap-1">
-                <input type="file" accept="image/*" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id="file-input" />
+                <input type="file" accept="image/*,.txt,.md,.markdown,.csv,.json,.log,.ts,.js,.py" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id="file-input" />
                 <IconButton type="button" onClick={() => document.getElementById("file-input")?.click()} className="h-8 w-8 rounded-[10px] border border-border bg-bg-sunken"><Paperclip size={14} /></IconButton>
                 <button type="submit" disabled={!text && images.length === 0} className="flex h-8 w-8 shrink-0 items-center justify-center bg-fg text-bg-raised disabled:opacity-30"><ArrowUp size={15} strokeWidth={2} /></button>
               </div>
@@ -366,6 +392,61 @@ function ScreenPanel({ agentId, agentName }: { agentId: string; agentName: strin
       </div>
       <AgentRoutines agentId={agentId} />
     </div>
+  );
+}
+
+function ShareButton({ sessionId }: { sessionId: string }) {
+  const queryClient = useQueryClient();
+  const [copied, setCopied] = useState(false);
+  const { data } = useQuery({
+    queryKey: ["share", sessionId],
+    queryFn: () => api.get<{ token: string | null }>(`/sessions/${sessionId}/share`),
+  });
+
+  async function copyLink(token: string) {
+    const url = `${window.location.origin}/s/${token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt("Zkopíruj odkaz:", url);
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function ensureAndCopy() {
+    if (data?.token) return copyLink(data.token);
+    try {
+      const created = await api.post<{ token: string }>(`/sessions/${sessionId}/share`);
+      void queryClient.invalidateQueries({ queryKey: ["share", sessionId] });
+      await copyLink(created.token);
+    } catch {
+      /* error surfaces via global handler */
+    }
+  }
+
+  async function revoke() {
+    if (!window.confirm("Zrušit veřejný odkaz na tuto konverzaci?")) return;
+    await api.delete(`/sessions/${sessionId}/share`);
+    void queryClient.invalidateQueries({ queryKey: ["share", sessionId] });
+  }
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <IconButton
+        title={data?.token ? "Kopírovat veřejný odkaz" : "Vytvořit veřejný odkaz"}
+        onClick={() => void ensureAndCopy()}
+        className={data?.token ? "border-fg bg-fg text-bg-raised" : "border border-border bg-bg-raised"}
+      >
+        {copied ? <Check size={14} /> : <Share2 size={14} />}
+      </IconButton>
+      {data?.token && (
+        <IconButton title="Zrušit veřejný odkaz" onClick={() => void revoke()} className="border border-border bg-bg-raised">
+          <Link2Off size={14} />
+        </IconButton>
+      )}
+    </span>
   );
 }
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { usageRecords } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
+import { checkBudget, monthStartUtc } from "../usage/quota.js";
 
 const querySchema = z.object({ sessionId: z.string().optional() });
 
@@ -30,6 +31,12 @@ export function registerUsageRoutes(app: FastifyInstance, ctx: AppContext): void
 
       const totalCost = rows.reduce((sum, r) => sum + r.cost, 0);
       return { records: rows, totalCost };
+    });
+
+    /** Current month's spend vs. the user's budget cap (for the account page). */
+    instance.get("/api/usage/monthly", async (request) => {
+      const check = await checkBudget(ctx.db, request.user!.id);
+      return { spend: check.spend, budget: check.budget, monthStart: monthStartUtc() };
     });
   });
 }

@@ -7,4 +7,7 @@ export { globTool } from "./fs/glob.js";
 export { grepTool } from "./fs/grep.js";
 export { shellExecTool } from "./shell/exec.js";
 export { webFetchTool } from "./web/fetch.js";
+export { webSearchTool } from "./web/search.js";
 export { todoWriteTool } from "./planning/todo.js";
+export { imageGenTool } from "./media/image-gen.js";
+export { speakTextTool, transcribeAudioTool } from "./media/voice.js";

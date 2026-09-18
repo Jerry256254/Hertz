@@ -123,7 +123,7 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     description: "Access xAI's Grok language model API for reasoning and generation tasks.",
     letter: "G",
     transport: "sse",
-    url: "https://api.grok.com/v1",
+    url: "https://api.x.ai/v1",
     credentials: [
       { key: "GROK_API_KEY", label: "Grok API Key", secret: true, placeholder: "grok-..." },
     ],

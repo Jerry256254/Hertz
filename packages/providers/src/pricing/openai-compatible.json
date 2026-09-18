@@ -1,0 +1,28 @@
+{
+  "_note": "Approximate USD per 1M tokens for popular OpenAI-compatible backends (verified Jan 2026 — providers change prices, update from docs when in doubt). Matched by base-URL host, then by longest model-prefix.",
+  "api.x.ai": {
+    "grok-4": { "inputPerMillion": 3, "outputPerMillion": 15, "cachedInputPerMillion": 0.75, "currency": "USD" },
+    "grok-3": { "inputPerMillion": 3, "outputPerMillion": 15, "cachedInputPerMillion": 0.75, "currency": "USD" },
+    "grok-3-mini": { "inputPerMillion": 0.3, "outputPerMillion": 0.5, "cachedInputPerMillion": 0.07, "currency": "USD" },
+    "grok-2": { "inputPerMillion": 2, "outputPerMillion": 10, "currency": "USD" }
+  },
+  "api.deepseek.com": {
+    "deepseek-reasoner": { "inputPerMillion": 0.55, "outputPerMillion": 2.19, "cachedInputPerMillion": 0.14, "currency": "USD" },
+    "deepseek-chat": { "inputPerMillion": 0.27, "outputPerMillion": 1.1, "cachedInputPerMillion": 0.07, "currency": "USD" }
+  },
+  "api.mistral.ai": {
+    "mistral-large": { "inputPerMillion": 2, "outputPerMillion": 6, "currency": "USD" },
+    "mistral-medium": { "inputPerMillion": 0.4, "outputPerMillion": 2, "currency": "USD" },
+    "mistral-small": { "inputPerMillion": 0.1, "outputPerMillion": 0.3, "currency": "USD" },
+    "codestral": { "inputPerMillion": 0.3, "outputPerMillion": 0.9, "currency": "USD" }
+  },
+  "api.groq.com": {
+    "llama-3.3-70b": { "inputPerMillion": 0.59, "outputPerMillion": 0.79, "currency": "USD" },
+    "llama-3.1-8b": { "inputPerMillion": 0.05, "outputPerMillion": 0.08, "currency": "USD" },
+    "mixtral-8x7b": { "inputPerMillion": 0.24, "outputPerMillion": 0.24, "currency": "USD" }
+  },
+  "api.cerebras.ai": {
+    "llama-3.3-70b": { "inputPerMillion": 0.6, "outputPerMillion": 0.6, "currency": "USD" },
+    "llama-3.1-8b": { "inputPerMillion": 0.1, "outputPerMillion": 0.1, "currency": "USD" }
+  }
+}

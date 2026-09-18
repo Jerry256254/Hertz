@@ -1,0 +1,15 @@
+{
+  "name": "Hertz — Agent Workspace",
+  "short_name": "Hertz",
+  "description": "Self-hosted workspace pro autonomní AI agenty.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F5F3EF",
+  "theme_color": "#11110E",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

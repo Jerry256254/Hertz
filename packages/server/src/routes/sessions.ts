@@ -12,6 +12,7 @@ import { listConversations, pickConversationActor } from "../conversations.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import { createGroupSession, listGroupParticipants } from "../groups.js";
 import { accessibleProjectIds, hasProjectAccess } from "../auth/project-access.js";
+import { checkBudget } from "../usage/quota.js";
 
 function clearPendingMetadata(raw: string | null): string | null {
   if (!raw) return null;
@@ -42,6 +43,11 @@ const sendMessageSchema = z.object({
   text: z.string().optional(),
   images: z
     .array(z.object({ mimeType: z.string(), data: z.string() }))
+    .optional()
+    .default([]),
+  /** Small text-based documents (txt/md/csv/json) as base64 — inlined into the message as text. */
+  files: z
+    .array(z.object({ name: z.string().max(120), mimeType: z.string(), data: z.string() }))
     .optional()
     .default([]),
 });
@@ -337,24 +343,48 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const { id } = request.params as { id: string };
     const parsed = sendMessageSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
-    if (!parsed.data.text && parsed.data.images.length === 0) {
-      return reply.code(400).send({ error: "Message must include text or at least one image" });
+    if (!parsed.data.text && parsed.data.images.length === 0 && parsed.data.files.length === 0) {
+      return reply.code(400).send({ error: "Message must include text, an image, or a file" });
     }
 
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const session = sessionRows[0];
     if (!session) return reply.code(404).send({ error: "Session not found" });
     if (!(await hasProjectAccess(ctx.db, request.user!, session.projectId))) return reply.code(403).send({ error: "No access" });
+
+    const budget = await checkBudget(ctx.db, request.user!.id);
+    if (!budget.allowed) {
+      return reply.code(402).send({
+        error: `Monthly AI budget of $${budget.budget!.toFixed(2)} exhausted (spent $${budget.spend.toFixed(2)}). Ask an admin to raise it.`,
+      });
+    }
+
     if (parsed.data.images.length > 5) return reply.code(400).send({ error: "At most 5 images per message" });
     for (const img of parsed.data.images) {
       if (img.data.length > 5_000_000) return reply.code(400).send({ error: "Image too large (max ~3.5 MB)" });
       if (!/^image\/(png|jpeg|jpg|webp|gif)$/.test(img.mimeType)) return reply.code(400).send({ error: `Unsupported image type: ${img.mimeType}` });
+    }
+    if (parsed.data.files.length > 5) return reply.code(400).send({ error: "At most 5 files per message" });
+    for (const file of parsed.data.files) {
+      if (file.data.length > 400_000) return reply.code(400).send({ error: `File ${file.name} too large (max ~300 KB of text)` });
+      if (!/^(text\/|application\/(json|csv|x-javascript)|.*(csv|json|markdown)$)/.test(file.mimeType) && !/\.(txt|md|markdown|csv|json|ts|js|py|log)$/i.test(file.name)) {
+        return reply.code(400).send({ error: `Only text documents are supported (${file.name}); PDFs and binaries can't be read yet` });
+      }
     }
 
     const content: ContentBlock[] = [];
     if (parsed.data.text) content.push({ type: "text", text: parsed.data.text });
     for (const img of parsed.data.images) {
       content.push({ type: "image", mimeType: img.mimeType, data: img.data });
+    }
+    for (const file of parsed.data.files) {
+      let decoded = "";
+      try {
+        decoded = Buffer.from(file.data, "base64").toString("utf8").slice(0, 60_000);
+      } catch {
+        return reply.code(400).send({ error: `Could not decode ${file.name}` });
+      }
+      content.push({ type: "text", text: `📎 Attached file ${file.name}:\n\`\`\`\n${decoded}\n\`\`\`` });
     }
 
     // A message sent while the agent is mid-work is injected into the run: the

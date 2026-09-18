@@ -23,6 +23,7 @@ import { reconcileOnBoot } from "./runtime/reconcile.js";
 import { ComputerManager } from "./computer/computer-manager.js";
 import { DesktopManager } from "./computer/desktop-manager.js";
 import { HeartbeatScheduler } from "./heartbeats/heartbeat-scheduler.js";
+import { ChannelManager } from "./channels/manager.js";
 import { agents, projectRoots, users } from "./db/schema.js";
 
 export interface AppContext {
@@ -40,6 +41,7 @@ export interface AppContext {
   computer: ComputerManager;
   desktop: DesktopManager;
   heartbeatScheduler: HeartbeatScheduler;
+  channels: ChannelManager;
 }
 
 export async function createAppContext(dataDir?: string): Promise<AppContext> {
@@ -175,6 +177,9 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const heartbeatScheduler = new HeartbeatScheduler({ db, queue });
   heartbeatScheduler.start();
 
+  const channels = new ChannelManager({ db, masterKey, agentLoop, persistence, queue, fallbackUserId });
+  await channels.start();
+
   return {
     paths,
     db,
@@ -190,5 +195,6 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     computer,
     desktop,
     heartbeatScheduler,
+    channels,
   };
 }

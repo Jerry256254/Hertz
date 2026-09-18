@@ -20,13 +20,25 @@ const changePasswordSchema = z.object({
 
 const changeRoleSchema = z.object({ role: z.enum(["admin", "user"]) });
 
+const changeBudgetSchema = z.object({ monthlyBudgetUsd: z.number().min(0).max(100000).nullable() });
+
 export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
     instance.addHook("preHandler", requireAuth);
 
     instance.get("/api/users", { preHandler: requireAdmin }, async () => {
-      const rows = await ctx.db.select({ id: users.id, email: users.email, role: users.role, createdAt: users.createdAt }).from(users);
+      const rows = await ctx.db
+        .select({ id: users.id, email: users.email, role: users.role, monthlyBudgetUsd: users.monthlyBudgetUsd, createdAt: users.createdAt })
+        .from(users);
       return { users: rows };
+    });
+
+    instance.patch("/api/users/:id/budget", { preHandler: requireAdmin }, async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = changeBudgetSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      await ctx.db.update(users).set({ monthlyBudgetUsd: parsed.data.monthlyBudgetUsd }).where(eq(users.id, id));
+      return { ok: true };
     });
 
     instance.post("/api/users", { preHandler: requireAdmin }, async (request, reply) => {

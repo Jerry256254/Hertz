@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { Sidebar } from "./Sidebar";
+import { CommandPalette } from "./CommandPalette";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -43,6 +44,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-bg">
         {children}
       </div>
+      <CommandPalette />
     </div>
   );
 }

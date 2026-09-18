@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMemo, useState, type ReactNode } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight,
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { ThemeToggle } from "../lib/theme";
 import type { HertzSession, Project } from "../lib/types";
 import { Avatar, IconButton } from "./ui";
 
@@ -81,7 +82,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
           <div className="mono text-[10px] font-[500] tracking-[0.12em] text-fg-subtle">WORKSPACE</div>
         </div>
         <span className="ml-auto hidden h-5 items-center rounded-full border border-border bg-bg-sunken px-2 mono text-[10px] font-[600] tracking-[0.08em] text-fg-muted md:inline-flex">
-          v0.13
+          v0.15
         </span>
         {onClose && (
           <button onClick={onClose} className="ml-auto flex h-8 w-8 items-center justify-center rounded-[8px] border border-border text-fg-subtle hover:bg-bg-hover hover:text-fg md:hidden" aria-label="Zavřít">
@@ -159,19 +160,14 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
       <div className="shrink-0 border-t border-border">
         <div className="p-2">
           <div className="rounded-[12px] border border-border bg-bg-sunken p-1.5">
-            <Link to="/approvals" className="flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
-              <ShieldCheck size={14} strokeWidth={1.7} /> Schválení
-            </Link>
-            <Link to="/integrations" className="flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
-              <Plug size={14} strokeWidth={1.7} /> Integrace
-            </Link>
-            <Link to="/providers" className="flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
-              <Settings2 size={14} strokeWidth={1.7} /> Provideři
-            </Link>
+            <NavItem to="/approvals" icon={<ShieldCheck size={14} strokeWidth={1.7} />} label="Schválení" />
+            <NavItem to="/integrations" icon={<Plug size={14} strokeWidth={1.7} />} label="Integrace" />
             {user?.role === "admin" && (
-              <Link to="/users" className="flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-[13px] font-[500] text-fg-muted hover:bg-bg-raised hover:text-fg">
-                <Users size={14} strokeWidth={1.7} /> Uživatelé
-              </Link>
+              <NavItem to="/channels" icon={<MessagesSquare size={14} strokeWidth={1.7} />} label="Kanály" />
+            )}
+            <NavItem to="/providers" icon={<Settings2 size={14} strokeWidth={1.7} />} label="Provideři" />
+            {user?.role === "admin" && (
+              <NavItem to="/users" icon={<Users size={14} strokeWidth={1.7} />} label="Uživatelé" />
             )}
           </div>
 
@@ -185,12 +181,29 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
             <Avatar label={user?.email ?? "?"} />
             <span className="mono min-w-0 flex-1 truncate text-[11.5px] font-[500] tracking-[-0.01em] text-fg-muted">{user?.email}</span>
           </Link>
+          <ThemeToggle />
           <IconButton title="Odhlásit" onClick={() => void logout()} className="h-7 w-7 rounded-[8px] border border-border">
             <LogOut size={13} strokeWidth={1.85} />
           </IconButton>
         </div>
       </div>
     </aside>
+  );
+}
+
+function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+  const location = useLocation();
+  const isActive = location.pathname === to || location.pathname.startsWith(`${to}/`);
+  return (
+    <Link
+      to={to}
+      aria-current={isActive ? "page" : undefined}
+      className={`flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-[13px] font-[500] ${
+        isActive ? "bg-fg text-bg-raised" : "text-fg-muted hover:bg-bg-raised hover:text-fg"
+      }`}
+    >
+      {icon} {label}
+    </Link>
   );
 }
 

@@ -10,6 +10,7 @@ interface ManagedUser {
   id: string;
   email: string;
   role: "admin" | "user";
+  monthlyBudgetUsd: number | null;
   createdAt: string;
 }
 
@@ -75,6 +76,7 @@ function UserRow({ managedUser, isSelf }: { managedUser: ManagedUser; isSelf: bo
   const queryClient = useQueryClient();
   const [resetting, setResetting] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [budgetDraft, setBudgetDraft] = useState(managedUser.monthlyBudgetUsd?.toString() ?? "");
 
   const toggleRole = useMutation({
     mutationFn: () => api.patch(`/users/${managedUser.id}/role`, { role: managedUser.role === "admin" ? "user" : "admin" }),
@@ -91,6 +93,16 @@ function UserRow({ managedUser, isSelf }: { managedUser: ManagedUser; isSelf: bo
 
   const remove = useMutation({
     mutationFn: () => api.delete(`/users/${managedUser.id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["users"] }),
+  });
+
+  const saveBudget = useMutation({
+    mutationFn: () => {
+      const trimmed = budgetDraft.trim();
+      const value = trimmed === "" ? null : Number(trimmed);
+      if (value !== null && (!Number.isFinite(value) || value < 0)) throw new Error("Budget must be a positive number or empty");
+      return api.patch(`/users/${managedUser.id}/budget`, { monthlyBudgetUsd: value });
+    },
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["users"] }),
   });
 
@@ -131,6 +143,23 @@ function UserRow({ managedUser, isSelf }: { managedUser: ManagedUser; isSelf: bo
           </Button>
         </div>
       )}
+      <div className="mt-2.5 flex items-center gap-1.5 border-t border-border pt-2.5">
+        <span className="mono text-[11px] text-fg-subtle">$</span>
+        <Input
+          placeholder="Monthly budget (empty = unlimited)"
+          value={budgetDraft}
+          onChange={(e) => setBudgetDraft(e.target.value)}
+          inputMode="decimal"
+          className="h-8 w-56 text-xs"
+        />
+        <Button variant="secondary" size="sm" onClick={() => saveBudget.mutate()} disabled={saveBudget.isPending}>
+          {saveBudget.isPending ? "…" : "Set budget"}
+        </Button>
+        {managedUser.monthlyBudgetUsd != null && (
+          <span className="mono text-[11px] text-fg-subtle">cap ${managedUser.monthlyBudgetUsd.toFixed(2)}/mo</span>
+        )}
+      </div>
+      {saveBudget.isError && <p className="mt-1 text-xs text-danger">{(saveBudget.error as Error).message}</p>}
     </Card>
   );
 }

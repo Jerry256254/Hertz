@@ -12,10 +12,21 @@ import { EmployeeDetailPage } from "./routes/EmployeeDetailPage";
 import { AccountPage } from "./routes/AccountPage";
 import { UsersPage } from "./routes/UsersPage";
 import { ApprovalsPage } from "./routes/ApprovalsPage";
+import { ChannelsPage } from "./routes/ChannelsPage";
+import { SharePage } from "./routes/SharePage";
 import { AppLayout } from "./components/AppLayout";
 
 export function App() {
   const { user, loading, needsSetup } = useAuth();
+
+  // Public share links work without login — render before the auth gates.
+  if (window.location.pathname.startsWith("/s/")) {
+    return (
+      <Routes>
+        <Route path="/s/:token" element={<SharePage />} />
+      </Routes>
+    );
+  }
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-sm text-fg-muted">Loading…</div>;
@@ -46,6 +57,7 @@ export function App() {
         <Route path="/account" element={<AccountPage />} />
         <Route path="/users" element={user.role === "admin" ? <UsersPage /> : <Navigate to="/" replace />} />
         <Route path="/approvals" element={user.role === "admin" ? <ApprovalsPage /> : <Navigate to="/" replace />} />
+        <Route path="/channels" element={user.role === "admin" ? <ChannelsPage /> : <Navigate to="/" replace />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/agents/:agentId" element={<EmployeeDetailPage />} />
         <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionPage />} />

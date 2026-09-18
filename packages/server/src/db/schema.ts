@@ -5,6 +5,41 @@ export const users = sqliteTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["admin", "user"] }).notNull().default("user"),
+  /** Monthly AI spend cap in USD (null = unlimited). User-triggered runs past the cap are rejected with 402. */
+  monthlyBudgetUsd: real("monthly_budget_usd"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Long-lived API tokens (htz_…) for external integrations — same identity as a
+ * login session, but without expiry. The raw token is shown once at creation;
+ * only its SHA-256 hash is stored.
+ */
+export const apiTokens = sqliteTable("api_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  /** First characters of the raw token, so the owner can tell tokens apart. */
+  prefixHint: text("prefix_hint").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+  revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+});
+
+/**
+ * Public share links for chat sessions (grok.com/share style). Anyone with the
+ * unguessable token can read a transcript snapshot; revoking deletes the row.
+ */
+export const sharedChats = sqliteTable("shared_chats", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

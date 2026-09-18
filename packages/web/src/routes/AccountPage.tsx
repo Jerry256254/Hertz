@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { KeyRound, UserCircle } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, KeyRound, Terminal, UserCircle, Wallet } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Avatar, Badge, Button, Card, Input, Label } from "../components/ui";
+import { DeleteButton } from "../components/DeleteButton";
 
 export function AccountPage() {
   const { user } = useAuth();
@@ -78,7 +79,131 @@ export function AccountPage() {
         </form>
       </Card>
 
+      <MonthlyUsage />
+      <ApiTokens />
+
       <DangerZone />
+    </div>
+  );
+}
+
+function MonthlyUsage() {
+  const { data } = useQuery({
+    queryKey: ["usage-monthly"],
+    queryFn: () => api.get<{ spend: number; budget: number | null; monthStart: string }>("/usage/monthly"),
+  });
+  if (!data) return null;
+  const pct = data.budget ? Math.min(100, (data.spend / data.budget) * 100) : 0;
+  return (
+    <div className="mt-8">
+      <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+        <Wallet size={12} /> Monthly AI spend
+      </h2>
+      <Card className="p-4">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-[700] text-fg">${data.spend.toFixed(2)}</span>
+          <span className="text-xs text-fg-muted">{data.budget ? `of $${data.budget.toFixed(2)} budget` : "no budget cap"}</span>
+        </div>
+        {data.budget && (
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-sunken">
+            <div className={`h-full transition-[width] ${pct >= 100 ? "bg-danger" : pct >= 80 ? "bg-warning" : "bg-live"}`} style={{ width: `${pct}%` }} />
+          </div>
+        )}
+        <p className="mono mt-2 text-[11px] text-fg-subtle">since {new Date(data.monthStart).toLocaleDateString()}</p>
+      </Card>
+    </div>
+  );
+}
+
+interface ApiTokenItem {
+  id: string;
+  name: string;
+  prefixHint: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+function ApiTokens() {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [fresh, setFresh] = useState<{ id: string; token: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ["api-tokens"],
+    queryFn: () => api.get<{ tokens: ApiTokenItem[] }>("/tokens"),
+  });
+
+  const create = useMutation({
+    mutationFn: () => api.post<{ id: string; token: string }>("/tokens", { name }),
+    onSuccess: (res) => {
+      setFresh(res);
+      setName("");
+      void queryClient.invalidateQueries({ queryKey: ["api-tokens"] });
+    },
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.delete(`/tokens/${id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["api-tokens"] }),
+  });
+
+  async function copy(token: string) {
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  return (
+    <div className="mt-8">
+      <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+        <Terminal size={12} /> API tokens
+      </h2>
+      <Card className="p-4">
+        <p className="mb-3 text-xs leading-relaxed text-fg-muted">
+          Long-lived <span className="mono">htz_…</span> credentials for scripts and integrations. A token acts as you —{" "}
+          <span className="mono">curl -H "Authorization: Bearer htz_…" /api/sessions</span>.
+        </p>
+        {fresh && (
+          <div className="mb-3 rounded-[8px] border border-warning/30 bg-warning-wash p-3">
+            <p className="mono mb-1.5 text-[11px] font-[600] text-warning">COPY NOW — SHOWN ONLY ONCE</p>
+            <div className="flex items-center gap-2">
+              <code className="mono min-w-0 flex-1 truncate rounded-md bg-bg-raised px-2 py-1.5 text-xs text-fg">{fresh.token}</code>
+              <Button variant="secondary" size="sm" onClick={() => void copy(fresh.token)}>
+                {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? "Copied" : "Copy"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setFresh(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+        <div className="mb-3 flex gap-2">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Token name, e.g. home-assistant" className="h-9 text-sm" />
+          <Button variant="primary" size="sm" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
+            {create.isPending ? "…" : "Create"}
+          </Button>
+        </div>
+        <ul className="space-y-2">
+          {(data?.tokens ?? []).map((t) => (
+            <li key={t.id} className="flex items-center gap-2 rounded-[8px] border border-border bg-bg-sunken px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-[600] text-fg">{t.name}</p>
+                <p className="mono text-[11px] text-fg-subtle">
+                  {t.prefixHint}… · {t.lastUsedAt ? `used ${new Date(t.lastUsedAt).toLocaleString()}` : "never used"}
+                </p>
+              </div>
+              <DeleteButton onDelete={() => revoke.mutate(t.id)} title="Revoke token" />
+            </li>
+          ))}
+          {(data?.tokens ?? []).length === 0 && !fresh && (
+            <p className="text-xs text-fg-subtle">No tokens yet.</p>
+          )}
+        </ul>
+      </Card>
     </div>
   );
 }

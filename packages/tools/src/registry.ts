@@ -6,7 +6,10 @@ import { globTool } from "./fs/glob.js";
 import { grepTool } from "./fs/grep.js";
 import { shellExecTool } from "./shell/exec.js";
 import { webFetchTool } from "./web/fetch.js";
+import { webSearchTool } from "./web/search.js";
 import { todoWriteTool } from "./planning/todo.js";
+import { imageGenTool } from "./media/image-gen.js";
+import { speakTextTool, transcribeAudioTool } from "./media/voice.js";
 import type { ToolContext, ToolDef, ToolResult } from "./types.js";
 
 export const ALL_TOOLS: ToolDef[] = [
@@ -17,7 +20,11 @@ export const ALL_TOOLS: ToolDef[] = [
   grepTool,
   shellExecTool,
   webFetchTool,
+  webSearchTool,
   todoWriteTool,
+  imageGenTool,
+  transcribeAudioTool,
+  speakTextTool,
 ];
 
 const toolsByName = new Map(ALL_TOOLS.map((t) => [t.name, t]));

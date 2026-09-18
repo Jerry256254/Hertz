@@ -222,3 +222,53 @@ Note: browser tools are offered only to docker-backend bots; `local` bots get a 
 - `packages/server/src/heartbeats/heartbeat-scheduler.ts` — interval-based bot self-wakeups.
 - `packages/server/src/tools/{approval,skill,browser}-tools.ts` — request_approval, skills, browser_*.
 - New tables: `jobs`, `approvals`, `channel_configs`, `channel_bindings`; new `agents` columns: `computer_backend`, `computer_image`, `heartbeat_minutes`, `heartbeat_prompt`, `last_heartbeat_at`.
+
+---
+
+## 14. Web search, image generation & voice tools
+
+Every bot has four extra tools, all free by default with paid upgrades when configured:
+
+| Tool | Free backend | Upgrade (env var on the server) |
+|---|---|---|
+| `web_search` | DuckDuckGo HTML | `TAVILY_API_KEY`, `BRAVE_API_KEY`, or `SERPER_API_KEY` |
+| `generate_image` | Pollinations (FLUX), no key | `OPENAI_API_KEY` → DALL-E 3 |
+| `transcribe_audio` | local `whisper` CLI | `OPENAI_API_KEY` → Whisper API |
+| `speak_text` | `espeak-ng` / `pico2wave` / `say` | `OPENAI_API_KEY` → OpenAI TTS |
+
+Generated images are attached to the tool result — vision models see them and can verify or iterate; the WebUI shows them inline. `speak_text` saves into the bot's personal folder by default (`tts-<timestamp>.mp3`).
+
+---
+
+## 15. Public share links
+
+Any chat can be published as a read-only page (grok.com/share style): open the chat → share icon in the header → the link is copied. Anyone with the link reads the transcript (text + images, no tool internals) without logging in. The second header icon revokes the link instantly.
+
+---
+
+## 16. API tokens (external integrations)
+
+Account → **API tokens**: create long-lived `htz_…` Bearer credentials. A token acts as its owner, so every endpoint works unchanged from scripts:
+
+```bash
+curl -H "Authorization: Bearer htz_…" http://127.0.0.1:4173/api/sessions
+curl -H "Authorization: Bearer htz_…" -H "content-type: application/json" \
+  -d '{"text":"Summarize this folder"}' http://127.0.0.1:4173/api/sessions/<id>/messages
+```
+
+Only the token hash is stored; the raw value is shown once at creation. Revoking is instant.
+
+---
+
+## 17. Monthly budgets (quotas)
+
+Admins can cap each user's AI spend: Users → per-user **monthly budget** (USD, empty = unlimited). The user sees spend-vs-budget on their Account page; past the cap, user-triggered runs are rejected with `402` until the next month (UTC). Cost tracking covers Anthropic/OpenAI/Google natively plus approximate pricing for xAI, DeepSeek, Mistral, Groq, and Cerebras via their OpenAI-compatible endpoints — verify against provider docs for exact billing.
+
+---
+
+## 18. WebUI: ⌘K, themes, PWA
+
+- **⌘K / Ctrl+K** opens a command palette: fuzzy jump to pages, projects, and chats (arrows + Enter, Esc closes).
+- **Theme toggle** (sidebar footer): system / light / dark, persisted in localStorage, applied before first paint.
+- **PWA**: manifest + icons ship with the build, so the workspace installs as a standalone app on desktop and mobile.
+- Chat input accepts text documents (`.txt`, `.md`, `.csv`, `.json`, …) alongside images — attached files are inlined into the message for the agent.

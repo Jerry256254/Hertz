@@ -360,6 +360,25 @@ CREATE TABLE IF NOT EXISTS session_participants (
 );
 CREATE INDEX IF NOT EXISTS idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_participants_agent ON session_participants(agent_id);
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  prefix_hint TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER,
+  revoked_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS shared_chats (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
 `;
 
 /**
@@ -387,6 +406,7 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agent_memory ADD COLUMN keywords TEXT",
   "ALTER TABLE agent_memory ADD COLUMN last_used_at INTEGER",
   "ALTER TABLE agents ADD COLUMN mascot TEXT",
+  "ALTER TABLE users ADD COLUMN monthly_budget_usd REAL",
 ];
 
 /** One row per agent↔agent conversation pair, enforced by a partial unique index — must run after the sessions columns exist, so it lives here rather than in BOOTSTRAP_SQL. */
