@@ -116,6 +116,34 @@ export interface AgentMemoryNote {
   createdAt: string;
 }
 
+/** L1 atom in the agent's layered memory. */
+export interface AgentMemoryAtom {
+  id: string;
+  agentId: string;
+  text: string;
+  importance: number;
+  scenarioId: string | null;
+  sourceSessionId: string | null;
+  createdAt: string;
+}
+
+/** L2 scenario block in the agent's layered memory. */
+export interface AgentMemoryScenario {
+  id: string;
+  agentId: string;
+  slug: string;
+  title: string;
+  summary: string;
+  updatedAt: string;
+}
+
+export interface AgentLayeredMemory {
+  notes: AgentMemoryNote[];
+  persona: string;
+  scenarios: AgentMemoryScenario[];
+  atoms: AgentMemoryAtom[];
+}
+
 export interface HertzTask {
   id: string;
   projectId: string;

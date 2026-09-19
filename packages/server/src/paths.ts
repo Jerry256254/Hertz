@@ -67,3 +67,39 @@ export async function ensureEmployeeDirs(paths: HertzPaths, projectId: string, a
   const dirs = employeeSubdirs(paths, projectId, agentId);
   await Promise.all(Object.values(dirs).map((d) => fs.mkdir(d, { recursive: true })));
 }
+
+/**
+ * An agent's own layered long-term + short-term memory on disk (white-box):
+ * `agents/<agentId>/memory/` carries the human-readable top layers while the
+ * bottom layers (atoms, raw conversations) live in the database —
+ * `persona.md` (L3) → `scenarios/*.md` (L2) → DB atoms (L1) → DB messages (L0),
+ * plus per-session short-term canvases under `sessions/<sessionId>/`.
+ */
+export function agentMemoryDir(paths: HertzPaths, agentId: string): string {
+  return path.join(paths.dataDir, "agents", agentId, "memory");
+}
+
+/** L3 user/agent profile — the top of the memory pyramid, first-person, present tense. */
+export function agentPersonaPath(paths: HertzPaths, agentId: string): string {
+  return path.join(agentMemoryDir(paths, agentId), "persona.md");
+}
+
+/** L2 scenario blocks, one Markdown file per scenario (slug.md). */
+export function agentScenariosDir(paths: HertzPaths, agentId: string): string {
+  return path.join(agentMemoryDir(paths, agentId), "scenarios");
+}
+
+/** Short-term symbolic memory of one session: canvas.mmd + steps.jsonl + refs/*.md. */
+export function agentSessionMemoryDir(paths: HertzPaths, agentId: string, sessionId: string): string {
+  return path.join(agentMemoryDir(paths, agentId), "sessions", sessionId);
+}
+
+/** Pipeline watermarks (per-session extraction cursors, persona refresh counters). */
+export function agentMemoryStatePath(paths: HertzPaths, agentId: string): string {
+  return path.join(agentMemoryDir(paths, agentId), "state.json");
+}
+
+/** Pre-layered-memory identity file — migrated into persona.md on first pipeline run. */
+export function legacySoulPath(paths: HertzPaths, agentId: string): string {
+  return path.join(paths.dataDir, "agents", agentId, "soul.md");
+}

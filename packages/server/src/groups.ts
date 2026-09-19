@@ -129,7 +129,7 @@ export async function runGroupTurn(deps: GroupDeps, sessionId: string, triggerTe
           rootId: mainRoot.rootId,
           model: agent.model,
           providerConfigId: agent.providerConfigId,
-          systemPrompt: await buildSystemPrompt(db, agent, { paths, mode: "autonomous" }),
+          systemPrompt: await buildSystemPrompt(db, agent, { paths, mode: "autonomous", sessionId }),
           mode: "autonomous",
           excludeTools: ["message_employee", "hire_employee"],
         },

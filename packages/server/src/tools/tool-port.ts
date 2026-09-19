@@ -12,6 +12,7 @@ import { createApprovalTools } from "./approval-tools.js";
 import { createSkillTools } from "./skill-tools.js";
 import { createBrowserTools } from "./browser-tools.js";
 import { createDesktopTools } from "./desktop-tools.js";
+import { recordToolStep } from "../memory/short-term.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
@@ -122,16 +123,41 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
       return managerRole ? [...defs, ...orgDefs] : defs;
     },
     async run(name, input, ctx) {
-      if (deps.mcpRegistry.isMcpTool(name)) return deps.mcpRegistry.run(name, input);
       const tool = allByName.get(name);
-      if (tool) return tool.execute(input, ctx);
-      if (MANAGER_RESTRICTED_TOOLS.has(name) && ctx.actor.actorType === "agent" && (await isManager(ctx.actor.actorId))) {
+      let result: Awaited<ReturnType<typeof runTool>>;
+      if (deps.mcpRegistry.isMcpTool(name)) {
+        result = await deps.mcpRegistry.run(name, input);
+      } else if (tool) {
+        result = await tool.execute(input, ctx);
+      } else if (MANAGER_RESTRICTED_TOOLS.has(name) && ctx.actor.actorType === "agent" && (await isManager(ctx.actor.actorId))) {
         return {
           summary: "As the manager you don't have direct write access — hire the right role with hire_employee if you don't have them yet, then delegate this with assign_task.",
           isError: true,
         };
+      } else {
+        result = await runTool(name, input, ctx);
       }
-      return runTool(name, input, ctx);
+      // Short-term symbolic memory: every step lands on the session canvas;
+      // heavy outputs spill to refs/<nodeId>.md so the history (and every
+      // future turn's context) carries a pointer instead of kilobytes.
+      const sessionId = ctx.actor.sessionId;
+      if (sessionId) {
+        try {
+          const recorded = await recordToolStep({
+            paths: deps.paths,
+            agentId: ctx.actor.actorId,
+            sessionId,
+            tool: name,
+            input,
+            summary: result.summary,
+            isError: result.isError,
+          });
+          if (recorded.offloaded) result = { ...result, summary: recorded.summary };
+        } catch {
+          /* memory recording must never break a tool call */
+        }
+      }
+      return result;
     },
   };
 }

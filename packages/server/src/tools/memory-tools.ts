@@ -1,12 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { asc, and, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "../db/client.js";
 import type { Database } from "../db/client.js";
-import { agentMemory } from "../db/schema.js";
+import { agentMemoryAtoms, agentMemoryScenarios } from "../db/schema.js";
 import type { OrgToolDef } from "./org-tools.js";
 import { employeeDir, ensureEmployeeDirs, type HertzPaths } from "../paths.js";
+import { keywordsFor } from "../memory/tokenize.js";
+import { forgetById, loadPersona, searchMemory } from "../memory/recall.js";
+import { readRef } from "../memory/short-term.js";
 
 const rememberSchema = z.object({
   note: z.string().min(1),
@@ -22,6 +25,12 @@ const saveNoteSchema = z.object({
   filename: z.string().min(1).describe("e.g. 'meeting-summary.md' — saved under your notes/ folder"),
   content: z.string().min(1),
 });
+const recallSchema = z.object({
+  query: z.string().min(1).describe("What to search your memory for — topics, names, past decisions, procedures"),
+});
+const readRefSchema = z.object({
+  nodeId: z.string().min(1).describe("The ref id from an [Offloaded …] pointer or the session canvas, e.g. 'n3f9a2'"),
+});
 
 function safeNoteFilename(filename: string): string {
   const base = path.basename(filename).trim();
@@ -29,32 +38,29 @@ function safeNoteFilename(filename: string): string {
 }
 
 /**
- * Given to every agent, not just managers — this is what makes memory persist
- * across chats, projects, and meetings: agents write to it themselves, and it's
- * re-read into the system prompt on every turn (see agents/system-prompt.ts),
- * not tied to any one session's message history.
+ * Given to every agent — this is what makes memory persist across chats,
+ * projects, and meetings: agents write to it themselves, and it's re-read
+ * into the system prompt on every turn (see agents/system-prompt.ts).
+ *
+ * Layered model (L0 conversations in history → L1 atoms here → L2 scenarios →
+ * L3 persona.md): remember() writes L1 atoms that the pipeline clusters and
+ * distills; recall_memory drills down with full traceability; read_memory_ref
+ * recovers offloaded tool output by node_id.
  */
 export function createMemoryTools(db: Database, paths: HertzPaths): OrgToolDef[] {
   const remember: OrgToolDef = {
     name: "remember",
     description:
-      "Save a note to your own persistent memory. Facts and preferences surface in future chats ranked by importance and relevance; episodes of what you did are auto-captured too. The user can review (and delete) everything.",
+      "Save a note to your own persistent layered memory (L1 atom). Facts and preferences surface in future chats ranked by importance and relevance; the memory pipeline clusters them into scenarios and distills your persona automatically. The user can review (and delete) everything.",
     inputSchema: rememberSchema,
     async execute(rawInput, ctx) {
       const input = rememberSchema.parse(rawInput);
-      const keywords = input.note
-        .toLowerCase()
-        .split(/[^a-z0-9ěščřžýáíéúů]+/)
-        .filter((w) => w.length >= 3)
-        .slice(0, 12)
-        .join(",");
-      await db.insert(agentMemory).values({
+      await db.insert(agentMemoryAtoms).values({
         id: newId(),
         agentId: ctx.actor.actorId,
-        note: input.note,
-        kind: input.kind,
-        importance: input.importance,
-        keywords,
+        text: input.note.slice(0, 500),
+        importance: input.kind === "preference" && input.importance < 4 ? 4 : input.importance,
+        keywords: keywordsFor(input.note),
         createdAt: new Date(),
       });
       return { summary: `Remembered (${input.kind}, importance ${input.importance}): ${input.note}` };
@@ -63,15 +69,21 @@ export function createMemoryTools(db: Database, paths: HertzPaths): OrgToolDef[]
 
   const listMemory: OrgToolDef = {
     name: "list_memory",
-    description: "List everything currently in your persistent memory, with each note's id (needed for forget).",
+    description: "List your persistent memory layer by layer (persona → scenarios → atoms), with each atom's id (needed for forget).",
     inputSchema: z.object({}),
     async execute(_input, ctx) {
-      const rows = await db
-        .select()
-        .from(agentMemory)
-        .where(eq(agentMemory.agentId, ctx.actor.actorId))
-        .orderBy(asc(agentMemory.createdAt));
-      return { summary: rows.length > 0 ? rows.map((r) => `[${r.id}] ${r.note}`).join("\n") : "(your memory is empty)" };
+      const [persona, scenarios, atoms] = await Promise.all([
+        loadPersona(paths, ctx.actor.actorId).catch(() => ""),
+        db.select().from(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, ctx.actor.actorId)).orderBy(desc(agentMemoryScenarios.updatedAt)).limit(20),
+        db.select().from(agentMemoryAtoms).where(eq(agentMemoryAtoms.agentId, ctx.actor.actorId)).orderBy(asc(agentMemoryAtoms.createdAt)).limit(200),
+      ]);
+      const parts: string[] = [];
+      if (persona) parts.push(`## Persona (L3)\n${persona}`);
+      if (scenarios.length > 0) {
+        parts.push(`## Scenarios (L2)\n${scenarios.map((s) => `- ${s.slug}: ${s.title}`).join("\n")}`);
+      }
+      parts.push(atoms.length > 0 ? `## Atoms (L1)\n${atoms.map((r) => `[${r.id}] ${r.text}`).join("\n")}` : "## Atoms (L1)\n(your memory is empty)");
+      return { summary: parts.join("\n\n") };
     },
   };
 
@@ -81,8 +93,36 @@ export function createMemoryTools(db: Database, paths: HertzPaths): OrgToolDef[]
     inputSchema: forgetSchema,
     async execute(rawInput, ctx) {
       const input = forgetSchema.parse(rawInput);
-      await db.delete(agentMemory).where(and(eq(agentMemory.id, input.noteId), eq(agentMemory.agentId, ctx.actor.actorId)));
-      return { summary: `Forgot note ${input.noteId}` };
+      const deleted = await forgetById(db, ctx.actor.actorId, input.noteId);
+      return deleted ? { summary: `Forgot note ${input.noteId}` } : { summary: `No memory entry ${input.noteId} — check list_memory.`, isError: true };
+    },
+  };
+
+  const recallMemory: OrgToolDef = {
+    name: "recall_memory",
+    description:
+      "Search your own layered long-term memory (scenarios + atoms) for anything the current prompt doesn't show — past decisions, procedures, names, project details. Returns matches with drill-down traces (persona › scenario › atom › source conversation). Use before asking the user something you might already know.",
+    inputSchema: recallSchema,
+    async execute(rawInput, ctx) {
+      const input = recallSchema.parse(rawInput);
+      const hits = await searchMemory(db, ctx.actor.actorId, input.query);
+      if (hits.length === 0) return { summary: `(no memory matches for "${input.query}")` };
+      return {
+        summary: hits.map((h) => `- [${h.layer}] ${h.text}\n  trace: ${h.trace}`).join("\n"),
+      };
+    },
+  };
+
+  const readMemoryRef: OrgToolDef = {
+    name: "read_memory_ref",
+    description:
+      "Retrieve the FULL text of an offloaded tool result by its node_id (from an [Offloaded …] pointer or the session canvas). The history only keeps an excerpt — this recovers every byte.",
+    inputSchema: readRefSchema,
+    async execute(rawInput, ctx) {
+      const input = readRefSchema.parse(rawInput);
+      const full = await readRef(paths, ctx.actor.actorId, input.nodeId, ctx.actor.sessionId ?? undefined);
+      if (!full) return { summary: `No offloaded ref "${input.nodeId}" — it may belong to another agent or was never offloaded.`, isError: true };
+      return { summary: full.slice(0, 12000) };
     },
   };
 
@@ -102,5 +142,5 @@ export function createMemoryTools(db: Database, paths: HertzPaths): OrgToolDef[]
     },
   };
 
-  return [remember, listMemory, forget, saveNote];
+  return [remember, listMemory, forget, recallMemory, readMemoryRef, saveNote];
 }

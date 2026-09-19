@@ -3,7 +3,8 @@ import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { PersistedMessage, PersistencePort, UsageRecordInput } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agentMemory, agents, messages, sessions, usageRecords } from "../db/schema.js";
+import { agentMemoryAtoms, agents, messages, sessions, usageRecords } from "../db/schema.js";
+import { keywordsFor } from "../memory/tokenize.js";
 
 function toPersistedMessage(row: typeof messages.$inferSelect): PersistedMessage {
   return {
@@ -94,13 +95,15 @@ export function createPersistenceAdapter(db: Database): PersistencePort {
     },
 
     async appendMemoryNote(agentId, note, meta) {
-      await db.insert(agentMemory).values({
+      // Layered memory: auto-episodes land in L1 as low-importance atoms and
+      // get distilled, clustered, and aged out by the pipeline — the legacy
+      // agent_memory table only keeps pre-layered rows for rollback.
+      await db.insert(agentMemoryAtoms).values({
         id: newId(),
         agentId,
-        note,
-        kind: meta?.kind ?? "fact",
-        importance: meta?.importance ?? 2,
-        keywords: meta?.keywords ?? null,
+        text: note.slice(0, 500),
+        importance: meta?.importance ?? (meta?.kind === "preference" ? 4 : meta?.kind === "episode" ? 1 : 2),
+        keywords: meta?.keywords ?? keywordsFor(note),
         createdAt: new Date(),
       });
     },

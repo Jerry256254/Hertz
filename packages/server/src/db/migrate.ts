@@ -100,6 +100,34 @@ CREATE TABLE IF NOT EXISTS agent_memory (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_memory_agent ON agent_memory(agent_id);
 
+CREATE TABLE IF NOT EXISTS agent_memory_atoms (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  importance INTEGER NOT NULL DEFAULT 2,
+  keywords TEXT,
+  scenario_id TEXT REFERENCES agent_memory_scenarios(id) ON DELETE SET NULL,
+  source_session_id TEXT,
+  source_message_id TEXT,
+  last_used_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_atoms_agent ON agent_memory_atoms(agent_id);
+CREATE INDEX IF NOT EXISTS idx_memory_atoms_scenario ON agent_memory_atoms(scenario_id);
+
+CREATE TABLE IF NOT EXISTS agent_memory_scenarios (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  slug TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  atom_ids_json TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_scenarios_agent ON agent_memory_scenarios(agent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_scenarios_agent_slug ON agent_memory_scenarios(agent_id, slug);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,

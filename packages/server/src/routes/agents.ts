@@ -2,13 +2,14 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { agentMemory, agentProjects, agents, messages, projectRoots, projects, sessions } from "../db/schema.js";
+import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agentProjects, agents, messages, projectRoots, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { hasProjectAccess } from "../auth/project-access.js";
 import { AGENT_ROLES, defaultSystemPromptFor, pickMascot } from "../tools/org-tools.js";
 import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 import { skillsIndexFor } from "../tools/skill-tools.js";
+import { forgetById, loadPersona } from "../memory/recall.js";
 
 const createSchema = z.object({
   projectId: z.string().min(1),
@@ -360,19 +361,25 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!agentRows[0]) return reply.code(404).send({ error: "Agent not found" });
       if (!(await hasProjectAccess(ctx.db, request.user!, agentRows[0].projectId))) return reply.code(403).send({ error: "No access" });
 
-      const notes = await ctx.db
-        .select()
-        .from(agentMemory)
-        .where(eq(agentMemory.agentId, id))
-        .orderBy(desc(agentMemory.createdAt));
-      return { notes };
+      const [atoms, scenarios, persona, legacy] = await Promise.all([
+        ctx.db.select().from(agentMemoryAtoms).where(eq(agentMemoryAtoms.agentId, id)).orderBy(desc(agentMemoryAtoms.createdAt)).limit(300),
+        ctx.db.select().from(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, id)).orderBy(desc(agentMemoryScenarios.updatedAt)).limit(60),
+        loadPersona(ctx.paths, id).catch(() => ""),
+        ctx.db.select().from(agentMemory).where(eq(agentMemory.agentId, id)).orderBy(desc(agentMemory.createdAt)).limit(50),
+      ]);
+      // `notes` stays for backwards compatibility (atoms mapped to the legacy shape).
+      const notes = [
+        ...atoms.map((a) => ({ id: a.id, agentId: a.agentId, note: a.text, createdAt: a.createdAt })),
+        ...legacy.map((l) => ({ id: l.id, agentId: l.agentId, note: l.note, createdAt: l.createdAt })),
+      ];
+      return { notes, persona, scenarios, atoms };
     });
 
     instance.delete("/api/agents/:id/memory/:noteId", async (request, reply) => {
       const { id, noteId } = request.params as { id: string; noteId: string };
       const aRows = await ctx.db.select({ projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (aRows[0] && !(await hasProjectAccess(ctx.db, request.user!, aRows[0].projectId))) return reply.code(403).send({ error: "No access" });
-      await ctx.db.delete(agentMemory).where(and(eq(agentMemory.id, noteId), eq(agentMemory.agentId, id)));
+      await forgetById(ctx.db, id, noteId);
       return reply.code(204).send();
     });
 

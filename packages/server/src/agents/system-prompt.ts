@@ -1,65 +1,22 @@
-import { desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { agentMemory, agents } from "../db/schema.js";
 import { recentConversationMessagesFor } from "../conversations.js";
 import { skillsIndexFor, type SkillIndexEntry } from "../tools/skill-tools.js";
-import { loadSoul } from "../memory/consolidation.js";
+import { recallForPrompt, renderMemoryBlock } from "../memory/recall.js";
 import type { HertzPaths } from "../paths.js";
 
 const RECENT_MESSAGE_COUNT = 5;
-/** Max memory entries injected into the prompt (selected by relevance, not recency). */
-const MEMORY_PROMPT_LIMIT = 30;
 
 /**
- * Layered-memory retrieval: scores every entry by importance, recency decay,
- * and keyword overlap with the current conversation tail, then injects the
- * top matches. Episodes ("was told X — did Y") age out fast; deliberate facts
- * and preferences stay competitive much longer. Also refreshes lastUsedAt for
- * what was injected so the user can see what memory is actually being used.
- */
-function selectRelevantMemories(
-  rows: Array<typeof agentMemory.$inferSelect>,
-  contextText: string,
-  limit = MEMORY_PROMPT_LIMIT,
-): Array<typeof agentMemory.$inferSelect> {
-  const now = Date.now();
-  const contextWords = new Set(
-    contextText
-      .toLowerCase()
-      .split(/[^a-z0-9ěščřžýáíéúů]+/)
-      .filter((w) => w.length >= 4),
-  );
-
-  const scored = rows.map((row) => {
-    const ageDays = Math.max(0, (now - row.createdAt.getTime()) / 86_400_000);
-    // Half-life: episodes fade in ~3 days, facts/preferences in ~30.
-    const halfLifeDays = row.kind === "episode" ? 3 : row.kind === "preference" ? 120 : 30;
-    const recency = Math.pow(0.5, ageDays / halfLifeDays);
-
-    let keywordBoost = 0;
-    if (contextWords.size > 0 && row.keywords) {
-      for (const kw of row.keywords.split(",")) {
-        if (kw && contextWords.has(kw)) keywordBoost += 1;
-      }
-      keywordBoost = Math.min(keywordBoost, 4) / 2; // up to +2.0
-    }
-
-    return { row, score: row.importance * 0.8 + recency * 2 + keywordBoost };
-  });
-
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .sort((a, b) => a.row.createdAt.getTime() - b.row.createdAt.getTime())
-    .map((s) => s.row);
-}
-
-/**
- * Combines an agent's static role prompt with its live persistent memory and
+ * Combines an agent's static role prompt with its live layered memory and
  * any unanswered messages from colleagues. Called fresh on every turn (sessions,
  * meetings, delegated tasks) rather than baked into agents.system_prompt at
  * hire time, since both memory and messages accumulate over time and must
  * show up everywhere that agent works — not just the session they arrived in.
+ *
+ * Memory is progressive-disclosure: the L3 persona always, then the top-ranked
+ * L2 scenarios and L1 atoms for the current conversation, then the live
+ * session canvas (short-term symbols). The agent drills deeper with
+ * recall_memory (long-term) and read_memory_ref (offloaded tool output).
  *
  * For a direct conversation reply run (conversationPeerName set) the colleague
  * block is replaced with an explicit in-thread instruction: the conversation
@@ -69,26 +26,16 @@ function selectRelevantMemories(
 export async function buildSystemPrompt(
   db: Database,
   agent: { id: string; systemPrompt: string | null },
-  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous"; paths?: HertzPaths; conversationContext?: string; visionSupport?: boolean } = {},
+  opts: { conversationPeerName?: string; mode?: "plan" | "auto" | "autonomous"; paths?: HertzPaths; conversationContext?: string; visionSupport?: boolean; sessionId?: string } = {},
 ): Promise<string> {
-  const allNotesDesc = await db
-    .select()
-    .from(agentMemory)
-    .where(eq(agentMemory.agentId, agent.id))
-    .orderBy(desc(agentMemory.createdAt))
-    .limit(400);
-  // Relevance-ranked injection: importance + recency + keyword overlap with
-  // the current conversation, instead of blindly appending the last 40 rows.
   const contextTail = (opts.conversationContext ?? "").slice(-4_000);
-  const notes = selectRelevantMemories([...allNotesDesc].reverse(), contextTail);
+  const recall = await recallForPrompt(db, opts.paths, agent.id, contextTail, opts.sessionId).catch(() => null);
 
   let prompt = agent.systemPrompt ?? "";
 
-  if (opts.paths) {
-    const soul = await loadSoul(opts.paths, agent.id);
-    if (soul) {
-      prompt += `\n\n## Your soul (self-maintained)\n${soul}\nKeep this current — it is your living self-image.`;
-    }
+  if (recall) {
+    const memoryBlock = renderMemoryBlock(recall);
+    if (memoryBlock) prompt += `\n\n${memoryBlock}`;
   }
 
   if (opts.visionSupport !== undefined) {
@@ -103,11 +50,6 @@ export async function buildSystemPrompt(
       const skillBlock = skills.map((s) => `- ${s.name} — ${s.description}`).join("\n");
       prompt += `\n\n## Your skills\nProcedures you saved from earlier work. Before doing anything that matches one of these, call read_skill and follow it instead of improvising. After you complete a new repeatable procedure, offer or just save_skill it.\n${skillBlock}`;
     }
-  }
-
-  if (notes.length > 0) {
-    const memoryBlock = notes.map((n) => `- ${n.note}`).join("\n");
-    prompt += `\n\n## Your persistent memory\nThis carries across every chat, project, and meeting you're part of — the user can see it too. Some entries are auto-captured from what you were told; add your own with remember for anything that deserves a clearer, more durable note, and use forget to prune what's stale.\n${memoryBlock}`;
   }
 
   if (opts.mode) {

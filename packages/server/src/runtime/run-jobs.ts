@@ -11,7 +11,7 @@ import { buildSystemPrompt } from "../agents/system-prompt.js";
 import type { JobQueue, JobHandler } from "../queue/job-queue.js";
 import type { ComputerManager } from "../computer/computer-manager.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
-import { maybeConsolidateMemory } from "../memory/consolidation.js";
+import { runMemoryPipeline } from "../memory/pipeline.js";
 import { runGroupTurn } from "../groups.js";
 
 /** Text of the most recent real (non-tool-result) user message — the group trigger. */
@@ -221,6 +221,8 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
           conversationPeerName: payload.conversationPeerName,
           mode: isConversation ? undefined : mode,
           paths: deps.paths,
+          sessionId: session.id,
+          conversationContext: await extractLastUserText(deps, session.id),
           visionSupport: await modelSupportsVision(deps, agent.providerConfigId, agent.model),
         }),
         mode: isConversation ? "auto" : mode,
@@ -232,11 +234,13 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
       payload.userMessage ?? [],
     );
 
-    // Smart memory: periodically let the agent consolidate its own memory
-    // (dedupe episodes into facts, update soul.md). Fire-and-forget.
-    void maybeConsolidateMemory(
+    // Layered memory: distill this run's turns into atoms (L1), re-cluster
+    // scenarios (L2), and refresh the persona (L3) — each on its own cadence.
+    // Fire-and-forget.
+    void runMemoryPipeline(
       { db: deps.db, paths: deps.paths, providers: deps.providers },
       agent.id,
+      session.id,
     ).catch(() => {});
   };
 }

@@ -163,6 +163,55 @@ export const agentMemory = sqliteTable("agent_memory", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/**
+ * L1 atoms — the bottom of the layered memory pyramid: single atomic facts
+ * ("the deploy script lives at scripts/deploy.sh"), each traceable back to the
+ * L0 conversation (session + message) it was distilled from and forward to the
+ * L2 scenario that groups it. Replaces agent_memory for all new writes; legacy
+ * rows are backfilled here once (see memory/recall.ts) and then left alone.
+ */
+export const agentMemoryAtoms = sqliteTable("agent_memory_atoms", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  /** One self-contained fact — no pronouns pointing outside the sentence. */
+  text: text("text").notNull(),
+  /** 1–5; auto-extracted 2, deliberate remember() 3, user-stated preferences 4+. */
+  importance: integer("importance").notNull().default(2),
+  /** Comma-separated lowercase keywords for BM25-style relevance matching. */
+  keywords: text("keywords"),
+  /** L2 scenario this atom belongs to (null = not yet clustered). */
+  scenarioId: text("scenario_id").references((): any => agentMemoryScenarios.id, { onDelete: "set null" }),
+  /** L0 provenance: the conversation turn this atom was distilled from. */
+  sourceSessionId: text("source_session_id"),
+  sourceMessageId: text("source_message_id"),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * L2 scenarios — mid-layer scene blocks aggregating related L1 atoms into
+ * topics ("Friday sales reports", "home-server deploys"). The DB row is the
+ * source of truth; a Markdown mirror lives at
+ * agents/<agentId>/memory/scenarios/<slug>.md for white-box inspection.
+ */
+export const agentMemoryScenarios = sqliteTable("agent_memory_scenarios", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  /** URL-safe short identifier, unique per agent — also the mirror filename. */
+  slug: text("slug").notNull(),
+  title: text("title").notNull(),
+  /** 2–6 sentence dense summary of what this scenario covers. */
+  summary: text("summary").notNull(),
+  /** JSON array of L1 atom ids clustered into this scenario. */
+  atomIdsJson: text("atom_ids_json").notNull().default("[]"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
   agentId: text("agent_id")
