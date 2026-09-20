@@ -51,7 +51,9 @@ export async function buildSystemPrompt(
     const skills: SkillIndexEntry[] = await skillsIndexFor(opts.paths, homeProjectId, agent.id);
     if (skills.length > 0) {
       const skillBlock = skills.map((s) => `- ${s.name} — ${s.description}`).join("\n");
-      prompt += `\n\n## Your skills\nProcedures you saved from earlier work. Before doing anything that matches one of these, call read_skill and follow it instead of improvising. After you complete a new repeatable procedure, offer or just save_skill it.\n${skillBlock}`;
+      prompt += `\n\n## Your skills\nYour durable procedures — this is how you stop repeating work and mistakes. Before doing anything that matches one of these, call read_skill and FOLLOW it instead of improvising (especially debugging and verify-before-done: reproduce, fix the root cause, prove it runs). When a skill's steps go stale or you learn a better way, save_skill under the same name to update it in the same turn. After you complete a new repeatable procedure, save_skill it so future-you inherits it.\n${skillBlock}`;
+    } else {
+      prompt += `\n\n## Your skills\nYou have no saved skills yet. When you complete a repeatable procedure (a fix with quirks, a report, a deployment dance), save_skill it with exact steps — and put plain facts in memory instead. Skills are procedures; memory is facts.`;
     }
   }
 

@@ -5,6 +5,7 @@ import { api, ApiError } from "../lib/api";
 import type { Agent, AgentLayeredMemory } from "../lib/types";
 import { AgentAvatar } from "../components/AgentAvatar";
 import { Markdown } from "../components/Markdown";
+import { SkillsEditor } from "./SkillsEditor";
 
 const DEFAULT_SOUL = `Buď opravdu užitečný. Měj názory. Než se zeptáš, zkus si poradit sám. Jsi hostem v něčím životě — chovej se tak.`;
 
@@ -19,6 +20,7 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [tab, setTab] = useState<"soul" | "skills">("soul");
 
   const { data: memory } = useQuery({
     queryKey: ["memory", agent.id],
@@ -66,55 +68,68 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-[60px] shrink-0 items-center gap-2.5 px-3 md:px-5">
         <AgentAvatar seed={agent.id} size={30} />
-        <span className="flex items-center gap-2 text-[15px] font-[700] text-fg">📄 SOUL.md</span>
-        <span className="flex-1" />
-        <div className="hidden items-center gap-0.5 md:flex">
-          <ToolButton title="Tučně" onClick={() => wrap("**", "**")}><Bold size={15} /></ToolButton>
-          <ToolButton title="Kurzíva" onClick={() => wrap("*", "*")}><Italic size={15} /></ToolButton>
-          <ToolButton title="Nadpis 1" onClick={() => prefixLine("# ")}><Heading1 size={15} /></ToolButton>
-          <ToolButton title="Nadpis 2" onClick={() => prefixLine("## ")}><Heading2 size={15} /></ToolButton>
-          <ToolButton title="Nadpis 3" onClick={() => prefixLine("### ")}><Heading3 size={15} /></ToolButton>
-          <ToolButton title="Odrážky" onClick={() => prefixLine("- ")}><List size={15} /></ToolButton>
-          <ToolButton title="Číslování" onClick={() => prefixLine("1. ")}><ListOrdered size={15} /></ToolButton>
+        <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
+          <button onClick={() => setTab("soul")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "soul" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>📄 SOUL.md</button>
+          <button onClick={() => setTab("skills")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "skills" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>⚡ Skills</button>
         </div>
-        <ToolButton title="Náhled" onClick={() => setPreview((v) => !v)} active={preview}><MoreHorizontal size={15} /></ToolButton>
-        {dirty && (
-          <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
-            {save.isPending ? "Ukládám…" : saved ? "Uloženo ✓" : "Uložit"}
-          </button>
+        <span className="flex-1" />
+        {tab === "soul" && (
+          <>
+            <div className="hidden items-center gap-0.5 md:flex">
+              <ToolButton title="Tučně" onClick={() => wrap("**", "**")}><Bold size={15} /></ToolButton>
+              <ToolButton title="Kurzíva" onClick={() => wrap("*", "*")}><Italic size={15} /></ToolButton>
+              <ToolButton title="Nadpis 1" onClick={() => prefixLine("# ")}><Heading1 size={15} /></ToolButton>
+              <ToolButton title="Nadpis 2" onClick={() => prefixLine("## ")}><Heading2 size={15} /></ToolButton>
+              <ToolButton title="Nadpis 3" onClick={() => prefixLine("### ")}><Heading3 size={15} /></ToolButton>
+              <ToolButton title="Odrážky" onClick={() => prefixLine("- ")}><List size={15} /></ToolButton>
+              <ToolButton title="Číslování" onClick={() => prefixLine("1. ")}><ListOrdered size={15} /></ToolButton>
+            </div>
+            <ToolButton title="Náhled" onClick={() => setPreview((v) => !v)} active={preview}><MoreHorizontal size={15} /></ToolButton>
+            {dirty && (
+              <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+                {save.isPending ? "Ukládám…" : saved ? "Uloženo ✓" : "Uložit"}
+              </button>
+            )}
+            {saved && !dirty && <span className="text-[13px] font-[600] text-live">Uloženo ✓</span>}
+          </>
         )}
-        {saved && !dirty && <span className="text-[13px] font-[600] text-live">Uloženo ✓</span>}
         <ToolButton title="Zavřít" onClick={onClose}><X size={16} /></ToolButton>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 md:px-5">
         <div className="mx-auto w-full max-w-[760px]">
-          <p className="border-l-2 border-accent pl-3 text-[13px] italic leading-relaxed text-fg-muted">
-            O tomhle souboru: duše agenta — kým je a jak se chová. Tvoje úpravy tu mají přednost před tím, co si agent píše sám.
-          </p>
-          <h1 className="mb-3 mt-4 text-[22px] font-[700]">SOUL.md</h1>
-          {error && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{error}</p>}
-
-          {preview ? (
-            <div className="rounded-[20px] border border-border bg-bg-raised p-5">
-              <Markdown>{value || DEFAULT_SOUL}</Markdown>
-            </div>
+          {tab === "skills" ? (
+            <SkillsEditor agent={agent} />
           ) : (
-            <textarea
-              id="soul-textarea"
-              value={value}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={DEFAULT_SOUL}
-              rows={16}
-              className="w-full resize-y rounded-[20px] border border-border bg-bg-raised p-5 text-[14px] leading-relaxed text-fg placeholder:text-fg-subtle outline-none focus:border-accent"
-            />
-          )}
+            <>
+              <p className="border-l-2 border-accent pl-3 text-[13px] italic leading-relaxed text-fg-muted">
+                O tomhle souboru: duše agenta — kým je a jak se chová. Tvoje úpravy tu mají přednost před tím, co si agent píše sám.
+              </p>
+              <h1 className="mb-3 mt-4 text-[22px] font-[700]">SOUL.md</h1>
+              {error && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{error}</p>}
 
-          {memory?.persona && (
-            <div className="mt-4 rounded-[20px] border border-border bg-bg-raised p-5">
-              <p className="mb-2 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">CO SI O SOBĚ PÍŠE AGENT SÁM (JEN KE ČTENÍ)</p>
-              <Markdown>{memory.persona}</Markdown>
-            </div>
+              {preview ? (
+                <div className="rounded-[20px] border border-border bg-bg-raised p-5">
+                  <Markdown>{value || DEFAULT_SOUL}</Markdown>
+                </div>
+              ) : (
+                <textarea
+                  id="soul-textarea"
+                  value={value}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={DEFAULT_SOUL}
+                  rows={16}
+                  className="w-full resize-y rounded-[20px] border border-border bg-bg-raised p-5 text-[14px] leading-relaxed text-fg placeholder:text-fg-subtle outline-none focus:border-accent"
+                />
+              )}
+
+              {memory?.persona && (
+                <div className="mt-4 rounded-[20px] border border-border bg-bg-raised p-5">
+                  <p className="mb-2 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">CO SI O SOBĚ PÍŠE AGENT SÁM (JEN KE ČTENÍ)</p>
+                  <Markdown>{memory.persona}</Markdown>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

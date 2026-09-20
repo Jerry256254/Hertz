@@ -8,7 +8,8 @@ import { requireAuth } from "../auth/plugin.js";
 import { hasProjectAccess } from "../auth/project-access.js";
 import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 import { mountsFor } from "../mounts/mounts.js";
-import { skillsIndexFor } from "../tools/skill-tools.js";
+import { deleteSkillFile, readSkillFile, skillsIndexFor, writeSkillFile, type SkillFile } from "../tools/skill-tools.js";
+import { ensureDefaultSkills } from "../skills/default-skills.js";
 import { forgetById, loadPersona } from "../memory/recall.js";
 import { removeAgentVectors, removeAtomVector } from "../memory/vector-store.js";
 import { ensureAgent } from "../bootstrap.js";
@@ -31,6 +32,12 @@ const updateSchema = z.object({
 
 const ensureChatSchema = z.object({ projectId: z.string().min(1) });
 
+const skillSaveSchema = z.object({
+  description: z.string().min(1).max(200),
+  instructions: z.string().min(1).max(50_000),
+  script: z.string().max(50_000).optional(),
+});
+
 const ensureAgentSchema = z.object({
   projectId: z.string().min(1),
   providerConfigId: z.string().min(1),
@@ -38,8 +45,14 @@ const ensureAgentSchema = z.object({
   name: z.string().min(1).max(80).optional(),
 });
 
+/** Minimal agent lookup for the per-skill routes. */
+async function skillAgent(ctx: AppContext, id: string): Promise<{ id: string; projectId: string } | undefined> {
+  const rows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
+  return rows[0];
+}
+
 /** Container bind-mount set for an agent: project root + personal dir + permanent mounts (via the one mountsFor helper). */
-async function containerMounts(ctx: AppContext, agent: { id: string; projectId: string }): Promise<string[]> {
+export async function containerMounts(ctx: AppContext, agent: { id: string; projectId: string }): Promise<string[]> {
   const rootRows = await ctx.db.select({ absolutePath: projectRoots.absolutePath }).from(projectRoots).where(eq(projectRoots.projectId, agent.projectId));
   const mainRoot = rootRows[0]?.absolutePath;
   await ensureEmployeeDirs(ctx.paths, agent.projectId, agent.id);
@@ -67,6 +80,8 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         return reply.code(403).send({ error: "No access to this project" });
       }
       const id = await ensureAgent(ctx, parsed.data);
+      // Newborn agents start with the default procedures (missing-only, idempotent).
+      await ensureDefaultSkills(ctx.paths, parsed.data.projectId, id).catch(() => {});
       return reply.code(201).send({ id });
     });
 
@@ -215,7 +230,55 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const rows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!rows[0]) return reply.code(404).send({ error: "Agent not found" });
       if (!(await hasProjectAccess(ctx.db, request.user!, (rows[0] as any).projectId))) return reply.code(403).send({ error: "No access" });
+      // First access seeds the defaults (missing-only — agent/user edits win).
+      await ensureDefaultSkills(ctx.paths, rows[0].projectId, id).catch(() => {});
       return { skills: await skillsIndexFor(ctx.paths, rows[0].projectId, id) };
+    });
+
+    /** Full text of one skill (for the agent-settings UI). */
+    instance.get("/api/agents/:id/skills/:name", async (request, reply) => {
+      const { id, name } = request.params as { id: string; name: string };
+      const agent = await skillAgent(ctx, id);
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });
+      let file: SkillFile | null;
+      try {
+        file = await readSkillFile(ctx.paths, agent.projectId, id, name);
+      } catch {
+        return reply.code(400).send({ error: "Invalid skill name" });
+      }
+      if (!file) return reply.code(404).send({ error: "Skill not found" });
+      return { skill: file };
+    });
+
+    /** Create or overwrite one skill from the agent-settings UI (same semantics as the agent's save_skill). */
+    instance.put("/api/agents/:id/skills/:name", async (request, reply) => {
+      const { id, name } = request.params as { id: string; name: string };
+      const parsed = skillSaveSchema.safeParse(request.body ?? {});
+      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      const agent = await skillAgent(ctx, id);
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });
+      try {
+        await writeSkillFile(ctx.paths, agent.projectId, id, name, parsed.data);
+      } catch {
+        return reply.code(400).send({ error: "Invalid skill name" });
+      }
+      return { ok: true };
+    });
+
+    /** Delete one skill from the agent-settings UI. */
+    instance.delete("/api/agents/:id/skills/:name", async (request, reply) => {
+      const { id, name } = request.params as { id: string; name: string };
+      const agent = await skillAgent(ctx, id);
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });
+      try {
+        await deleteSkillFile(ctx.paths, agent.projectId, id, name);
+      } catch {
+        return reply.code(400).send({ error: "Invalid skill name" });
+      }
+      return reply.code(204).send();
     });
 
     instance.get("/api/agents/:id", async (request, reply) => {

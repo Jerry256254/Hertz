@@ -10,6 +10,7 @@ import { signScreenToken, verifyScreenToken } from "../secrets/screen-token.js";
 import type { AppContext } from "../context.js";
 import { agents, sessions as sessionsTable } from "../db/schema.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
+import { containerMounts } from "./agents.js";
 
 const TOKEN_TTL_MS = 6 * 60 * 60 * 1000; // take-over links live max 6h
 
@@ -54,6 +55,19 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
         hostPort = started.hostPort;
       } catch (err) {
         return reply.code(500).send({ error: (err as Error).message });
+      }
+      if (!hostPort) {
+        // Containers created before the desktop port was published (or with a
+        // lost mapping) heal here: recreate with the same bind mounts instead
+        // of failing with "recreate the container".
+        try {
+          const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+          const agent = rows[0];
+          if (!agent) return reply.code(404).send({ error: "Agent not found" });
+          hostPort = await ctx.desktop.ensureDesktopPort(id, agent.computerImage, await containerMounts(ctx, agent));
+        } catch (err) {
+          return reply.code(500).send({ error: (err as Error).message });
+        }
       }
       if (!hostPort) return reply.code(500).send({ error: "Desktop is running but its port is not published — recreate the container." });
 
@@ -173,34 +187,77 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
         return;
       }
 
-      // websockify performs the WS upgrade at root — /websockify can 404
-      const upstream = new WebSocket(`ws://127.0.0.1:${hostPort}/`, { maxPayload: 1 << 20 });
+      // websockify usually upgrades at root, but some builds only answer on
+      // /websockify — try root first, fall back once before giving up.
+      const candidates = ["/", "/websockify"];
+      let attempt = 0;
+      let connected = false;
+      let current: WebSocket | undefined;
+      browser.on("close", () => {
+        log(agentId, "browser closed");
+        try {
+          current?.close();
+        } catch {
+          /* ignore */
+        }
+      });
+      browser.on("error", (err: Error) => {
+        log(agentId, "browser error:", err.message);
+        try {
+          current?.close();
+        } catch {
+          /* ignore */
+        }
+      });
 
-      upstream.on("open", () => {
-        log(agentId, "upstream open");
-        browser.on("message", (data: Buffer, isBinary: boolean) => {
-          if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+      const tryConnect = (): void => {
+        if (connected || browser.readyState !== 1) return;
+        const upstreamPath = candidates[attempt++];
+        if (!upstreamPath) {
+          browser.close(1011, "desktop not reachable");
+          return;
+        }
+        const upstream: WebSocket = new WebSocket(`ws://127.0.0.1:${hostPort}${upstreamPath}`, { maxPayload: 1 << 20 });
+        current = upstream;
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            log(agentId, `upstream ${upstreamPath} timed out, trying next`);
+            try {
+              upstream.terminate();
+            } catch {
+              /* ignore */
+            }
+          }
+        }, 5_000);
+        upstream.on("open", () => {
+          settled = true;
+          connected = true;
+          clearTimeout(timer);
+          log(agentId, `upstream open (${upstreamPath})`);
+          browser.on("message", (data: Buffer, isBinary: boolean) => {
+            if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+          });
         });
-        browser.on("close", () => {
-          log(agentId, "browser closed");
-          upstream.close();
+        upstream.on("message", (data: Buffer, isBinary: boolean) => {
+          if (browser.readyState === 1) browser.send(data, { binary: isBinary });
         });
-        browser.on("error", (err: Error) => {
-          log(agentId, "browser error:", err.message);
-          upstream.close();
+        upstream.on("close", (code, reason) => {
+          clearTimeout(timer);
+          if (!settled) {
+            log(agentId, `upstream ${upstreamPath} refused (${code}), trying next`);
+            tryConnect();
+            return;
+          }
+          log(agentId, "upstream closed:", code, reason?.toString?.().slice(0, 80));
+          if (browser.readyState === 1) browser.close(1011, `upstream closed (${code})`);
         });
-      });
-      upstream.on("message", (data: Buffer, isBinary: boolean) => {
-        if (browser.readyState === 1) browser.send(data, { binary: isBinary });
-      });
-      upstream.on("close", (code, reason) => {
-        log(agentId, "upstream closed:", code, reason?.toString?.().slice(0, 80));
-        if (browser.readyState === 1) browser.close(1011, `upstream closed (${code})`);
-      });
-      upstream.on("error", (err) => {
-        log(agentId, "upstream error:", err.message);
-        if (browser.readyState === 1) browser.close(1011, `upstream: ${err.message}`);
-      });
+        upstream.on("error", (err) => {
+          log(agentId, `upstream ${upstreamPath} error:`, err.message);
+          // 'close' always follows 'error' and drives the fallback/close above.
+        });
+      };
+      tryConnect();
     })().catch((err) => {
       console.error("[screen-proxy] fatal:", (err as Error).message);
       try {

@@ -16,6 +16,69 @@ function safeSkillName(name: string): string {
   return path.basename(name);
 }
 
+/** Validate a user-supplied skill name for HTTP routes — throws on invalid. */
+export function checkedSkillName(name: string): string {
+  const safe = safeSkillName(name);
+  if (!SLUG_RE.test(safe)) throw new Error("Skill name: lowercase letters, digits, dashes (e.g. 'weekly-sales-report')");
+  return safe;
+}
+
+export interface SkillFile {
+  name: string;
+  description: string;
+  /** Full SKILL.md body without frontmatter. */
+  body: string;
+  /** Optional helper script content, when script.sh exists. */
+  script: string | null;
+  /** True for seeded defaults the agent/user hasn't replaced. */
+  isDefault: boolean;
+}
+
+function parseSkillFile(name: string, raw: string, script: string | null): SkillFile {
+  const desc = raw.split("\n").find((l) => l.startsWith("description:"))?.slice("description:".length).trim() ?? "";
+  const isDefault = raw.split("\n").some((l) => l.trim() === "default: true");
+  const body = raw.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+  return { name, description: desc, body, script, isDefault };
+}
+
+/** Shared file access for agent tools and HTTP routes — null when missing. */
+export async function readSkillFile(paths: HertzPaths, projectId: string, agentId: string, name: string): Promise<SkillFile | null> {
+  const root = agentSkillsDir(paths, projectId, agentId);
+  const dir = assertInside(root, path.join(root, checkedSkillName(name)), "skill");
+  const raw = await safeRead(dir, "SKILL.md");
+  if (!raw) return null;
+  const script = await safeRead(dir, "script.sh");
+  return parseSkillFile(checkedSkillName(name), raw, script);
+}
+
+/** Shared write for agent tools and HTTP routes — creates or overwrites (edits never touch other skills). */
+export async function writeSkillFile(
+  paths: HertzPaths,
+  projectId: string,
+  agentId: string,
+  name: string,
+  input: { description: string; instructions: string; script?: string },
+): Promise<void> {
+  const root = agentSkillsDir(paths, projectId, agentId);
+  await fs.mkdir(root, { recursive: true });
+  const safe = checkedSkillName(name);
+  const dir = assertInside(root, path.join(root, safe), "skill");
+  await fs.mkdir(dir, { recursive: true });
+  const frontmatter = `---\nname: ${safe}\ndescription: ${input.description}\nupdated: ${new Date().toISOString()}\n---\n\n`;
+  await fs.writeFile(path.join(dir, "SKILL.md"), `${frontmatter}${input.instructions}\n`, "utf8");
+  if (input.script) {
+    const scriptPath = path.join(dir, "script.sh");
+    await fs.writeFile(scriptPath, input.script, "utf8");
+    await fs.chmod(scriptPath, 0o755);
+  }
+}
+
+/** Shared delete for agent tools and HTTP routes. */
+export async function deleteSkillFile(paths: HertzPaths, projectId: string, agentId: string, name: string): Promise<void> {
+  const root = agentSkillsDir(paths, projectId, agentId);
+  await fs.rm(assertInside(root, path.join(root, checkedSkillName(name)), "skill"), { recursive: true, force: true });
+}
+
 const saveSchema = z.object({
   name: z
     .string()
@@ -56,22 +119,17 @@ export function createSkillTools(db: Database, paths: HertzPaths): AgentToolDef[
   const saveSkill: AgentToolDef = {
     name: "save_skill",
     description:
-      "Save a repeatable procedure you've figured out as a personal skill (survives across projects and chats; the user can see it). Use after completing anything you'd do again: a report someone liked, a deployment dance, a data-pull with quirks. Write instructions as if briefing a competent stranger — exact tool calls, commands, file paths, edge cases.",
+      "Save a repeatable procedure you've figured out as a personal skill (survives across projects and chats; the user can see it). Use after completing anything you'd do again: a report someone liked, a deployment dance, a data-pull with quirks. Saving under an existing name OVERWRITES it — use that to fix a skill whose steps went stale instead of letting future-you follow wrong instructions. Write instructions as if briefing a competent stranger — exact tool calls, commands, file paths, edge cases.",
     inputSchema: saveSchema,
     async execute(rawInput, ctx) {
       const input = saveSchema.parse(rawInput);
-      const root = await skillsRoot(ctx.actor.actorId);
-      if (!root) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
-      const dir = assertInside(root, path.join(root, safeSkillName(input.name)), "skill");
-      await fs.mkdir(dir, { recursive: true });
-
-      const frontmatter = `---\nname: ${input.name}\ndescription: ${input.description}\nupdated: ${new Date().toISOString()}\n---\n\n`;
-      await fs.writeFile(path.join(dir, "SKILL.md"), `${frontmatter}${input.instructions}\n`, "utf8");
-      if (input.script) {
-        const scriptPath = path.join(dir, "script.sh");
-        await fs.writeFile(scriptPath, input.script, "utf8");
-        await fs.chmod(scriptPath, 0o755);
-      }
+      const projectId = await resolveAgentProjectId(db, ctx.actor.actorId).catch(() => undefined);
+      if (!projectId) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
+      await writeSkillFile(paths, projectId, ctx.actor.actorId, input.name, {
+        description: input.description,
+        instructions: input.instructions,
+        script: input.script,
+      });
 
       await db.insert(auditLog).values({
         id: newId(),
@@ -122,15 +180,16 @@ export function createSkillTools(db: Database, paths: HertzPaths): AgentToolDef[
     inputSchema: readSchema,
     async execute(rawInput, ctx) {
       const input = readSchema.parse(rawInput);
-      const name = safeSkillName(input.name);
-      if (!SLUG_RE.test(name)) return { summary: "Invalid skill name.", isError: true };
-      const root = await skillsRoot(ctx.actor.actorId);
-      if (!root) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
-      const raw = await safeRead(assertInside(root, path.join(root, name), "skill"), "SKILL.md");
-      if (!raw) return { summary: `No skill named "${input.name}" — check list_skills.`, isError: true };
-      // Strip frontmatter; the body is what matters.
-      const body = raw.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-      return { summary: body || "(empty skill)" };
+      const projectId = await resolveAgentProjectId(db, ctx.actor.actorId).catch(() => undefined);
+      if (!projectId) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
+      let file: SkillFile | null = null;
+      try {
+        file = await readSkillFile(paths, projectId, ctx.actor.actorId, input.name);
+      } catch {
+        return { summary: "Invalid skill name.", isError: true };
+      }
+      if (!file) return { summary: `No skill named "${input.name}" — check list_skills.`, isError: true };
+      return { summary: file.body || "(empty skill)" };
     },
   };
 
@@ -140,12 +199,14 @@ export function createSkillTools(db: Database, paths: HertzPaths): AgentToolDef[
     inputSchema: readSchema,
     async execute(rawInput, ctx) {
       const input = readSchema.parse(rawInput);
-      const name = safeSkillName(input.name);
-      if (!SLUG_RE.test(name)) return { summary: "Invalid skill name.", isError: true };
-      const root = await skillsRoot(ctx.actor.actorId);
-      if (!root) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
-      await fs.rm(assertInside(root, path.join(root, name), "skill"), { recursive: true, force: true });
-      return { summary: `Skill "${name}" deleted.` };
+      const projectId = await resolveAgentProjectId(db, ctx.actor.actorId).catch(() => undefined);
+      if (!projectId) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
+      try {
+        await deleteSkillFile(paths, projectId, ctx.actor.actorId, input.name);
+      } catch {
+        return { summary: "Invalid skill name.", isError: true };
+      }
+      return { summary: `Skill "${safeSkillName(input.name)}" deleted.` };
     },
   };
 

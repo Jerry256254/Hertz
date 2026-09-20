@@ -743,6 +743,9 @@ function InfoRow({ label, value, mono = false }: { label: string; value: string;
 function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) {
   const queryClient = useQueryClient();
   const [msg, setMsg] = useState<string | null>(null);
+  const [resetArmed, setResetArmed] = useState(false);
+  const [resetText, setResetText] = useState("");
+  const { user } = useAuth();
   const { data: routinesData } = useQuery({
     queryKey: ["routines", projectId],
     queryFn: () => api.get<{ routines: Routine[] }>(`/projects/${projectId}/routines`),
@@ -756,6 +759,12 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
       void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
     },
     onError: (e) => setMsg(e instanceof ApiError ? e.message : "Smazání selhalo"),
+  });
+
+  const factoryReset = useMutation({
+    mutationFn: () => api.post(`/admin/reset`, { confirm: "RESET" }),
+    onSuccess: () => setMsg("Resetuji… server za pár sekund naběhne do čisté instalace. Obnov stránku."),
+    onError: (e) => setMsg(e instanceof ApiError ? e.message : "Reset selhal"),
   });
 
   return (
@@ -773,6 +782,38 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
           Vymazat historii
         </button>
       </div>
+      {user?.role === "admin" && (
+        <div className="mb-4 rounded-[16px] border border-danger/40 bg-danger-wash/40 p-4">
+          <p className="text-[13.5px] font-[600] text-danger">Tovární nastavení</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">
+            Smaže ÚPLNĚ všechno — chaty, paměť, skilly, klíče, projekty — a restartuje server do stavu jako po první instalaci. Nevratné.
+          </p>
+          {!resetArmed ? (
+            <button
+              onClick={() => setResetArmed(true)}
+              className="pressable mt-3 rounded-full bg-danger px-5 py-2 text-[13px] font-[600] text-white"
+            >
+              Tovární nastavení…
+            </button>
+          ) : (
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                value={resetText}
+                onChange={(e) => setResetText(e.target.value)}
+                placeholder='Pro potvrzení napiš RESET'
+                className="mono w-full rounded-[14px] border border-danger/40 bg-bg-sunken px-3.5 py-2 text-[13px] text-fg outline-none"
+              />
+              <button
+                onClick={() => void factoryReset.mutate()}
+                disabled={factoryReset.isPending || resetText !== "RESET"}
+                className="pressable shrink-0 rounded-full bg-danger px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40"
+              >
+                Smazat vše
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {msg && <p className="text-[13px] text-fg-muted">{msg}</p>}
       <p className="mt-2 text-[12.5px] leading-relaxed text-fg-subtle">
         Všechna data běží jen na tvém serveru — žádný cloud. Zálohuj si složku s daty podle návodu v Nápovědě.

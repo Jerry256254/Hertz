@@ -1,5 +1,5 @@
 import type { ChannelCallbacks, ChannelDriver } from "./types.js";
-import { chunkText } from "./types.js";
+import { chunkTelegramHtml, markdownToTelegramHtml, stripTelegramHtml } from "./telegram-format.js";
 
 const API = "https://api.telegram.org/bot";
 const LIMIT = 4096;
@@ -130,28 +130,40 @@ export class TelegramDriver implements ChannelDriver {
     return externalChatId.replace(/^telegram:/, "");
   }
 
-  async sendText(externalChatId: string, text: string): Promise<void> {
-    for (const chunk of chunkText(text, LIMIT)) {
-      await this.api("sendMessage", { chat_id: this.chatId(externalChatId), text: chunk });
+  /** Agent replies are Markdown — convert to Telegram HTML so formatting actually renders. */
+  private async sendFormatted(externalChatId: string, markdown: string, extra?: Record<string, unknown>): Promise<void> {
+    const html = markdownToTelegramHtml(markdown);
+    for (const chunk of chunkTelegramHtml(html, LIMIT)) {
+      try {
+        await this.api("sendMessage", { chat_id: this.chatId(externalChatId), text: chunk, parse_mode: "HTML", ...extra });
+      } catch (err) {
+        // Telegram rejected the markup (rare — unbalanced entities after an
+        // odd chunk edge): retry the same chunk as plain text, never fail loud.
+        if (/can't parse entities|parse entities/i.test((err as Error).message)) {
+          await this.api("sendMessage", { chat_id: this.chatId(externalChatId), text: stripTelegramHtml(chunk), ...extra });
+        } else {
+          throw err;
+        }
+      }
     }
+  }
+
+  async sendText(externalChatId: string, text: string): Promise<void> {
+    await this.sendFormatted(externalChatId, text);
   }
 
   async sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void> {
     const lines = [`🔐 Approval needed`, ``, summary];
     if (detail?.trim()) lines.push(``, detail.trim().slice(0, 3000));
-    for (const chunk of chunkText(lines.join("\n"), LIMIT)) {
-      await this.api("sendMessage", {
-        chat_id: this.chatId(externalChatId),
-        text: chunk,
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "✅ Approve", callback_data: `approve:${approvalId}` },
-              { text: "❌ Reject", callback_data: `reject:${approvalId}` },
-            ],
+    await this.sendFormatted(externalChatId, lines.join("\n"), {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Approve", callback_data: `approve:${approvalId}` },
+            { text: "❌ Reject", callback_data: `reject:${approvalId}` },
           ],
-        },
-      });
-    }
+        ],
+      },
+    });
   }
 }
