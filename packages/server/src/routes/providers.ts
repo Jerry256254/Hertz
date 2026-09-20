@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { createProviderAdapter, SUPPORTED_PROVIDERS, type SupportedProvider } from "@kuclab-hertz/providers";
+import { createProviderAdapter, describeScanError, SUPPORTED_PROVIDERS, type SupportedProvider } from "@kuclab-hertz/providers";
 import type { AppContext } from "../context.js";
 import { providerConfigKeys, providerConfigs } from "../db/schema.js";
 import { decryptSecret, encryptSecret, maskKey } from "../secrets/key-encryption.js";
@@ -153,7 +153,7 @@ export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): v
         const models = await adapter.listModels();
         return { models };
       } catch (err) {
-        return reply.code(502).send({ error: `Model scan failed: ${(err as Error).message}` });
+        return reply.code(502).send({ error: describeScanError(err, row.provider, row.baseUrl ?? undefined) });
       }
     });
   });

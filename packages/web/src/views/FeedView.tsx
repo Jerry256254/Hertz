@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import type { Agent, ApprovalItem, SessionListItem } from "../lib/types";
 import { relTime } from "../lib/format";
 
-const PROMPT_KEY = "muse-feed-prompt";
+const PROMPT_KEY = "hertz-feed-prompt";
 const DEFAULT_PROMPT = "Shrň mi každé ráno to nejdůležitější: co agent včera udělal, co čeká na schválení a co je dnes v plánu.";
 
 function loadPrompt(): string {

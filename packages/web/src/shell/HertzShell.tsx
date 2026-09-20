@@ -18,7 +18,7 @@ import { SearchOverlay } from "../overlays/SearchOverlay";
 import { SettingsModal } from "../settings/SettingsModal";
 import { DirectoryPicker } from "../components/DirectoryPicker";
 
-export function MuseShell() {
+export function HertzShell() {
   const queryClient = useQueryClient();
   const [module, setModule] = useState<Module>("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -265,7 +265,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto bg-bg px-4 py-8">
       <div className="w-full max-w-[480px] rounded-[24px] border border-border bg-bg-raised p-6 md:p-8">
-        <p className="text-[11px] font-[700] tracking-[0.14em] text-fg-subtle">MUSE · DOKONČIT NASTAVENÍ</p>
+        <p className="text-[11px] font-[700] tracking-[0.14em] text-fg-subtle">HERTZ · DOKONČIT NASTAVENÍ</p>
         <h1 className="mt-1 text-[22px] font-[700] tracking-[-0.02em]">
           {step === 0 ? "Vyber poskytovatele" : step === 1 ? "Vyber projekt" : "Pojmenuj agenta"}
         </h1>

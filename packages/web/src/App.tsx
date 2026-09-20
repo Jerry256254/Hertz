@@ -3,7 +3,7 @@ import { useAuth } from "./lib/auth";
 import { SetupPage } from "./routes/SetupPage";
 import { LoginPage } from "./routes/LoginPage";
 import { SharePage } from "./routes/SharePage";
-import { MuseShell } from "./shell/MuseShell";
+import { HertzShell } from "./shell/HertzShell";
 
 export function App() {
   const { user, loading, needsSetup } = useAuth();
@@ -39,7 +39,7 @@ export function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<MuseShell />} />
+      <Route path="/" element={<HertzShell />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

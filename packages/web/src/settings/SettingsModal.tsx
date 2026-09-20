@@ -801,7 +801,7 @@ function HelpSection() {
 function LegalSection() {
   return (
     <div className="max-w-[560px] text-[13.5px] leading-relaxed text-fg-muted">
-      <p className="mb-3 font-[600] text-fg">Muse</p>
+      <p className="mb-3 font-[600] text-fg">Hertz</p>
       <p>Osobní AI agent běžící na tvém vlastním serveru. Tvoje konverzace a soubory nikam neodcházejí — kromě volání modelu u poskytovatele, kterého sis sám nastavil.</p>
       <p className="mt-3">Agent jedná tvým jménem jen v mezích schválení, která mu dáš. Citlivé kroky (e-maily, platby, změny mimo jeho počítač) vždy čekají na tvoje rozhodnutí.</p>
     </div>

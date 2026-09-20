@@ -22,7 +22,7 @@ export function LoginPage() {
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-[15px] font-[800] text-white">M</div>
           <div className="leading-none">
-            <p className="text-[12px] font-[800] tracking-[0.14em] text-fg">MUSE</p>
+            <p className="text-[12px] font-[800] tracking-[0.14em] text-fg">HERTZ</p>
             <p className="mt-1 text-[10px] font-[600] tracking-[0.1em] text-fg-subtle">OSOBNÍ AGENT</p>
           </div>
         </div>
