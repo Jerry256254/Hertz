@@ -67,7 +67,7 @@ Optional extras (all set up later, none required to start):
 
 ## 3. Installing Node.js and pnpm
 
-Hertz needs **Node.js version 20 or newer** and the **pnpm** package manager.
+Hertz needs **Node.js version 22 or newer** and the **pnpm** package manager.
 
 ### Check what you already have
 
@@ -76,7 +76,7 @@ node --version
 pnpm --version
 ```
 
-- If `node` prints **v20 or higher** (e.g. `v22.11.0`) and `pnpm` prints a number — skip to step 4.
+- If `node` prints **v22 or higher** (e.g. `v22.11.0`) and `pnpm` prints a number — skip to step 4.
 - If either prints "command not found" — continue below.
 
 ### Install Node.js
@@ -101,7 +101,7 @@ corepack enable
 Verify both again:
 
 ```bash
-node --version   # v20+ expected
+node --version   # v22+ expected
 pnpm --version   # any 9+ version is fine
 ```
 
@@ -319,7 +319,7 @@ Found a bug? Please [open an issue](https://github.com/Jerry256254/Hertz/issues)
 
 ## Monorepo layout (for contributors)
 
-Requires Node.js ≥ 20 and pnpm (see above); `git clone && pnpm install && pnpm build` is all you need.
+Requires Node.js ≥ 22 and pnpm (see above); `git clone && pnpm install && pnpm build` is all you need.
 
 Packages: `packages/{cli,core,tools,sandbox,providers,mcp,mcp-google,server,standard,web}`. Useful scripts: `pnpm dev` (watch builds), `pnpm typecheck`, `pnpm lint`, `pnpm test`. A smoke test against built packages lives in `.smoke-test/` (fake LLM provider + scripted end-to-end checks).
 

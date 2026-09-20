@@ -40,7 +40,7 @@ node_major() { "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo
 
 SYSTEM_NODE=""
 for cand in /usr/bin/node /usr/local/bin/node /opt/node/bin/node; do
-  if [ -x "$cand" ] && [ "$(node_major "$cand")" -ge 20 ]; then SYSTEM_NODE="$cand"; break; fi
+  if [ -x "$cand" ] && [ "$(node_major "$cand")" -ge 22 ]; then SYSTEM_NODE="$cand"; break; fi
 done
 
 if [ -z "$SYSTEM_NODE" ]; then
@@ -54,7 +54,7 @@ if [ -z "$SYSTEM_NODE" ]; then
     as_root pacman -Sy --noconfirm nodejs npm || true
   fi
   for cand in /usr/bin/node /usr/local/bin/node /opt/node/bin/node; do
-    if [ -x "$cand" ] && [ "$(node_major "$cand")" -ge 20 ]; then SYSTEM_NODE="$cand"; break; fi
+    if [ -x "$cand" ] && [ "$(node_major "$cand")" -ge 22 ]; then SYSTEM_NODE="$cand"; break; fi
   done
 fi
 
@@ -63,12 +63,12 @@ if [ -n "$SYSTEM_NODE" ]; then
   NODE_BIN="$SYSTEM_NODE"
 else
   # Fall back to the user's own Node (nvm/fnm/...) executed via a login shell.
-  if command -v node >/dev/null 2>&1 && [ "$(node_major "$(command -v node)")" -ge 20 ]; then
+  if command -v node >/dev/null 2>&1 && [ "$(node_major "$(command -v node)")" -ge 22 ]; then
     NODE_BIN="$(command -v node)"
     USE_WRAPPER=1
     warn "Using home-managed Node ($NODE_BIN) via a login-shell wrapper."
   else
-    die "No Node.js >= 20 available and system install failed. Install Node from https://nodejs.org and re-run."
+    die "No Node.js >= 22 available and system install failed. Install Node from https://nodejs.org and re-run."
   fi
 fi
 log "Using Node: $NODE_BIN"

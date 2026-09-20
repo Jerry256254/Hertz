@@ -10,8 +10,8 @@ import { startServer } from "./commands/start.js";
 
 function checkNodeVersion(): void {
   const major = Number(process.versions.node.split(".")[0]);
-  if (major < 20) {
-    console.error(kleur.red(`KucLab Hertz requires Node.js >= 20 (found ${process.version}).`));
+  if (major < 22) {
+    console.error(kleur.red(`KucLab Hertz requires Node.js >= 22 (found ${process.version}).`));
     process.exit(1);
   }
 }
