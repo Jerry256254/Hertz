@@ -38,8 +38,8 @@ function NewAgentForm({ projectId, fixedRole, onCreated }: { projectId: string; 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <div><Label>JMÉNO</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-      {!fixedRole && (<div><Label>ROLE</Label><select value={role} onChange={(e) => setRole(e.target.value as AgentRole)} className="h-[36px] w-full rounded-[8px] border border-border bg-bg-raised px-3 text-[13px] text-fg outline-none focus:border-fg"><option value="" disabled>Vyber roli</option>{AGENT_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></div>)}
-      <div><Label>PROVIDER</Label><select value={providerConfigId} onChange={(e) => { setProviderConfigId(e.target.value); setModel(""); }} required className="h-[36px] w-full rounded-[8px] border border-border bg-bg-raised px-3 text-[13px] text-fg outline-none focus:border-fg"><option value="">Vyber providera…</option>{providers?.providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>
+      {!fixedRole && (<div><Label>ROLE</Label><select value={role} onChange={(e) => setRole(e.target.value as AgentRole)} className="h-[36px] w-full rounded-md border border-border bg-bg-raised px-3 text-[13px] text-fg outline-none focus:border-fg"><option value="" disabled>Vyber roli</option>{AGENT_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></div>)}
+      <div><Label>PROVIDER</Label><select value={providerConfigId} onChange={(e) => { setProviderConfigId(e.target.value); setModel(""); }} required className="h-[36px] w-full rounded-md border border-border bg-bg-raised px-3 text-[13px] text-fg outline-none focus:border-fg"><option value="">Vyber providera…</option>{providers?.providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>
       <div><Label>MODEL</Label><ModelPicker providerConfigId={providerConfigId} value={model} onChange={setModel} /></div>
       <Button type="submit" variant="primary" disabled={createAgent.isPending || !model} className="w-full">{createAgent.isPending ? "Zakládám…" : fixedRole === "manager" ? "Založit managera" : "Vytvořit agenta"}</Button>
     </form>
@@ -93,14 +93,14 @@ export function ProjectPage() {
       {/* Masthead */}
       <div className="shrink-0 border-b border-border bg-bg-raised">
         <div className="container-app py-5">
-          <button onClick={() => navigate("/")} className="mb-3 inline-flex items-center gap-1.5 rounded-[8px] border border-transparent px-1.5 py-1 mono text-[11px] font-[600] tracking-[0.06em] text-fg-muted hover:border-border hover:bg-bg-sunken hover:text-fg">
+          <button onClick={() => navigate("/")} className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-transparent px-1.5 py-1 mono text-[11px] font-[600] tracking-[0.06em] text-fg-muted hover:border-border hover:bg-bg-sunken hover:text-fg">
             <ArrowLeft size={12} strokeWidth={1.9} /> PROJEKTY
           </button>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <h1 className="font-display text-[28px] leading-none tracking-[-0.04em] text-fg md:text-[32px]">{project?.name ?? "—"}</h1>
               <div className="mt-2 flex items-center gap-2">
-                <span className="mono max-w-[52ch] truncate rounded-[6px] border border-border bg-bg-sunken px-2 py-1 text-[11px] leading-none text-fg-muted">{project?.roots[0]?.absolutePath ?? ""}</span>
+                <span className="mono max-w-[52ch] truncate rounded-sm border border-border bg-bg-sunken px-2 py-1 text-[11px] leading-none text-fg-muted">{project?.roots[0]?.absolutePath ?? ""}</span>
                 <span className="hidden mono text-[10px] font-[600] tracking-[0.08em] text-fg-faint sm:inline">LOCAL FS</span>
               </div>
             </div>
@@ -113,7 +113,7 @@ export function ProjectPage() {
         {/* segmented pill tabs */}
         <div className="container-app pb-3">
           <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
-            <Tabs.List className="inline-flex gap-1 rounded-[10px] border border-border bg-bg-sunken p-1">
+            <Tabs.List className="inline-flex gap-1 rounded-md border border-border bg-bg-sunken p-1">
               {[
                 { v: "overview", l: "Přehled", c: undefined },
                 { v: "team", l: "Tým", c: agents.length },
@@ -124,7 +124,7 @@ export function ProjectPage() {
                 <Tabs.Trigger
                   key={t.v}
                   value={t.v}
-                  className={`rounded-[8px] px-3 py-1.5 mono text-[11px] font-[700] tracking-[0.06em] transition-colors ${activeTab === t.v ? "bg-fg text-bg-raised shadow-xs" : "text-fg-muted hover:text-fg"}`}
+                  className={`rounded-md px-3 py-1.5 mono text-[11px] font-[700] tracking-[0.06em] transition-colors ${activeTab === t.v ? "bg-fg text-bg-raised shadow-xs" : "text-fg-muted hover:text-fg"}`}
                 >
                   <span className="flex items-center gap-1.5">{t.l} {t.c !== undefined && t.c > 0 && <span className={`rounded-full px-1.5 py-0.5 mono text-[10px] font-[700] leading-none ${activeTab === t.v ? "bg-bg-raised text-fg" : "bg-bg-raised text-fg-subtle border border-border"}`}>{t.c}</span>}</span>
                 </Tabs.Trigger>
@@ -140,7 +140,7 @@ export function ProjectPage() {
             {user?.role === "admin" && projectId && <ProjectAccessSection projectId={projectId} />}
 
             {/* ledger stats */}
-            <div className="overflow-hidden rounded-[14px] border border-border bg-bg-raised">
+            <div className="overflow-hidden rounded-lg border border-border bg-bg-raised">
               <div className="grid grid-cols-1 divide-y divide-border md:grid-cols-3 md:divide-x md:divide-y-0">
                 <div className="p-4">
                   <div className="flex items-center gap-2 mono text-[10px] font-[700] tracking-[0.12em] text-fg-subtle"><Layers size={11} /> TÝM</div>
@@ -215,7 +215,7 @@ export function ProjectPage() {
                 <Button variant="primary" size="sm" onClick={() => setShowAgentForm((v) => !v)}><Plus size={13} /> Nový agent</Button>
               </span>
             </div>
-            {employees.length === 0 && !showAgentForm && <p className="rounded-[10px] border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">{manager ? "Zatím žádní zaměstnanci — požádej managera ať najme, nebo přidej sám." : "Zatím žádní zaměstnanci."}</p>}
+            {employees.length === 0 && !showAgentForm && <p className="rounded-md border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">{manager ? "Zatím žádní zaměstnanci — požádej managera ať najme, nebo přidej sám." : "Zatím žádní zaměstnanci."}</p>}
             <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {employees.map((a) => {
                 const isAttached = a.projectId !== projectId;
@@ -243,13 +243,13 @@ export function ProjectPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div>
               <div className="mb-3 flex items-center justify-between"><h2 className="font-display text-[16px] leading-none tracking-[-0.02em] text-fg">Úkoly</h2><Button variant="secondary" size="sm" onClick={() => setShowTaskDialog(true)} disabled={employees.length < 1}><Plus size={13} /> Nový úkol</Button></div>
-              {tasks.length === 0 ? <p className="rounded-[10px] border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Vytvoř úkol a vyber řešitele — ostatní zůstanou nedotčeni.</p> : <ul className="space-y-2">{tasks.map((t) => <li key={t.id}><TaskCard projectId={projectId!} task={t} onDelete={() => deleteTask.mutate(t.id)} onCycleStatus={() => cycleTaskStatus.mutate({ id: t.id, status: NEXT_TASK_STATUS[t.status] })} /></li>)}</ul>}
+              {tasks.length === 0 ? <p className="rounded-md border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Vytvoř úkol a vyber řešitele — ostatní zůstanou nedotčeni.</p> : <ul className="space-y-2">{tasks.map((t) => <li key={t.id}><TaskCard projectId={projectId!} task={t} onDelete={() => deleteTask.mutate(t.id)} onCycleStatus={() => cycleTaskStatus.mutate({ id: t.id, status: NEXT_TASK_STATUS[t.status] })} /></li>)}</ul>}
             </div>
             <div>
               <div className="mb-3 flex items-center justify-between"><h2 className="font-display text-[16px] leading-none tracking-[-0.02em] text-fg">Rutiny</h2><Button variant="secondary" size="sm" onClick={() => setShowRoutineDialog(true)} disabled={employees.length < 1}><Plus size={13} /> Nová rutina</Button></div>
-              {routineNotice && <p className="mb-3 flex items-center gap-1.5 rounded-[8px] border border-border bg-bg-sunken px-3 py-2 mono text-[11px] text-fg-muted"><Clock size={11} /> Vytvořeno {routineNotice}</p>}
-              {routines.length === 0 ? <p className="rounded-[10px] border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Stejné zadání podle plánu — denně nebo cron.</p> : <ul className="space-y-2">{routines.map((r) => (
-                <li key={r.id}><Card className="flex items-center justify-between gap-3 p-3"><span className="flex min-w-0 items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-[8px] border border-border bg-bg-sunken text-fg-subtle"><Clock size={13} strokeWidth={1.7} /></span><span className="min-w-0"><span className="block truncate text-[12.5px] font-[600] tracking-[-0.01em] text-fg">{r.title}</span><span className="mono block truncate text-[11px] text-fg-subtle">{r.agentName} · {r.schedule}</span></span>{!r.enabled && <Badge tone="warning">vypnuto</Badge>}</span><span className="flex gap-1.5"><Button variant="secondary" size="sm" onClick={() => toggleRoutine.mutate({ id: r.id, enabled: !r.enabled })}>{r.enabled ? "Pozastavit" : "Spustit"}</Button><DeleteButton title="Smazat rutinu" onDelete={() => deleteRoutine.mutate(r.id)} /></span></Card></li>
+              {routineNotice && <p className="mb-3 flex items-center gap-1.5 rounded-md border border-border bg-bg-sunken px-3 py-2 mono text-[11px] text-fg-muted"><Clock size={11} /> Vytvořeno {routineNotice}</p>}
+              {routines.length === 0 ? <p className="rounded-md border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Stejné zadání podle plánu — denně nebo cron.</p> : <ul className="space-y-2">{routines.map((r) => (
+                <li key={r.id}><Card className="flex items-center justify-between gap-3 p-3"><span className="flex min-w-0 items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-subtle"><Clock size={13} strokeWidth={1.7} /></span><span className="min-w-0"><span className="block truncate text-[12.5px] font-[600] tracking-[-0.01em] text-fg">{r.title}</span><span className="mono block truncate text-[11px] text-fg-subtle">{r.agentName} · {r.schedule}</span></span>{!r.enabled && <Badge tone="warning">vypnuto</Badge>}</span><span className="flex gap-1.5"><Button variant="secondary" size="sm" onClick={() => toggleRoutine.mutate({ id: r.id, enabled: !r.enabled })}>{r.enabled ? "Pozastavit" : "Spustit"}</Button><DeleteButton title="Smazat rutinu" onDelete={() => deleteRoutine.mutate(r.id)} /></span></Card></li>
               ))}</ul>}
             </div>
           </div>
@@ -259,14 +259,14 @@ export function ProjectPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div>
               <div className="mb-3 flex items-center justify-between"><h2 className="font-display text-[16px] leading-none tracking-[-0.02em] text-fg">Mítinky</h2><Button variant="secondary" size="sm" onClick={() => setShowMeetingDialog(true)} disabled={employees.length < 1}><Plus size={13} /> Svolat</Button></div>
-              {meetings.length === 0 ? <p className="rounded-[10px] border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Stáhni agenty do společné konverzace — jako hovor.</p> : <ul className="space-y-2">{meetings.map((m) => (
-                <li key={m.id}><button onClick={() => navigate(`/projects/${projectId}/meetings/${m.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-border bg-bg-raised p-3 text-left hover:border-fg hover:bg-bg-sunken"><span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-fg text-bg-raised"><Video size={12} strokeWidth={1.7} /></span><span className="min-w-0 flex-1 truncate text-[13px] font-[500] tracking-[-0.01em] text-fg">{m.title}</span><Badge tone={m.status === "active" ? "live" : "neutral"}>{m.status}</Badge><span className="hidden group-hover:block" onClick={(e) => e.stopPropagation()}><DeleteButton title="Smazat mítink" onDelete={() => deleteMeeting.mutate(m.id)} /></span></button></li>
+              {meetings.length === 0 ? <p className="rounded-md border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Stáhni agenty do společné konverzace — jako hovor.</p> : <ul className="space-y-2">{meetings.map((m) => (
+                <li key={m.id}><button onClick={() => navigate(`/projects/${projectId}/meetings/${m.id}`)} className="group flex w-full items-center gap-3 rounded-md border border-border bg-bg-raised p-3 text-left hover:border-fg hover:bg-bg-sunken"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-fg text-bg-raised"><Video size={12} strokeWidth={1.7} /></span><span className="min-w-0 flex-1 truncate text-[13px] font-[500] tracking-[-0.01em] text-fg">{m.title}</span><Badge tone={m.status === "active" ? "live" : "neutral"}>{m.status}</Badge><span className="hidden group-hover:block" onClick={(e) => e.stopPropagation()}><DeleteButton title="Smazat mítink" onDelete={() => deleteMeeting.mutate(m.id)} /></span></button></li>
               ))}</ul>}
             </div>
             <div>
               <h2 className="mb-3 font-display text-[16px] leading-none tracking-[-0.02em] text-fg">Přímé zprávy</h2>
-              {conversations.length === 0 ? <p className="rounded-[10px] border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Zatím žádné DM — objeví se, když si agenti píší 1:1.</p> : <Card className="space-y-0.5 p-2">{conversations.map((c) => (
-                <Link key={c.id} to={`/projects/${projectId}/sessions/${c.id}`} className="flex items-start gap-2 rounded-[8px] px-2.5 py-2 hover:bg-bg-sunken">
+              {conversations.length === 0 ? <p className="rounded-md border border-dashed border-border bg-bg-raised px-4 py-8 text-center mono text-[12px] text-fg-subtle">Zatím žádné DM — objeví se, když si agenti píší 1:1.</p> : <Card className="space-y-0.5 p-2">{conversations.map((c) => (
+                <Link key={c.id} to={`/projects/${projectId}/sessions/${c.id}`} className="flex items-start gap-2 rounded-md px-2.5 py-2 hover:bg-bg-sunken">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: agentColor(c.peerAgentId) }} />
                   <span className="min-w-0 flex-1 leading-snug"><span className="mono text-[11px] font-[700] tracking-[0.04em] text-fg" style={{ color: agentColor(c.peerAgentId) }}>{c.peerAgentName ?? c.title}</span> <span className="text-[12.5px] leading-relaxed text-fg-muted">{c.lastMessagePreview}</span></span>
                 </Link>
@@ -277,9 +277,9 @@ export function ProjectPage() {
         )}
 
         {activeTab === "files" && (
-          <div className="overflow-hidden rounded-[14px] border border-border bg-bg-raised">
+          <div className="overflow-hidden rounded-lg border border-border bg-bg-raised">
             <div className="flex items-center gap-2 border-b border-border bg-bg-sunken px-3 py-2.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-fg text-bg-raised"><FileCode size={12} strokeWidth={1.7} /></span>
+              <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-fg text-bg-raised"><FileCode size={12} strokeWidth={1.7} /></span>
               <span className="mono text-[11px] font-[700] tracking-[0.08em] text-fg">SOUBORY</span>
               <span className="mono ml-auto hidden text-[11px] text-fg-subtle md:block">{project?.roots[0]?.absolutePath}</span>
             </div>
@@ -306,17 +306,17 @@ function TaskCard({ projectId, task, onCycleStatus, onDelete }: { projectId: str
   return (
     <Card className="overflow-hidden p-0">
       <button onClick={() => setExpanded((v) => !v)} className="flex w-full items-start justify-between gap-3 p-3 text-left hover:bg-bg-sunken/50">
-        <span className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] border border-border bg-bg-sunken text-fg-subtle"><Hash size={12} strokeWidth={1.7} /></span><span className="min-w-0"><span className="block truncate text-[13px] font-[600] tracking-[-0.01em] text-fg">{task.title}</span>{!expanded && <span className="mt-0.5 line-clamp-2 block mono text-[11.5px] leading-relaxed text-fg-subtle">{task.description}</span>}{expanded && <span className="mono block text-[11px] text-fg-subtle">{new Date(task.createdAt).toLocaleString()}</span>}</span></span>
+        <span className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-border bg-bg-sunken text-fg-subtle"><Hash size={12} strokeWidth={1.7} /></span><span className="min-w-0"><span className="block truncate text-[13px] font-[600] tracking-[-0.01em] text-fg">{task.title}</span>{!expanded && <span className="mt-0.5 line-clamp-2 block mono text-[11.5px] leading-relaxed text-fg-subtle">{task.description}</span>}{expanded && <span className="mono block text-[11px] text-fg-subtle">{new Date(task.createdAt).toLocaleString()}</span>}</span></span>
         <span className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}><span onClick={onCycleStatus}><Badge tone={TASK_STATUS_TONE[task.status]}>{TASK_STATUS_LABEL[task.status]}</Badge></span><DeleteButton title="Smazat úkol" onDelete={onDelete} /><ChevronDown size={14} className={`text-fg-subtle transition-transform ${expanded ? "rotate-180" : ""}`} strokeWidth={1.7} /></span>
       </button>
       {expanded && (
         <div className="space-y-3 border-t border-border bg-bg-sunken/40 p-3">
-          <div><p className="mono mb-1.5 text-[10px] font-[700] tracking-[0.08em] text-fg-subtle">ZADÁNÍ</p><pre className="whitespace-pre-wrap rounded-[8px] border border-border bg-bg-raised p-3 mono text-[11.5px] leading-relaxed text-fg-muted">{d.description}</pre></div>
+          <div><p className="mono mb-1.5 text-[10px] font-[700] tracking-[0.08em] text-fg-subtle">ZADÁNÍ</p><pre className="whitespace-pre-wrap rounded-md border border-border bg-bg-raised p-3 mono text-[11.5px] leading-relaxed text-fg-muted">{d.description}</pre></div>
           <div><p className="mono mb-1 text-[10px] font-[700] tracking-[0.08em] text-fg-subtle">ČAS</p><p className="mono text-[11px] text-fg-subtle">Založeno {new Date(d.createdAt).toLocaleString()} · aktualizováno {new Date(d.updatedAt).toLocaleString()}</p></div>
           <div><p className="mono mb-1.5 text-[10px] font-[700] tracking-[0.08em] text-fg-subtle">ŘEŠITELÉ</p>{d.assignees.length === 0 ? <p className="mono text-[11px] text-fg-subtle">Bez řešitele.</p> : <ul className="space-y-2">{d.assignees.map((a) => (
-            <li key={a.id} className="rounded-[10px] border border-border bg-bg-raised px-3 py-2.5">
+            <li key={a.id} className="rounded-md border border-border bg-bg-raised px-3 py-2.5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <span className="flex items-center gap-2 text-[12px] font-[600] tracking-[-0.01em] text-fg"><span className="flex h-6 w-6 items-center justify-center rounded-[7px] border border-border bg-bg-sunken mono text-[10px] font-[700] text-fg-muted">{a.agentName.slice(0, 1).toUpperCase()}</span>{a.agentName} <span className="mono font-normal text-fg-subtle">· {a.agentRole}</span></span>
+                <span className="flex items-center gap-2 text-[12px] font-[600] tracking-[-0.01em] text-fg"><span className="flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-bg-sunken mono text-[10px] font-[700] text-fg-muted">{a.agentName.slice(0, 1).toUpperCase()}</span>{a.agentName} <span className="mono font-normal text-fg-subtle">· {a.agentRole}</span></span>
                 <span className="flex gap-1.5">{a.sessionId && <><SessionActions sessionId={a.sessionId} /><Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId}/sessions/${a.sessionId}`)}>Otevřít chat</Button></>}</span>
               </div>
               {a.sessionId ? <SessionActivity sessionId={a.sessionId} /> : <p className="mono text-[11px] text-fg-subtle">Nezačato.</p>}
@@ -334,7 +334,7 @@ function SessionActivity({ sessionId }: { sessionId: string }) {
   if (!data) return <p className="mono text-[11px] text-fg-subtle">Načítám…</p>;
   const events: string[] = [];
   for (const m of [...data.messages].reverse()) { for (const b of m.content ?? []) { if (b.type === "tool_use" && b.name) events.push(`→ ${b.name}`); else if (b.type === "tool_result") events.push(`  ${(b as unknown as { content?: string }).content?.slice(0, 90) ?? ""}`); else if (b.type === "text" && m.role === "assistant" && b.text) events.push(`✓ ${b.text.replace(/\s+/g, " ").slice(0, 110)}`); } if (events.length >= 14) break; }
-  return (<div><p className="mono mb-1 text-[10px] tracking-wide text-fg-subtle">stav <span className="font-[700] text-fg">{data.running ? "běží" : data.session.status}</span> · {new Date(data.session.updatedAt).toLocaleTimeString()}</p><pre className="max-h-36 overflow-y-auto whitespace-pre-wrap rounded-[8px] border border-border bg-bg-sunken p-2 mono text-[11px] leading-relaxed text-fg-muted">{events.length ? events.join("\n") : "(zatím žádné kroky)"}</pre></div>);
+  return (<div><p className="mono mb-1 text-[10px] tracking-wide text-fg-subtle">stav <span className="font-[700] text-fg">{data.running ? "běží" : data.session.status}</span> · {new Date(data.session.updatedAt).toLocaleTimeString()}</p><pre className="max-h-36 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-bg-sunken p-2 mono text-[11px] leading-relaxed text-fg-muted">{events.length ? events.join("\n") : "(zatím žádné kroky)"}</pre></div>);
 }
 function SessionActions({ sessionId }: { sessionId: string }) {
   const queryClient = useQueryClient();
@@ -350,12 +350,12 @@ function NewGroupChatDialog({ open, onOpenChange, projectId, agents }: { open: b
   function toggle(id: string) { setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal><Dialog.Overlay className="fixed inset-0 bg-bg-overlay backdrop-blur-[4px]" /><Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-border bg-bg-raised p-5 shadow-popover">
+      <Dialog.Portal><Dialog.Overlay className="fixed inset-0 bg-bg-overlay backdrop-blur-[4px]" /><Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-bg-raised p-5 shadow-popover">
         <Dialog.Title className="font-display text-[18px] leading-none tracking-[-0.03em] text-fg">Nový skupinový chat</Dialog.Title><Dialog.Description className="mb-4 mt-1 mono text-[12px] leading-relaxed text-fg-muted">Vyber boty do jednoho vlákna — odpovídají společně, @zmínkou oslovíš jednoho.</Dialog.Description>
         <Label>NÁZEV</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="např. Launch crew" />
         <p className="mono mb-2 mt-4 text-[10px] font-[700] tracking-[0.08em] text-fg-muted">ÚČASTNÍCI · {selected.size}</p>
         <ul className="max-h-56 space-y-1 overflow-y-auto pr-1">{agents.map((a) => (
-          <li key={a.id}><button onClick={() => toggle(a.id)} className={`flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left ${selected.has(a.id) ? "border-fg bg-fg text-bg-raised" : "border-border hover:border-border-strong hover:bg-bg-sunken"}`}><Avatar label={a.name} color={agentColor(a.id)} /><span className="min-w-0 flex-1"><span className={`block truncate text-[13px] font-[600] ${selected.has(a.id) ? "text-bg-raised" : "text-fg"}`}>{a.name}</span><span className={`mono block truncate text-[11px] ${selected.has(a.id) ? "text-bg-raised/70" : "text-fg-subtle"}`}>{ROLE_LABEL[a.role]}</span></span>{selected.has(a.id) && <Badge className="bg-bg-raised text-fg">uvnitř</Badge>}</button></li>
+          <li key={a.id}><button onClick={() => toggle(a.id)} className={`flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left ${selected.has(a.id) ? "border-fg bg-fg text-bg-raised" : "border-border hover:border-border-strong hover:bg-bg-sunken"}`}><Avatar label={a.name} color={agentColor(a.id)} /><span className="min-w-0 flex-1"><span className={`block truncate text-[13px] font-[600] ${selected.has(a.id) ? "text-bg-raised" : "text-fg"}`}>{a.name}</span><span className={`mono block truncate text-[11px] ${selected.has(a.id) ? "text-bg-raised/70" : "text-fg-subtle"}`}>{ROLE_LABEL[a.role]}</span></span>{selected.has(a.id) && <Badge className="bg-bg-raised text-fg">uvnitř</Badge>}</button></li>
         ))}</ul>
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Zrušit</Button><Button variant="primary" size="sm" disabled={selected.size === 0 || create.isPending} onClick={() => create.mutate()}>Vytvořit</Button></div>
       </Dialog.Content></Dialog.Portal>

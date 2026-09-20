@@ -34,7 +34,7 @@ export function ThemeToggle() {
     <button
       onClick={() => setTheme(ORDER[(ORDER.indexOf(theme) + 1) % ORDER.length]!)}
       title={`Motiv: ${LABELS[theme]} (klikni pro změnu)`}
-      className="flex h-7 w-7 items-center justify-center rounded-[8px] border border-border text-fg-subtle hover:bg-bg-hover hover:text-fg"
+      className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-fg-subtle hover:bg-bg-hover hover:text-fg"
     >
       <Icon size={13} strokeWidth={1.85} />
     </button>

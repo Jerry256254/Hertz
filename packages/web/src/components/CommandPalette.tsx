@@ -104,7 +104,7 @@ export function CommandPalette() {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[14vh]" role="dialog" aria-modal="true" aria-label="Rychlá navigace">
       <div className="absolute inset-0 bg-[#11110E]/24 backdrop-blur-[2px]" onClick={() => setOpen(false)} aria-hidden />
-      <div className="animate-fade-in relative w-full max-w-[560px] overflow-hidden rounded-[14px] border border-border bg-bg-raised shadow-popover">
+      <div className="animate-fade-in relative w-full max-w-[560px] overflow-hidden rounded-lg border border-border bg-bg-raised shadow-popover">
         <div className="flex items-center gap-2.5 border-b border-border px-3.5">
           <Search size={14} className="shrink-0 text-fg-subtle" />
           <input
@@ -119,7 +119,7 @@ export function CommandPalette() {
             placeholder="Kam to bude? Stránky, projekty, chaty…"
             className="h-11 w-full bg-transparent text-[14px] text-fg placeholder:text-fg-subtle outline-none"
           />
-          <kbd className="mono hidden shrink-0 rounded-[6px] border border-border bg-bg-sunken px-1.5 py-0.5 text-[10px] font-[600] text-fg-subtle sm:inline">ESC</kbd>
+          <kbd className="mono hidden shrink-0 rounded-sm border border-border bg-bg-sunken px-1.5 py-0.5 text-[10px] font-[600] text-fg-subtle sm:inline">ESC</kbd>
         </div>
         <ul className="max-h-[320px] overflow-y-auto p-1.5">
           {items.length === 0 && <li className="px-3 py-4 text-center text-[13px] text-fg-subtle">Nic jsem nenašel.</li>}
@@ -128,7 +128,7 @@ export function CommandPalette() {
               <button
                 onClick={() => go(item)}
                 onMouseEnter={() => setActive(i)}
-                className={`flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left text-[13px] ${i === active ? "bg-fg text-bg-raised" : "text-fg"}`}
+                className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] ${i === active ? "bg-fg text-bg-raised" : "text-fg"}`}
               >
                 {item.kind === "project" ? (
                   <Folder size={13} className={i === active ? "text-bg-raised/70" : "text-fg-subtle"} />

@@ -168,7 +168,7 @@ function ApiTokens() {
           <span className="mono">curl -H "Authorization: Bearer htz_…" /api/sessions</span>.
         </p>
         {fresh && (
-          <div className="mb-3 rounded-[8px] border border-warning/30 bg-warning-wash p-3">
+          <div className="mb-3 rounded-md border border-warning/30 bg-warning-wash p-3">
             <p className="mono mb-1.5 text-[11px] font-[600] text-warning">COPY NOW — SHOWN ONLY ONCE</p>
             <div className="flex items-center gap-2">
               <code className="mono min-w-0 flex-1 truncate rounded-md bg-bg-raised px-2 py-1.5 text-xs text-fg">{fresh.token}</code>
@@ -189,7 +189,7 @@ function ApiTokens() {
         </div>
         <ul className="space-y-2">
           {(data?.tokens ?? []).map((t) => (
-            <li key={t.id} className="flex items-center gap-2 rounded-[8px] border border-border bg-bg-sunken px-3 py-2">
+            <li key={t.id} className="flex items-center gap-2 rounded-md border border-border bg-bg-sunken px-3 py-2">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-[600] text-fg">{t.name}</p>
                 <p className="mono text-[11px] text-fg-subtle">

@@ -85,7 +85,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
           v0.15
         </span>
         {onClose && (
-          <button onClick={onClose} className="ml-auto flex h-8 w-8 items-center justify-center rounded-[8px] border border-border text-fg-subtle hover:bg-bg-hover hover:text-fg md:hidden" aria-label="Zavřít">
+          <button onClick={onClose} className="ml-auto flex h-8 w-8 items-center justify-center rounded-md border border-border text-fg-subtle hover:bg-bg-hover hover:text-fg md:hidden" aria-label="Zavřít">
             <X size={15} strokeWidth={1.9} />
           </button>
         )}
@@ -93,7 +93,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
 
       {/* Search + create */}
       <div className="p-3">
-        <label className="flex h-[36px] items-center gap-2 rounded-[8px] border border-border bg-bg-sunken px-2.5 focus-within:border-border-strong focus-within:bg-bg-raised">
+        <label className="flex h-[36px] items-center gap-2 rounded-md border border-border bg-bg-sunken px-2.5 focus-within:border-border-strong focus-within:bg-bg-raised">
           <Search size={13} className="shrink-0 text-fg-subtle" strokeWidth={1.8} />
           <input
             value={query}
@@ -101,7 +101,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
             placeholder="Hledat v chatech…"
             className="w-full bg-transparent text-[13px] leading-none text-fg placeholder:text-fg-subtle outline-none"
           />
-          <span className="hidden rounded-[6px] border border-border bg-bg-raised px-1.5 py-0.5 mono text-[10px] font-[600] tracking-wide text-fg-subtle sm:inline">⌘K</span>
+          <span className="hidden rounded-sm border border-border bg-bg-raised px-1.5 py-0.5 mono text-[10px] font-[600] tracking-wide text-fg-subtle sm:inline">⌘K</span>
         </label>
         <button
           onClick={() => navigate("/")}
@@ -128,20 +128,20 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
             const isCollapsed = collapsed.has(project.id);
             const isActive = params.projectId === project.id;
             return (
-              <li key={project.id} className={isActive ? "rounded-[10px] bg-bg-sunken" : ""}>
-                <div className={`group flex items-center gap-1 rounded-[10px] px-1 py-1 ${isActive ? "" : "hover:bg-bg-sunken"}`}>
+              <li key={project.id} className={isActive ? "rounded-md bg-bg-sunken" : ""}>
+                <div className={`group flex items-center gap-1 rounded-md px-1 py-1 ${isActive ? "" : "hover:bg-bg-sunken"}`}>
                   <button
                     onClick={() => toggle(project.id)}
-                    className="flex h-6 w-6 items-center justify-center rounded-[6px] text-fg-subtle hover:bg-bg-raised hover:text-fg"
+                    className="flex h-6 w-6 items-center justify-center rounded-sm text-fg-subtle hover:bg-bg-raised hover:text-fg"
                     aria-label={isCollapsed ? "Rozbalit" : "Sbalit"}
                   >
                     <ChevronRight size={12} strokeWidth={2} className={`transition-transform duration-150 ${isCollapsed ? "" : "rotate-90"}`} />
                   </button>
                   <Link
                     to={`/projects/${project.id}`}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-[8px] px-1 py-1 text-[13px] font-[500] tracking-[-0.01em] text-fg"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-[13px] font-[500] tracking-[-0.01em] text-fg"
                   >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-[6px] border text-[11px] ${isActive ? "border-fg bg-fg text-bg-raised" : "border-border bg-bg-raised text-fg-subtle"}`}>
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-sm border text-[11px] ${isActive ? "border-fg bg-fg text-bg-raised" : "border-border bg-bg-raised text-fg-subtle"}`}>
                       <Folder size={11} strokeWidth={1.8} />
                     </span>
                     <span className="truncate">{project.name}</span>
@@ -159,7 +159,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
       {/* System */}
       <div className="shrink-0 border-t border-border">
         <div className="p-2">
-          <div className="rounded-[12px] border border-border bg-bg-sunken p-1.5">
+          <div className="rounded-lg border border-border bg-bg-sunken p-1.5">
             <NavItem to="/approvals" icon={<ShieldCheck size={14} strokeWidth={1.7} />} label="Schválení" />
             <NavItem to="/integrations" icon={<Plug size={14} strokeWidth={1.7} />} label="Integrace" />
             {user?.role === "admin" && (
@@ -182,7 +182,7 @@ export function Sidebar({ onClose }: { onClose?: () => void } = {}) {
             <span className="mono min-w-0 flex-1 truncate text-[11.5px] font-[500] tracking-[-0.01em] text-fg-muted">{user?.email}</span>
           </Link>
           <ThemeToggle />
-          <IconButton title="Odhlásit" onClick={() => void logout()} className="h-7 w-7 rounded-[8px] border border-border">
+          <IconButton title="Odhlásit" onClick={() => void logout()} className="h-7 w-7 rounded-md border border-border">
             <LogOut size={13} strokeWidth={1.85} />
           </IconButton>
         </div>
@@ -198,7 +198,7 @@ function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: stri
     <Link
       to={to}
       aria-current={isActive ? "page" : undefined}
-      className={`flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-[13px] font-[500] ${
+      className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-[500] ${
         isActive ? "bg-fg text-bg-raised" : "text-fg-muted hover:bg-bg-raised hover:text-fg"
       }`}
     >
@@ -214,6 +214,20 @@ function CheckUpdatesBlock() {
   const [copied, setCopied] = useState(false);
   const cmd = "curl -fsSL https://raw.githubusercontent.com/Jerry256254/Hertz/main/install.sh | bash";
 
+  /** Numeric semver compare: 1 when a > b, -1 when a < b, 0 when equal, null when unparseable. */
+  function compareSemver(a: string, b: string): number | null {
+    const pa = a.split(".").map((x) => Number(x));
+    const pb = b.split(".").map((x) => Number(x));
+    if (pa.length < 2 || pb.length < 2 || [...pa, ...pb].some((n) => !Number.isInteger(n) || n < 0)) return null;
+    const len = Math.max(pa.length, pb.length);
+    for (let i = 0; i < len; i++) {
+      const x = pa[i] ?? 0;
+      const y = pb[i] ?? 0;
+      if (x !== y) return x > y ? 1 : -1;
+    }
+    return 0;
+  }
+
   async function check() {
     setState("checking");
     try {
@@ -221,7 +235,10 @@ function CheckUpdatesBlock() {
       const latestTag = res.latest?.tag ?? "";
       const cur = res.current.version ?? "";
       const normalizedLatest = latestTag.replace(/^v/, "");
-      const isOutdated = !!latestTag && normalizedLatest !== cur;
+      // Outdated only when the release is strictly NEWER — a local build ahead
+      // of the latest tag (dev checkout) must never cry for an update.
+      const cmp = compareSemver(normalizedLatest, cur);
+      const isOutdated = !!latestTag && (cmp === null ? normalizedLatest !== cur : cmp > 0);
       setInfo({ currentVersion: cur || "—", latestTag: latestTag || "—", url: res.latest?.url ?? "" });
       setState(isOutdated ? "outdated" : "uptodate");
     } catch {
@@ -245,7 +262,7 @@ function CheckUpdatesBlock() {
   }
 
   return (
-    <div className="rounded-[12px] border border-border bg-bg-raised p-2.5">
+    <div className="rounded-lg border border-border bg-bg-raised p-2.5">
       <div className="flex items-center justify-between gap-2">
         <span className="mono text-[10px] font-[700] tracking-[0.12em] text-fg-subtle">SYSTÉM</span>
         {info && (
@@ -258,19 +275,19 @@ function CheckUpdatesBlock() {
       {state === "idle" && (
         <button
           onClick={check}
-          className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] border border-border bg-bg-sunken text-[12.5px] font-[600] tracking-[-0.01em] text-fg hover:border-border-strong hover:bg-bg-hover"
+          className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border bg-bg-sunken text-[12.5px] font-[600] tracking-[-0.01em] text-fg hover:border-border-strong hover:bg-bg-hover"
         >
           <RefreshCw size={13} strokeWidth={1.9} /> Zkontrolovat aktualizace
         </button>
       )}
       {state === "checking" && (
-        <div className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] border border-border bg-bg-sunken text-[12.5px] font-[500] text-fg-muted">
+        <div className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border bg-bg-sunken text-[12.5px] font-[500] text-fg-muted">
           <RefreshCw size={13} className="animate-spin" /> Kontroluji…
         </div>
       )}
       {state === "uptodate" && (
         <div className="mt-2">
-          <div className="flex items-center gap-1.5 rounded-[8px] border border-live/20 bg-live-wash px-2.5 py-2 text-[12.5px] font-[500] text-live">
+          <div className="flex items-center gap-1.5 rounded-md border border-live/20 bg-live-wash px-2.5 py-2 text-[12.5px] font-[500] text-live">
             <Check size={13} strokeWidth={2} /> Máš nejnovější verzi
           </div>
           <button onClick={() => setState("idle")} className="mt-1.5 w-full text-center mono text-[11px] font-[500] tracking-wide text-fg-subtle hover:text-fg">
@@ -280,7 +297,7 @@ function CheckUpdatesBlock() {
       )}
       {state === "outdated" && info && (
         <div className="mt-2 space-y-2">
-          <div className="rounded-[8px] border border-warning/30 bg-warning-wash px-2.5 py-2">
+          <div className="rounded-md border border-warning/30 bg-warning-wash px-2.5 py-2">
             <p className="text-[12.5px] font-[600] tracking-[-0.01em] text-warning">Je dostupná nová verze</p>
             <p className="mono mt-0.5 text-[11px] leading-none text-fg-muted">{info.currentVersion} → {info.latestTag.replace(/^v/, "")}</p>
             {info.url && (
@@ -289,13 +306,13 @@ function CheckUpdatesBlock() {
               </a>
             )}
           </div>
-          <div className="rounded-[8px] border border-border bg-bg-sunken p-2">
+          <div className="rounded-md border border-border bg-bg-sunken p-2">
             <p className="mono mb-1.5 text-[10px] font-[600] tracking-[0.08em] text-fg-subtle">AKTUALIZACE PŘES TERMINÁL</p>
-            <div className="flex items-center gap-1.5 rounded-[8px] border border-border bg-bg-raised px-2 py-1.5">
+            <div className="flex items-center gap-1.5 rounded-md border border-border bg-bg-raised px-2 py-1.5">
               <span className="mono min-w-0 flex-1 truncate text-[11px] leading-none text-fg">{cmd}</span>
               <button
                 onClick={copy}
-                className={`flex h-7 shrink-0 items-center gap-1 rounded-[7px] border px-2 mono text-[11px] font-[600] tracking-wide ${copied ? "border-live/20 bg-live-wash text-live" : "border-border bg-bg-sunken text-fg hover:border-border-strong"}`}
+                className={`flex h-7 shrink-0 items-center gap-1 rounded-sm border px-2 mono text-[11px] font-[600] tracking-wide ${copied ? "border-live/20 bg-live-wash text-live" : "border-border bg-bg-sunken text-fg hover:border-border-strong"}`}
               >
                 {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? "Zkopírováno" : "Kopírovat"}
               </button>
@@ -308,7 +325,7 @@ function CheckUpdatesBlock() {
       )}
       {state === "error" && (
         <div className="mt-2">
-          <div className="rounded-[8px] border border-danger/20 bg-danger-wash px-2.5 py-2 text-[12.5px] font-[500] text-danger">Nepodařilo se ověřit verzi</div>
+          <div className="rounded-md border border-danger/20 bg-danger-wash px-2.5 py-2 text-[12.5px] font-[500] text-danger">Nepodařilo se ověřit verzi</div>
           <button onClick={check} className="mt-1.5 w-full text-center mono text-[11px] font-[500] tracking-wide text-fg-subtle hover:text-fg">
             zkusit znovu
           </button>
@@ -361,7 +378,7 @@ function ProjectContacts({
             <li key={a.id}>
               <button
                 onClick={() => ensureChat.mutate(a.id)}
-                className={`flex w-full items-center gap-2 rounded-[8px] px-2 py-1 text-left hover:bg-bg-raised ${running ? "bg-bg-raised border border-border" : "border border-transparent"}`}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-bg-raised ${running ? "bg-bg-raised border border-border" : "border border-transparent"}`}
                 title={a.lastStatus ?? a.role}
               >
                 <Avatar label={a.name} mascot={a.mascot} animate={running} />
@@ -369,7 +386,7 @@ function ProjectContacts({
                   <span className="flex items-center gap-1">
                     <span className="truncate text-[12.5px] font-[600] tracking-[-0.01em] text-fg">{a.name}</span>
                     {a.role === "manager" && (
-                      <span className="rounded-[4px] bg-fg px-1 py-0.5 mono text-[9px] font-[700] leading-none tracking-[0.08em] text-bg-raised">LEAD</span>
+                      <span className="rounded-sm bg-fg px-1 py-0.5 mono text-[9px] font-[700] leading-none tracking-[0.08em] text-bg-raised">LEAD</span>
                     )}
                   </span>
                   <span className="mono block truncate text-[11px] leading-none text-fg-subtle mt-0.5">{a.lastStatus ?? a.role}</span>
@@ -393,7 +410,7 @@ function ProjectContacts({
                 <li key={s.id}>
                   <Link
                     to={`/projects/${projectId}/sessions/${s.id}`}
-                    className={`flex items-center gap-2 rounded-[8px] px-2 py-1.5 text-[12.5px] ${isActive ? "bg-fg text-bg-raised" : "text-fg-muted hover:bg-bg-raised hover:text-fg"}`}
+                    className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] ${isActive ? "bg-fg text-bg-raised" : "text-fg-muted hover:bg-bg-raised hover:text-fg"}`}
                   >
                     <MessagesSquare size={12} strokeWidth={1.85} className={isActive ? "text-bg-raised/60" : "text-fg-subtle"} />
                     <span className="truncate font-[500]">{s.title}</span>

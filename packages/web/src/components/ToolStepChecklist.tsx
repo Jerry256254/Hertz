@@ -49,7 +49,7 @@ function argHintFor(input: unknown): string | undefined {
 export function ToolStepChecklist({ steps }: { steps: ToolStep[] }) {
   if (steps.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-[10px] border border-border bg-bg-sunken">
+    <div className="overflow-hidden rounded-md border border-border bg-bg-sunken">
       <div className="flex items-center gap-1.5 border-b border-border bg-bg-raised px-2.5 py-1.5">
         <span className="h-1.5 w-1.5 rounded-full bg-live pulse-live" />
         <span className="mono text-[10px] font-[700] tracking-[0.08em] text-fg-subtle">NÁSTROJE · {steps.length}</span>
@@ -70,7 +70,7 @@ export function ToolStepChecklist({ steps }: { steps: ToolStep[] }) {
                   {argHint && <span className="mono min-w-0 flex-1 truncate text-[11px] text-fg-subtle">{argHint}</span>}
                 </summary>
                 {step.result && (
-                  <pre className="mono mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border border-border bg-bg-raised p-2 text-[11px] leading-relaxed text-fg-muted">
+                  <pre className="mono mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg-raised p-2 text-[11px] leading-relaxed text-fg-muted">
                     {step.result.content}
                   </pre>
                 )}

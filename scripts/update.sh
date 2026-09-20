@@ -46,6 +46,15 @@ fi
 NEW_VER="$(node -p "require('./packages/cli/package.json').version")"
 echo "[hertz-update] updated: v${OLD_VER} (${OLD_SHA}) -> v${NEW_VER} (${NEW_SHA})"
 
+# Keep the global hzcli command working (install.sh owns /usr/local/bin, but
+# updates must not depend on root): refresh the user-local link, best effort.
+if [ -f "packages/cli/dist/bin.js" ]; then
+  chmod +x packages/cli/dist/bin.js 2>/dev/null || true
+  mkdir -p "$HOME/.local/bin" 2>/dev/null || true
+  ln -sf "$PWD/packages/cli/dist/bin.js" "$HOME/.local/bin/hzcli" 2>/dev/null || true
+  sudo -n ln -sf "$PWD/packages/cli/dist/bin.js" /usr/local/bin/hzcli 2>/dev/null || true
+fi
+
 ls -1dt "${DATA_DIR}/backups/"* 2>/dev/null | tail -n +6 | xargs -r rm -rf
 
 SERVICE_NAME="${HERTZ_SERVICE_NAME:-hertz}"

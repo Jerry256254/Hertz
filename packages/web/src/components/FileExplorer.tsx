@@ -62,9 +62,9 @@ export function FileExplorer({
   return (
     <div className="flex h-full flex-col bg-bg-raised">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2">
-        <button onClick={goUp} disabled={currentPath === "."} className="flex h-7 w-7 items-center justify-center rounded-[8px] border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><ChevronUp size={13} /></button>
+        <button onClick={goUp} disabled={currentPath === "."} className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><ChevronUp size={13} /></button>
         <span className="mono truncate text-[11px] font-[500] tracking-wide text-fg-muted">{currentPath === "." ? "/" : currentPath}</span>
-        <button onClick={promptNewFolder} disabled={createFolder.isPending} title="Nová složka" className="ml-auto flex h-7 w-7 items-center justify-center rounded-[8px] border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><FolderPlus size={13} /></button>
+        <button onClick={promptNewFolder} disabled={createFolder.isPending} title="Nová složka" className="ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><FolderPlus size={13} /></button>
         {isFetching && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-live pulse-live" />}
       </div>
       {createFolder.isError && <p className="shrink-0 border-b border-danger/20 bg-danger-wash px-2 py-1.5 mono text-[11px] text-danger">{(createFolder.error as Error).message}</p>}
@@ -82,7 +82,7 @@ export function FileExplorer({
             {listing?.entries.map((entry) => (
               <li key={entry.name}>
                 <button onClick={() => open(entry)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-sunken">
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-[7px] border ${entry.type === "directory" ? "border-fg bg-fg text-bg-raised" : "border-border bg-bg-sunken text-fg-subtle"}`}>
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-sm border ${entry.type === "directory" ? "border-fg bg-fg text-bg-raised" : "border-border bg-bg-sunken text-fg-subtle"}`}>
                     {entry.type === "directory" ? <Folder size={11} strokeWidth={1.8} /> : <File size={11} strokeWidth={1.8} />}
                   </span>
                   <span className="mono truncate text-[12px] tracking-[-0.01em] text-fg">{entry.name}</span>

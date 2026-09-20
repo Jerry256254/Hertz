@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Check, Files, Link2Off, Monitor, Paperclip, Pause, Play, Settings, Share2, Square, TriangleAlert, X, Hash } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ExternalLink, Files, Link2Off, Maximize, Monitor, Paperclip, Pause, Play, RefreshCw, Settings, Share2, Square, TriangleAlert, X, Hash } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Budget, HertzSession, PersistedMessage } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
@@ -58,7 +58,7 @@ function EditableTitle({ sessionId, title }: { sessionId: string; title: string 
     );
   }
   return (
-    <button onClick={() => setEditing(true)} className="truncate rounded-[6px] px-1 -mx-1 mono text-[12px] font-[600] tracking-[-0.01em] text-fg hover:bg-bg-sunken" title="Klikni pro přejmenování">
+    <button onClick={() => setEditing(true)} className="truncate rounded-sm px-1 -mx-1 mono text-[12px] font-[600] tracking-[-0.01em] text-fg hover:bg-bg-sunken" title="Klikni pro přejmenování">
       {title}
     </button>
   );
@@ -77,6 +77,17 @@ export function SessionPage() {
   const [runError, setRunError] = useState<string | undefined>(undefined);
   const [showFiles, setShowFiles] = useState(false);
   const [showScreen, setShowScreen] = useState(false);
+  // Live desktop: auto-opens when the agent touches desktop_* tools (muse-style:
+  // its window appears next to the chat). Manual close snoozes auto-open until
+  // the next run; activity while closed lights a dot on the Monitor button.
+  const [screenDismissed, setScreenDismissed] = useState(false);
+  const [hasDesktopActivity, setHasDesktopActivity] = useState(false);
+  const [lastDesktopAction, setLastDesktopAction] = useState<{ name: string; at: number } | null>(null);
+  const showScreenRef = useRef(false);
+  const dismissedRef = useRef(false);
+  useEffect(() => { showScreenRef.current = showScreen; }, [showScreen]);
+  useEffect(() => { dismissedRef.current = screenDismissed; }, [screenDismissed]);
+  useEffect(() => { setScreenDismissed(false); setHasDesktopActivity(false); setLastDesktopAction(null); }, [sessionId]);
   const mode = "autonomous" as const;
   const [answerText, setAnswerText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -101,7 +112,12 @@ export function SessionPage() {
     const unsub = subscribeToSession(sessionId, (event) => {
       if (event.type === "text_delta") setStreamingText((p) => p + event.text);
       else if (event.type === "message_saved") { setStreamingText(""); void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }); void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] }); }
-      else if (event.type === "status") { setIsRunning(event.status === "running"); setIsPaused(event.status === "paused"); if (event.status === "running") setRunError(undefined); if (event.status !== "running") setStreamingText(""); }
+      else if (event.type === "status") { setIsRunning(event.status === "running"); setIsPaused(event.status === "paused"); if (event.status === "running") { setRunError(undefined); setScreenDismissed(false); } if (event.status !== "running") setStreamingText(""); }
+      else if (event.type === "tool_call" && typeof event.name === "string" && event.name.startsWith("desktop_")) {
+        setLastDesktopAction({ name: event.name, at: Date.now() });
+        setHasDesktopActivity(true);
+        if (!showScreenRef.current && !dismissedRef.current) { setShowScreen(true); setShowFiles(false); }
+      }
       else if (event.type === "awaiting_input") { setStreamingText(""); void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }); }
       else if (event.type === "error") setRunError(event.message);
       else if (event.type === "done") { setIsRunning(false); setIsPaused(false); void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }); void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] }); }
@@ -241,7 +257,10 @@ export function SessionPage() {
               </div>
             )}
             <span className="hidden h-6 w-px bg-border md:block" />
-            <IconButton title="Obrazovka" onClick={() => { setShowScreen((v) => !v); setShowFiles(false); }} className={showScreen ? "bg-fg text-bg-raised border-fg" : "border border-border bg-bg-raised"}><Monitor size={14} /></IconButton>
+            <span className="relative inline-flex">
+              <IconButton title="Obrazovka" onClick={() => { if (showScreenRef.current) setScreenDismissed(true); else { setScreenDismissed(false); setHasDesktopActivity(false); } setShowScreen((v) => !v); setShowFiles(false); }} className={showScreen ? "bg-fg text-bg-raised border-fg" : "border border-border bg-bg-raised"}><Monitor size={14} /></IconButton>
+              {hasDesktopActivity && !showScreen && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-live pulse-live" />}
+            </span>
             <IconButton title="Soubory" onClick={() => { setShowFiles((v) => !v); setShowScreen(false); }} className={showFiles ? "bg-fg text-bg-raised border-fg" : "border border-border bg-bg-raised"}><Files size={14} /></IconButton>
             {data?.agent && projectId && <IconButton title="Nastavení bota" onClick={() => navigate(`/projects/${projectId}/agents/${data.agent!.id}`)} className="border border-border bg-bg-raised"><Settings size={14} /></IconButton>}
             {sessionId && <ShareButton sessionId={sessionId} />}
@@ -254,13 +273,13 @@ export function SessionPage() {
           ))}
           {streamingText && (
             <div className="mx-auto flex w-full max-w-[720px] gap-3 px-4 py-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-border text-[11px] font-[700]" style={activeAgentId ? { backgroundColor: agentColor(activeAgentId), color: "#fff", borderColor: "transparent" } : undefined}>{activeAgentName.slice(0, 1).toUpperCase()}</span>
-              <div className="min-w-0 flex-1 rounded-[12px] border border-border bg-bg-raised px-3 py-2.5"><Markdown>{streamingText}</Markdown></div>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-[11px] font-[700]" style={activeAgentId ? { backgroundColor: agentColor(activeAgentId), color: "#fff", borderColor: "transparent" } : undefined}>{activeAgentName.slice(0, 1).toUpperCase()}</span>
+              <div className="min-w-0 flex-1 rounded-lg border border-border bg-bg-raised px-3 py-2.5"><Markdown>{streamingText}</Markdown></div>
             </div>
           )}
           {isRunning && !streamingText && (
             <div className="mx-auto flex w-full max-w-[720px] items-center gap-3 px-4 py-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-border text-[11px] font-[700]" style={activeAgentId ? { backgroundColor: agentColor(activeAgentId), color: "#fff", borderColor: "transparent" } : undefined}>{activeAgentName.slice(0, 1).toUpperCase()}</span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-[11px] font-[700]" style={activeAgentId ? { backgroundColor: agentColor(activeAgentId), color: "#fff", borderColor: "transparent" } : undefined}>{activeAgentName.slice(0, 1).toUpperCase()}</span>
               <span className="flex items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-live" />
                 <span className="mono text-[11px] font-[500] tracking-wide text-fg-muted">{isPaused ? "pozastaveno — bude pokračovat" : "pracuje…"}</span>
@@ -269,8 +288,8 @@ export function SessionPage() {
           )}
           {runError && (
             <div className="mx-auto flex w-full max-w-[720px] items-start gap-2.5 px-4 py-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-danger/20 bg-danger-wash text-danger"><TriangleAlert size={14} /></span>
-              <div className="rounded-[10px] border border-danger/20 bg-danger-wash px-3 py-2 text-[12.5px] leading-relaxed text-danger"><p className="font-[650]">Běh selhal</p><p className="mono mt-0.5 text-[12px]">{runError}</p></div>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-danger/20 bg-danger-wash text-danger"><TriangleAlert size={14} /></span>
+              <div className="rounded-md border border-danger/20 bg-danger-wash px-3 py-2 text-[12.5px] leading-relaxed text-danger"><p className="font-[650]">Běh selhal</p><p className="mono mt-0.5 text-[12px]">{runError}</p></div>
             </div>
           )}
         </div>
@@ -278,7 +297,7 @@ export function SessionPage() {
         <div className="shrink-0 border-t border-border bg-bg px-3 py-3 md:px-4">
           {data?.pendingTakeover && (
             <div className="mx-auto mb-3 w-full max-w-[720px]">
-              <div className="rounded-[12px] border border-fg bg-fg p-3">
+              <div className="rounded-lg border border-fg bg-fg p-3">
                 <div className="mb-2 flex items-center gap-2"><span className="rounded-full bg-bg-raised px-2 py-0.5 mono text-[10px] font-[700] tracking-[0.08em] text-fg">⚡ VYŽADUJE AKCI</span><span className="mono text-[11px] font-[600] tracking-[-0.01em] text-bg-raised">Převzít obrazovku bota</span></div>
                 <p className="mb-3 mono text-[12px] leading-relaxed text-bg-raised/80">{data.pendingTakeover.reason}</p>
                 <div className="flex items-center gap-2"><Button variant="secondary" size="sm" className="bg-bg-raised" onClick={() => void openScreen(data.agent?.id ?? data.session.agentId)}>Převzít</Button><Button variant="ghost" size="sm" className="text-bg-raised hover:bg-white/10" onClick={() => doneTakeover.mutate()}>Mám hotovo</Button></div>
@@ -287,12 +306,12 @@ export function SessionPage() {
           )}
 
           {data?.pendingQuestion && data.session.status === "awaiting_input" && (
-            <form onSubmit={submitAnswer} className="mx-auto mb-3 max-w-[720px] rounded-[12px] border border-fg bg-bg-raised p-3 shadow-sm">
+            <form onSubmit={submitAnswer} className="mx-auto mb-3 max-w-[720px] rounded-lg border border-fg bg-bg-raised p-3 shadow-sm">
               <p className="flex items-center gap-2 mono text-[10px] font-[700] tracking-[0.08em] text-fg"><span className="h-1.5 w-1.5 rounded-full bg-live pulse-live" /> AGENT ČEKÁ NA ODPOVĚĎ</p>
               <p className="mt-1.5 text-[13px] leading-relaxed text-fg">{data.pendingQuestion}</p>
               <div className="mt-2.5 flex items-center gap-2">
-                <textarea value={answerText} onChange={(e) => setAnswerText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitAnswer(e); }}} rows={2} autoFocus placeholder="Tvá odpověď…" className="max-h-[140px] w-full resize-none rounded-[8px] border border-border bg-bg px-2.5 py-2 text-[13px] text-fg placeholder:text-fg-subtle outline-none focus:border-fg" />
-                <button type="submit" disabled={!answerText.trim() || answerQuestion.isPending} className="flex h-9 w-9 shrink-0 items-center justify-center bg-fg text-bg-raised disabled:opacity-30"><ArrowUp size={16} /></button>
+                <textarea value={answerText} onChange={(e) => setAnswerText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitAnswer(e); }}} rows={2} autoFocus placeholder="Tvá odpověď…" className="max-h-[140px] w-full resize-none rounded-md border border-border bg-bg px-2.5 py-2 text-[13px] text-fg placeholder:text-fg-subtle outline-none focus:border-fg" />
+                <button type="submit" disabled={!answerText.trim() || answerQuestion.isPending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-fg text-bg-raised disabled:opacity-30"><ArrowUp size={16} /></button>
               </div>
             </form>
           )}
@@ -301,7 +320,7 @@ export function SessionPage() {
             onSubmit={onSubmit}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); void onFiles(e.dataTransfer.files); }}
-            className="relative mx-auto flex max-w-[720px] flex-col gap-2 rounded-[14px] border border-border bg-bg-raised p-2 shadow-xs focus-within:border-fg focus-within:shadow-sm"
+            className="relative mx-auto flex max-w-[720px] flex-col gap-2 rounded-lg border border-border bg-bg-raised p-2 shadow-xs focus-within:border-fg focus-within:shadow-sm"
           >
             {showJumpToBottom && (
               <button type="button" onClick={jumpToBottom} title="Skočit dolů" className="absolute -top-11 right-2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted shadow-md hover:bg-bg-sunken hover:text-fg">
@@ -312,7 +331,7 @@ export function SessionPage() {
               <div className="flex flex-wrap gap-2 px-1 pt-1">
                 {images.map((img, i) => (
                   <div key={i} className="group relative">
-                    <img src={`data:${img.mimeType};base64,${img.data}`} className="h-14 w-14 rounded-[8px] border border-border object-cover" />
+                    <img src={`data:${img.mimeType};base64,${img.data}`} className="h-14 w-14 rounded-md border border-border object-cover" />
                     <button type="button" onClick={() => setImages((p) => p.filter((_, idx) => idx !== i))} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted opacity-0 shadow-xs group-hover:opacity-100"><X size={11} /></button>
                   </div>
                 ))}
@@ -321,7 +340,7 @@ export function SessionPage() {
             {docFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 px-1 pt-1">
                 {docFiles.map((f, i) => (
-                  <span key={i} className="mono flex items-center gap-1.5 rounded-[8px] border border-border bg-bg-sunken px-2 py-1 text-[11px] text-fg-muted">
+                  <span key={i} className="mono flex items-center gap-1.5 rounded-md border border-border bg-bg-sunken px-2 py-1 text-[11px] text-fg-muted">
                     📎 {f.name}
                     <button type="button" onClick={() => setDocFiles((p) => p.filter((_, idx) => idx !== i))} className="text-fg-subtle hover:text-fg"><X size={11} /></button>
                   </span>
@@ -341,8 +360,8 @@ export function SessionPage() {
               />
               <div className="flex shrink-0 items-center gap-1">
                 <input type="file" accept="image/*,.txt,.md,.markdown,.csv,.json,.log,.ts,.js,.py" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id="file-input" />
-                <IconButton type="button" onClick={() => document.getElementById("file-input")?.click()} className="h-8 w-8 rounded-[10px] border border-border bg-bg-sunken"><Paperclip size={14} /></IconButton>
-                <button type="submit" disabled={!text && images.length === 0} className="flex h-8 w-8 shrink-0 items-center justify-center bg-fg text-bg-raised disabled:opacity-30"><ArrowUp size={15} strokeWidth={2} /></button>
+                <IconButton type="button" onClick={() => document.getElementById("file-input")?.click()} className="h-8 w-8 rounded-md border border-border bg-bg-sunken"><Paperclip size={14} /></IconButton>
+                <button type="submit" disabled={!text && images.length === 0} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-fg text-bg-raised disabled:opacity-30"><ArrowUp size={15} strokeWidth={2} /></button>
               </div>
             </div>
             <div className="flex items-center gap-1.5 px-1">
@@ -355,7 +374,7 @@ export function SessionPage() {
 
       {showScreen && agentIdForScreen && (
         <div className="fixed inset-0 z-20 flex flex-col bg-bg md:static md:z-auto md:min-h-0 md:flex-col md:overflow-y-auto md:border-l md:border-border md:bg-bg-sunken">
-          <ScreenPanel agentId={agentIdForScreen} agentName={data?.agent?.name ?? "Bot"} />
+          <ScreenPanel agentId={agentIdForScreen} agentName={data?.agent?.name ?? "Bot"} lastAction={lastDesktopAction} onClose={() => { setShowScreen(false); setScreenDismissed(true); }} />
         </div>
       )}
       {showFiles && projectId && (
@@ -371,22 +390,84 @@ export function SessionPage() {
   );
 }
 
-function ScreenPanel({ agentId, agentName }: { agentId: string; agentName: string }) {
+function ScreenPanel({ agentId, agentName, lastAction, onClose }: { agentId: string; agentName: string; lastAction: { name: string; at: number } | null; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  const [iframeKey, setIframeKey] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  const frameRef = useRef<HTMLDivElement>(null);
   const { data: status } = useQuery({ queryKey: ["screen", agentId], queryFn: () => api.get<{ running: boolean; tunnelUrl?: string | null }>(`/agents/${agentId}/screen/status`), refetchInterval: 5000 });
-  async function openViewer() { const { token } = await api.get<{ token: string }>(`/agents/${agentId}/screen/token`); setIframeUrl(`/screen/${agentId}?t=${encodeURIComponent(token)}`); }
+
+  const openViewer = useMemo(() => async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoadError(null);
+    try {
+      const { token } = await api.get<{ token: string }>(`/agents/${agentId}/screen/token`);
+      setIframeUrl(`/screen/${agentId}?t=${encodeURIComponent(token)}`);
+      setIframeKey((k) => k + 1);
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : "Náhled se nepodařilo načíst");
+    } finally {
+      loadingRef.current = false;
+    }
+  }, [agentId]);
+
+  // Auto-load the live window as soon as the desktop runs — no click needed.
+  useEffect(() => {
+    if (status?.running && !iframeUrl && !loadError) void openViewer();
+  }, [status?.running, iframeUrl, loadError, openViewer]);
+
+  async function startDesktop() {
+    await api.post(`/agents/${agentId}/screen/start`);
+    void queryClient.invalidateQueries({ queryKey: ["screen", agentId] });
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void frameRef.current?.requestFullscreen().catch(() => {});
+  }
+
   return (
     <div className="flex flex-col gap-3 p-3">
-      <div className="overflow-hidden rounded-[12px] border border-border bg-bg-raised">
-        <div className="flex items-center justify-between border-b border-border bg-bg-sunken px-3 py-2">
-          <p className="mono text-[10px] font-[700] tracking-[0.08em] text-fg-muted">{agentName.toUpperCase()} — OBRAZOVKA</p>
-          <Badge tone={status?.running ? "live" : "neutral"}>{status?.running ? "živě" : "vypnuto"}</Badge>
+      <div className="overflow-hidden rounded-lg border border-border bg-bg-raised">
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-sunken px-3 py-2">
+          <p className="mono flex min-w-0 items-center gap-1.5 text-[10px] font-[700] tracking-[0.08em] text-fg-muted">
+            {status?.running && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-live pulse-live" />}
+            <span className="truncate">{agentName.toUpperCase()} — OBRAZOVKA</span>
+          </p>
+          <div className="flex shrink-0 items-center gap-1">
+            <Badge tone={status?.running ? "live" : "neutral"}>{status?.running ? "živě" : "vypnuto"}</Badge>
+            <IconButton title="Zavřít panel" onClick={onClose} className="h-6 w-6"><X size={13} /></IconButton>
+          </div>
         </div>
-        <div className="p-2">
-          {iframeUrl ? <iframe title="Agent screen" src={iframeUrl} className="aspect-[16/10] w-full rounded-[8px] border border-border" /> : <button onClick={() => void openViewer()} className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed border-border bg-bg-sunken text-fg-subtle hover:border-fg hover:text-fg"><Monitor size={22} /><span className="mono text-[11px] font-[600] tracking-wide">Otevřít náhled</span></button>}
-          <div className="mt-2 flex gap-1.5">
-            <Button size="sm" variant="secondary" onClick={() => void api.post(`/agents/${agentId}/screen/start`)}>{status?.running ? "Restartovat" : "Spustit desktop"}</Button>
-            {iframeUrl && <Button size="sm" variant="ghost" onClick={() => window.open(iframeUrl, "_blank")}>Vyskočit</Button>}
+        <div ref={frameRef} className="bg-bg-raised p-2">
+          {iframeUrl ? (
+            <iframe key={iframeKey} title="Agent screen" src={iframeUrl} className="aspect-[16/10] w-full rounded-md border border-border bg-black" allow="clipboard-read; clipboard-write" />
+          ) : loadError ? (
+            <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-sunken px-4 text-center">
+              <p className="mono text-[11px] leading-relaxed text-danger">{loadError}</p>
+              <Button size="sm" variant="secondary" onClick={() => void openViewer()}>Zkusit znovu</Button>
+            </div>
+          ) : (
+            <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-sunken text-fg-subtle">
+              <Monitor size={22} className={status?.running ? "pulse-live" : undefined} />
+              <span className="mono text-[11px] font-[600] tracking-wide">{status?.running ? "Připojuji náhled…" : "Desktop neběží"}</span>
+            </div>
+          )}
+          {lastAction && (
+            <p className="mono mt-1.5 truncate px-0.5 text-[10px] font-[500] tracking-wide text-fg-subtle">
+              poslední akce: <span className="text-fg-muted">{lastAction.name}</span> · {new Date(lastAction.at).toLocaleTimeString()}
+            </p>
+          )}
+          {/* Controls — the mouse/keyboard inside the window always drive the agent desktop. */}
+          <div className="mt-2 flex items-center gap-1.5">
+            <Button size="sm" variant="secondary" onClick={() => void startDesktop()}>{status?.running ? "Restartovat" : "Spustit desktop"}</Button>
+            <span className="flex-1" />
+            <IconButton title="Obnovit náhled" onClick={() => void openViewer()} disabled={!status?.running}><RefreshCw size={14} /></IconButton>
+            <IconButton title="Celá obrazovka" onClick={toggleFullscreen} disabled={!iframeUrl}><Maximize size={14} /></IconButton>
+            <IconButton title="Otevřít v novém okně" onClick={() => iframeUrl && window.open(iframeUrl, "_blank")} disabled={!iframeUrl}><ExternalLink size={14} /></IconButton>
           </div>
         </div>
       </div>
@@ -455,9 +536,9 @@ function AgentRoutines({ agentId }: { agentId: string }) {
   const { data } = useQuery({ queryKey: ["routines", projectId], queryFn: () => api.get<{ routines: Array<{ id: string; title: string; schedule: string; enabled: boolean; agentId: string }> }>(`/projects/${projectId}/routines`), enabled: !!projectId });
   const mine = (data?.routines ?? []).filter((r) => r.agentId === agentId);
   return (
-    <div className="rounded-[12px] border border-border bg-bg-raised p-3">
+    <div className="rounded-lg border border-border bg-bg-raised p-3">
       <p className="mono mb-2 text-[10px] font-[700] tracking-[0.08em] text-fg-subtle">RUTINY</p>
-      {mine.length === 0 ? <p className="mono text-[11px] leading-relaxed text-fg-subtle">Opakované úkoly, které bot plní podle plánu — zadej mu je v chatu.</p> : <ul className="space-y-1.5">{mine.map((r) => <li key={r.id} className="rounded-[8px] border border-border bg-bg-sunken px-2.5 py-2"><p className="flex items-center gap-1.5 text-[12px] font-[600] tracking-[-0.01em] text-fg"><Clock size={11} className="text-fg-subtle" /> {r.title}</p><p className="mono text-[11px] text-fg-subtle">{r.schedule}</p></li>)}</ul>}
+      {mine.length === 0 ? <p className="mono text-[11px] leading-relaxed text-fg-subtle">Opakované úkoly, které bot plní podle plánu — zadej mu je v chatu.</p> : <ul className="space-y-1.5">{mine.map((r) => <li key={r.id} className="rounded-md border border-border bg-bg-sunken px-2.5 py-2"><p className="flex items-center gap-1.5 text-[12px] font-[600] tracking-[-0.01em] text-fg"><Clock size={11} className="text-fg-subtle" /> {r.title}</p><p className="mono text-[11px] text-fg-subtle">{r.schedule}</p></li>)}</ul>}
     </div>
   );
 }

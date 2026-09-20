@@ -20,9 +20,9 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: "h-[30px] px-3 text-[12px] gap-1.5 rounded-[8px]",
-  md: "h-[36px] px-4 text-[13px] gap-2 rounded-[8px]",
-  lg: "h-[44px] px-6 text-[14px] gap-2.5 rounded-[10px]",
+  sm: "h-[30px] px-3 text-[12px] gap-1.5 rounded-md",
+  md: "h-[36px] px-4 text-[13px] gap-2 rounded-md",
+  lg: "h-[44px] px-6 text-[14px] gap-2.5 rounded-md",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -45,7 +45,7 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
   ({ className = "", ...props }, ref) => (
     <button
       ref={ref}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-transparent text-fg-muted hover:bg-bg-sunken hover:text-fg hover:border-border active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-fg-muted hover:bg-bg-sunken hover:text-fg hover:border-border active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
       {...props}
     />
   ),
@@ -56,7 +56,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ({ className = "", ...props }, ref) => (
     <input
       ref={ref}
-      className={`h-[36px] w-full rounded-[8px] border border-border bg-bg-raised px-3 text-[14px] leading-none text-fg placeholder:text-fg-subtle outline-none focus:border-fg focus:bg-bg-raised disabled:opacity-50 ${className}`}
+      className={`h-[36px] w-full rounded-md border border-border bg-bg-raised px-3 text-[14px] leading-none text-fg placeholder:text-fg-subtle outline-none focus:border-fg focus:bg-bg-raised disabled:opacity-50 ${className}`}
       {...props}
     />
   ),
@@ -67,7 +67,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   ({ className = "", ...props }, ref) => (
     <textarea
       ref={ref}
-      className={`w-full resize-none rounded-[8px] border border-border bg-bg-raised px-3 py-2.5 text-[14px] leading-relaxed text-fg placeholder:text-fg-subtle outline-none focus:border-fg disabled:opacity-50 ${className}`}
+      className={`w-full resize-none rounded-md border border-border bg-bg-raised px-3 py-2.5 text-[14px] leading-relaxed text-fg placeholder:text-fg-subtle outline-none focus:border-fg disabled:opacity-50 ${className}`}
       {...props}
     />
   ),
@@ -92,7 +92,7 @@ const BADGE_TONE_CLASSES: Record<BadgeTone, string> = {
 export function Badge({ children, tone = "neutral", className = "" }: { children: ReactNode; tone?: BadgeTone; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-[6px] px-1.5 py-1 mono text-[10px] font-[700] leading-none tracking-[0.06em] ${BADGE_TONE_CLASSES[tone]} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-1 mono text-[10px] font-[700] leading-none tracking-[0.06em] ${BADGE_TONE_CLASSES[tone]} ${className}`}
     >
       {children}
     </span>
@@ -123,7 +123,7 @@ export function Avatar({
   const bg = tone === "accent" ? "bg-fg text-bg-raised border border-fg" : "bg-bg-sunken text-fg-muted border border-border";
   return (
     <span
-      className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[8px] text-[11px] font-[700] tracking-[-0.02em] ${color ? "" : bg}`}
+      className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-[700] tracking-[-0.02em] ${color ? "" : bg}`}
       style={color ? { backgroundColor: color, color: "#fff", border: "1px solid transparent" } : undefined}
     >
       {label.slice(0, 1).toUpperCase()}
@@ -133,7 +133,7 @@ export function Avatar({
 
 export function Card({ children, className = "", padded = true }: { children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <div className={`rounded-[14px] border border-border bg-bg-raised ${padded ? "p-4" : ""} ${className}`}>
+    <div className={`rounded-lg border border-border bg-bg-raised ${padded ? "p-4" : ""} ${className}`}>
       {children}
     </div>
   );
@@ -164,7 +164,7 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-8 py-14 text-center">
-      {icon && <div className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-border bg-bg-sunken text-fg-subtle">{icon}</div>}
+      {icon && <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-subtle">{icon}</div>}
       <div>
         <p className="text-[14px] font-[650] tracking-[-0.02em] text-fg">{title}</p>
         {description && <p className="mx-auto mt-1 max-w-[40ch] text-[13px] leading-relaxed text-fg-muted">{description}</p>}
@@ -180,7 +180,7 @@ export function Separator({ className = "" }: { className?: string }) {
 
 export function HoverCard({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`group rounded-[12px] border border-border bg-bg-raised p-3 hover:border-border-strong hover:bg-bg-raised ${className}`}>
+    <div className={`group rounded-lg border border-border bg-bg-raised p-3 hover:border-border-strong hover:bg-bg-raised ${className}`}>
       {children}
     </div>
   );
@@ -192,7 +192,7 @@ export function StatusDot({ status = "active", className = "" }: { status?: "act
 }
 
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-[8px] bg-bg-sunken ${className}`} />;
+  return <div className={`animate-pulse rounded-md bg-bg-sunken ${className}`} />;
 }
 
 export function TextSkeleton({ lines = 1, className = "" }: { lines?: number; className?: string }) {

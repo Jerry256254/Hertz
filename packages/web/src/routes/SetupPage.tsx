@@ -25,7 +25,7 @@ export function SetupPage() {
 
   return (
     <div className="flex h-full items-center justify-center bg-bg px-4 py-8">
-      <form onSubmit={onAccountSubmit} className="w-full max-w-[420px] rounded-[18px] border border-border bg-bg-raised p-6 shadow-sm md:p-7">
+      <form onSubmit={onAccountSubmit} className="w-full max-w-[420px] rounded-xl border border-border bg-bg-raised p-6 shadow-sm md:p-7">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center bg-fg text-bg-raised mono text-[12px] font-[700] tracking-[0.08em]">H</div>
           <div className="leading-none">
@@ -43,7 +43,7 @@ export function SetupPage() {
           <div><Label>POTVRĎ HESLO</Label><Input type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>
         </div>
 
-        {error && <p className="mt-3 rounded-[8px] border border-danger/20 bg-danger-wash px-3 py-2 mono text-[12px] text-danger">{error}</p>}
+        {error && <p className="mt-3 rounded-md border border-danger/20 bg-danger-wash px-3 py-2 mono text-[12px] text-danger">{error}</p>}
 
         <Button type="submit" variant="primary" size="md" disabled={submitting} className="mt-5 w-full">
           {submitting ? "Zakládám…" : "Vytvořit účet → pokračovat"}
@@ -74,20 +74,20 @@ function ConnectorsStep() {
 
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto bg-bg px-4 py-8">
-      <div className="w-full max-w-[420px] rounded-[18px] border border-border bg-bg-raised p-6 shadow-sm md:p-7">
+      <div className="w-full max-w-[420px] rounded-xl border border-border bg-bg-raised p-6 shadow-sm md:p-7">
         <h1 className="font-display text-[20px] leading-none tracking-[-0.03em] text-fg">Napoj nástroje <span className="mono text-[11px] font-[500] tracking-wide text-fg-subtle">(volitelné)</span></h1>
         <p className="mono mt-1.5 text-[11px] leading-relaxed text-fg-muted">Vlož token jednou — každý bot ho hned umí použít. Další doplníš v Integracích.</p>
 
-        {error && <p className="mt-3 rounded-[8px] border border-danger/20 bg-danger-wash px-3 py-2 mono text-[11px] text-danger">{error}</p>}
-        {saved.length > 0 && <p className="mt-3 rounded-[8px] border border-live/20 bg-live-wash px-3 py-2 mono text-[11px] font-[600] text-live">Připojeno: {saved.join(", ")}</p>}
+        {error && <p className="mt-3 rounded-md border border-danger/20 bg-danger-wash px-3 py-2 mono text-[11px] text-danger">{error}</p>}
+        {saved.length > 0 && <p className="mt-3 rounded-md border border-live/20 bg-live-wash px-3 py-2 mono text-[11px] font-[600] text-live">Připojeno: {saved.join(", ")}</p>}
 
         <div className="mt-5 space-y-4">
-          <div className="rounded-[12px] border border-border bg-bg-sunken p-3">
+          <div className="rounded-lg border border-border bg-bg-sunken p-3">
             <Label>GITHUB PAT</Label>
             <Input value={githubPat} onChange={(e) => setGithubPat(e.target.value)} placeholder="ghp_…" autoComplete="off" className="mono" />
             <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={!githubPat.trim()} onClick={() => void saveConnector("github")}>Připojit GitHub</Button>
           </div>
-          <div className="rounded-[12px] border border-border bg-bg-sunken p-3">
+          <div className="rounded-lg border border-border bg-bg-sunken p-3">
             <Label>POSTGRESQL URL</Label>
             <Input value={postgresUrl} onChange={(e) => setPostgresUrl(e.target.value)} placeholder="postgresql://user:pass@host/db" autoComplete="off" className="mono" />
             <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={!postgresUrl.trim()} onClick={() => void saveConnector("postgres")}>Připojit PostgreSQL</Button>

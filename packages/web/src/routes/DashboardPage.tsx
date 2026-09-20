@@ -39,7 +39,7 @@ function NewProjectForm({ onCreated }: { onCreated: (id: string) => void }) {
       <div>
         <Label>ADRESÁŘ NA STROJI</Label>
         {rootPath ? (
-          <div className="flex items-center gap-2.5 rounded-[8px] border border-border bg-bg-sunken px-3 py-2.5">
+          <div className="flex items-center gap-2.5 rounded-md border border-border bg-bg-sunken px-3 py-2.5">
             <FolderOpen size={14} strokeWidth={1.7} className="shrink-0 text-fg-subtle" />
             <span className="mono min-w-0 flex-1 truncate text-[12.5px] text-fg">{rootPath}</span>
             <button type="button" onClick={() => setPickerOpen(true)} className="shrink-0 mono text-[11px] font-[700] tracking-[0.08em] text-fg-muted hover:text-fg">
@@ -54,7 +54,7 @@ function NewProjectForm({ onCreated }: { onCreated: (id: string) => void }) {
         <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={setRootPath} initialPath={rootPath || undefined} />
         <p className="mono mt-1.5 text-[11px] leading-relaxed text-fg-subtle">Ukazuje na reálný adresář na hostiteli. Agenti v něm čtou, píší a spouštějí příkazy.</p>
       </div>
-      {error && <p className="rounded-[8px] border border-danger/20 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{error}</p>}
+      {error && <p className="rounded-md border border-danger/20 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{error}</p>}
       <Button type="submit" variant="primary" disabled={createProject.isPending || !rootPath} className="w-full">
         {createProject.isPending ? "Zakládám…" : "Založit projekt"}
       </Button>
@@ -87,10 +87,10 @@ export function DashboardPage() {
   if (isLoading) {
     return (
       <div className="container-app py-10">
-        <div className="h-6 w-32 animate-pulse rounded-[8px] bg-bg-sunken" />
+        <div className="h-6 w-32 animate-pulse rounded-md bg-bg-sunken" />
         <div className="mt-8 space-y-2">
-          <div className="h-[64px] animate-pulse rounded-[12px] bg-bg-sunken" />
-          <div className="h-[64px] animate-pulse rounded-[12px] bg-bg-sunken" />
+          <div className="h-[64px] animate-pulse rounded-lg bg-bg-sunken" />
+          <div className="h-[64px] animate-pulse rounded-lg bg-bg-sunken" />
         </div>
       </div>
     );
@@ -121,9 +121,9 @@ export function DashboardPage() {
       {noProviders && (
         <button
           onClick={() => navigate("/providers")}
-          className="mt-5 flex w-full items-center gap-3 rounded-[10px] border border-warning/20 bg-warning-wash px-4 py-3 text-left hover:border-warning/30"
+          className="mt-5 flex w-full items-center gap-3 rounded-md border border-warning/20 bg-warning-wash px-4 py-3 text-left hover:border-warning/30"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-warning text-white mono text-[12px] font-[700]">!</span>
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-warning text-white mono text-[12px] font-[700]">!</span>
           <span className="text-[13px] font-[600] tracking-[-0.01em] text-fg">Přidej poskytovatele modelu ať můžeš začít</span>
           <span className="hidden mono text-[12px] text-fg-subtle sm:inline">— nastavíš v Provideři</span>
           <ArrowUpRight size={14} className="ml-auto shrink-0 text-fg-subtle" />
@@ -144,7 +144,7 @@ export function DashboardPage() {
           />
         </Card>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-[14px] border border-border bg-bg-raised">
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-bg-raised">
           {/* ledger head */}
           <div className="hidden grid-cols-[48px_1fr_280px_40px] border-b border-border bg-bg-sunken px-2 py-2 mono text-[10px] font-[700] tracking-[0.1em] text-fg-subtle md:grid">
             <span className="px-2">#</span>
@@ -162,7 +162,7 @@ export function DashboardPage() {
                 {String(idx + 1).padStart(2, "0")}
               </span>
               <button onClick={() => navigate(`/projects/${p.id}`)} className="flex min-w-0 items-center gap-3 text-left md:h-[56px]">
-                <span className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-border bg-bg-raised mono text-[11px] font-[700] tracking-wide text-fg-subtle group-hover:border-fg group-hover:bg-fg group-hover:text-bg-raised md:flex">
+                <span className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-raised mono text-[11px] font-[700] tracking-wide text-fg-subtle group-hover:border-fg group-hover:bg-fg group-hover:text-bg-raised md:flex">
                   {p.name.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="min-w-0">
@@ -179,7 +179,7 @@ export function DashboardPage() {
                 </span>
                 <button
                   onClick={() => navigate(`/projects/${p.id}`)}
-                  className="flex h-7 w-7 items-center justify-center rounded-[8px] border border-transparent text-fg-subtle group-hover:border-border group-hover:bg-bg-raised group-hover:text-fg"
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-fg-subtle group-hover:border-border group-hover:bg-bg-raised group-hover:text-fg"
                 >
                   <ArrowUpRight size={13} strokeWidth={1.9} />
                 </button>

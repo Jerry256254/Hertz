@@ -18,7 +18,7 @@ export function LoginPage() {
 
   return (
     <div className="flex h-full items-center justify-center bg-bg px-4 py-8">
-      <form onSubmit={onSubmit} className="w-full max-w-[380px] rounded-[18px] border border-border bg-bg-raised p-6 shadow-sm md:p-7">
+      <form onSubmit={onSubmit} className="w-full max-w-[380px] rounded-xl border border-border bg-bg-raised p-6 shadow-sm md:p-7">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center bg-fg text-bg-raised mono text-[12px] font-[700] tracking-[0.08em]">H</div>
           <div className="leading-none">
@@ -41,7 +41,7 @@ export function LoginPage() {
           </div>
         </div>
 
-        {error && <p className="mt-3 rounded-[8px] border border-danger/20 bg-danger-wash px-3 py-2 mono text-[12px] text-danger">{error}</p>}
+        {error && <p className="mt-3 rounded-md border border-danger/20 bg-danger-wash px-3 py-2 mono text-[12px] text-danger">{error}</p>}
 
         <Button type="submit" variant="primary" size="md" disabled={submitting} className="mt-5 w-full">
           {submitting ? "Přihlašuji…" : "Přihlásit se"}

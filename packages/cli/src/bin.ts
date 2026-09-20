@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import kleur from "kleur";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { createAppContext } from "@kuclab-hertz/server";
 import { loadConfig } from "./config.js";
 import { runNetworkSetup } from "./commands/setup.js";
@@ -17,14 +20,19 @@ function checkNodeVersion(): void {
   }
 }
 
-/** `hzcli update` — same logic as the WebUI button: pull, build, restart service. */
-function runUpdate(): void {
+/** Resolves scripts/update.sh from a checkout cwd or from the installed location (exported for tests). */
+export function findUpdateScript(): string | undefined {
   const candidates = [
     path.resolve(process.cwd(), "scripts", "update.sh"),
     path.resolve(__dirname, "../../scripts/update.sh"),
     path.resolve(__dirname, "../../../scripts/update.sh"),
   ];
-  const script = candidates.find((c) => fs.existsSync(c));
+  return candidates.find((c) => fs.existsSync(c));
+}
+
+/** `hzcli update` — same logic as the WebUI button: pull, build, restart service. */
+function runUpdate(): void {
+  const script = findUpdateScript();
   if (!script) {
     console.error(kleur.red("update.sh not found — run this from a Hertz checkout (or reinstall via install.sh)."));
     process.exit(1);
@@ -108,7 +116,19 @@ async function main(): Promise<void> {
   await startServer(ctx, config);
 }
 
-main().catch((err) => {
-  console.error(kleur.red(`\nFatal error: ${(err as Error).stack ?? err}`));
-  process.exit(1);
-});
+function isMainModule(): boolean {
+  // argv[1] may be a symlink (/usr/local/bin/hzcli) — compare resolved paths.
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  main().catch((err) => {
+    console.error(kleur.red(`\nFatal error: ${(err as Error).stack ?? err}`));
+    process.exit(1);
+  });
+}

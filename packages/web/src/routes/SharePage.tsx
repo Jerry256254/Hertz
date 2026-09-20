@@ -80,10 +80,10 @@ export function SharePage() {
                         key={j}
                         src={`data:${b.mimeType ?? "image/png"};base64,${b.data}`}
                         alt="příloha"
-                        className="max-h-80 rounded-[8px] border border-border"
+                        className="max-h-80 rounded-md border border-border"
                       />
                     ) : b.type === "text" && b.text ? (
-                      <div key={j} className="rounded-[12px] border border-border bg-bg-raised px-3 py-2.5">
+                      <div key={j} className="rounded-lg border border-border bg-bg-raised px-3 py-2.5">
                         <Markdown>{b.text}</Markdown>
                       </div>
                     ) : null,

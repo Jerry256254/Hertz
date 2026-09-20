@@ -20,7 +20,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="fixed inset-x-0 top-0 z-20 flex h-[52px] items-center gap-3 border-b border-border bg-bg-raised/90 px-3 backdrop-blur-[10px] md:hidden">
         <button
           onClick={() => setMobileOpen(true)}
-          className="flex h-8 w-8 items-center justify-center rounded-[8px] border border-border text-fg hover:bg-bg-hover active:scale-[0.97]"
+          className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-fg hover:bg-bg-hover active:scale-[0.97]"
           aria-label="Otevřít menu"
         >
           <Menu size={16} strokeWidth={1.9} />
