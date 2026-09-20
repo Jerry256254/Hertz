@@ -142,6 +142,21 @@ if [ "$NEED_IMAGE" -eq 1 ]; then
   fi
 fi
 
+# --- 3b. global hzcli command -------------------------------------------------
+# Symlink the CLI onto PATH so `hzcli users`, `hzcli passwd` etc. work from
+# anywhere. Re-runs simply re-point the link (survives updates).
+if [ -f "$INSTALL_DIR/packages/cli/dist/bin.js" ]; then
+  as_root ln -sf "$INSTALL_DIR/packages/cli/dist/bin.js" /usr/local/bin/hzcli
+  as_root chmod +x "$INSTALL_DIR/packages/cli/dist/bin.js"
+  if command -v hzcli >/dev/null 2>&1 && hzcli help >/dev/null 2>&1; then
+    log "Terminal command installed: hzcli (try: hzcli help)"
+  else
+    warn "Could not verify 'hzcli' on PATH — open a new terminal and run: hzcli help"
+  fi
+else
+  warn "CLI build output missing — skipping hzcli install (re-run to fix)."
+fi
+
 # --- 4. non-interactive network config --------------------------------------
 if [ ! -f "$DATA_DIR/config.json" ]; then
   # Network-accessible by default (LAN/Tailscale). Change later in this file.

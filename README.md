@@ -8,7 +8,7 @@ Self-hosted autonomous agent platform — a server with a WebUI where AI bots wo
 curl -fsSL https://raw.githubusercontent.com/Jerry256254/Hertz/main/install.sh | bash
 ```
 
-That single command installs everything (Node.js if missing), builds Hertz, registers it as a **systemd service that starts on boot**, binds it to all interfaces so it is reachable over your LAN or Tailscale, and prints the address to open. Re-run the exact same command anytime to **update in place** — your data is never reset.
+That single command installs everything (Node.js if missing), builds Hertz, registers it as a **systemd service that starts on boot**, binds it to all interfaces so it is reachable over your LAN or Tailscale, installs the `hzcli` terminal command (password resets, memory wipes, factory reset — run `hzcli help`), and prints the address to open. Re-run the exact same command anytime to **update in place** — your data is never reset.
 
 Prefer manual control? [Clone and run it yourself](#4-installing-hertz-jobs-git-clone).
 
