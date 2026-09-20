@@ -73,9 +73,8 @@ export class JobQueue {
   }
 
   /**
-   * In-memory completion promise for callers that block on a specific job
-   * (a manager's assign_task waiting for its employee). Deliberately not
-   * durable: if the process restarts, the caller died with it.
+   * In-memory completion promise for callers that block on a specific job.
+   * Deliberately not durable: if the process restarts, the caller died with it.
    */
   async whenDone(jobId: string): Promise<void> {
     const rows = await this.db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);

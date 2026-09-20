@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { execSandboxed, isCommandAllowed } from "@kuclab-hertz/sandbox";
 import type { ToolContext, ToolDef, ToolResult } from "../types.js";
+import { scanShellArgs } from "./path-args.js";
 
 const inputSchema = z.object({
   command: z.string().describe("Bare binary name, e.g. 'git', not a path"),
@@ -14,10 +15,28 @@ const SUMMARY_CHAR_LIMIT = 4000;
 export const shellExecTool: ToolDef<Input> = {
   name: "shell_exec",
   description:
-    "Run an allowlisted shell command (no shell interpreter — argv only, so no pipes/chaining) inside the project root.",
+    "Run an allowlisted shell command (no shell interpreter — argv only, so no pipes/chaining) inside the project root. Text tool — never use desktop_* / browser_* to type into a terminal; do terminal work here.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
     const cwd = ctx.pathGuard.resolve(ctx.actor, ctx.rootId, input.cwd);
+
+    // Arg containment (both branches): path-like args must stay inside the
+    // agent's root — `rm ../../etc/x` is blocked, not executed.
+    const blocked = scanShellArgs(ctx.pathGuard, ctx.actor, ctx.rootId, input.args);
+    if (blocked) {
+      ctx.audit.record({
+        ...ctx.actor,
+        action: "shell.args.blocked",
+        target: blocked.arg,
+        targetType: "arg",
+        result: "denied",
+        detail: { reason: blocked.reason },
+      });
+      return {
+        summary: `Blocked: argument "${blocked.arg}" escapes the project root (${blocked.reason}). Work inside your own folders — for host files outside them, use request_host_access with a reason.`,
+        isError: true,
+      };
+    }
 
     // Inside the agent's own container: the allowlist still applies (the host
     // side validates the command name before dispatching), but execution

@@ -6,6 +6,7 @@ export { editFileTool } from "./fs/edit.js";
 export { globTool } from "./fs/glob.js";
 export { grepTool } from "./fs/grep.js";
 export { shellExecTool } from "./shell/exec.js";
+export { isPathLikeArg, scanShellArgs } from "./shell/path-args.js";
 export { webFetchTool } from "./web/fetch.js";
 export { webSearchTool } from "./web/search.js";
 export { todoWriteTool } from "./planning/todo.js";

@@ -2,7 +2,7 @@ import { z } from "zod";
 import os from "node:os";
 import fs from "node:fs/promises";
 import type { ToolContext, ToolResult } from "@kuclab-hertz/tools";
-import type { OrgToolDef } from "./org-tools.js";
+import type { AgentToolDef } from "./tool-def.js";
 import type { Database } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { sessions } from "../db/schema.js";
@@ -16,7 +16,7 @@ import type { DesktopManager } from "../computer/desktop-manager.js";
  * that VISION models read directly (non-vision models get a clear notice to
  * fall back to browser_snapshot instead of pretending they can see).
  */
-export function createDesktopTools(db: Database, masterKey: Buffer, desktop: DesktopManager): OrgToolDef[] {
+export function createDesktopTools(db: Database, masterKey: Buffer, desktop: DesktopManager): AgentToolDef[] {
   function requireComputer(ctx: ToolContext): NonNullable<ToolContext["computer"]> | ToolResult {
     if (!ctx.computer) {
       return {
@@ -40,7 +40,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     return { summary: out || "done", isError: res.exitCode !== 0 };
   }
 
-  const click: OrgToolDef = {
+  const click: AgentToolDef = {
     name: "desktop_click",
     description:
       "Click on YOUR desktop at pixel coordinates you read from desktop_read_screen. button: left (default) / right / middle; double for double-click.",
@@ -62,7 +62,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
-  const typeText: OrgToolDef = {
+  const typeText: AgentToolDef = {
     name: "desktop_type",
     description: "Type text into the currently focused window on YOUR desktop (click the field first with desktop_click).",
     inputSchema: z.object({ text: z.string().min(1).max(5_000) }),
@@ -72,7 +72,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
-  const key: OrgToolDef = {
+  const key: AgentToolDef = {
     name: "desktop_key",
     description: "Press a key or combo on YOUR desktop: 'Return', 'Escape', 'Tab', 'ctrl+l', 'ctrl+shift+t', …",
     inputSchema: z.object({ key: z.string().min(1).max(40) }),
@@ -82,7 +82,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
-  const scroll: OrgToolDef = {
+  const scroll: AgentToolDef = {
     name: "desktop_scroll",
     description: "Scroll on YOUR desktop at the current mouse position: direction 'up' | 'down', amount in wheel clicks.",
     inputSchema: z.object({
@@ -97,10 +97,10 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
-  const openApp: OrgToolDef = {
+  const openApp: AgentToolDef = {
     name: "desktop_open_app",
     description:
-      "Launch a GUI application on YOUR desktop in the background ('thunar' file manager, 'xterm', 'google-chrome https://example.com' or 'chromium https://example.com', or any installer like 'apt install -y gimp'). Returns immediately.",
+      "Launch a GUI application on YOUR desktop in the background ('google-chrome https://example.com' or 'chromium https://example.com', or any installer like 'apt install -y gimp'). Returns immediately. Terminal/file-manager apps (xterm, thunar) are for the USER's takeover view, not for agent work — use shell_exec / read_file instead; never launch a terminal or editor as an agent strategy.",
     inputSchema: z.object({ command: z.string().min(1).max(300) }),
     async execute(rawInput, ctx) {
       const input = z.object({ command: z.string() }).parse(rawInput);
@@ -115,7 +115,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
-  const readScreen: OrgToolDef = {
+  const readScreen: AgentToolDef = {
     name: "desktop_read_screen",
     description:
       "Capture YOUR desktop as an image and READ it visually — what windows are open, where buttons are, what a page shows (including a login waiting for the user). Vision models receive the real image; without vision this says so — use browser_snapshot for text-only pages instead.",
@@ -152,7 +152,7 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
     },
   };
 
-  const requestTakeover: OrgToolDef = {
+  const requestTakeover: AgentToolDef = {
     name: "request_takeover",
     description:
       "Ask the USER to take over your screen for a step you must NOT do yourself — entering passwords, payment details, 2FA codes, captchas. Navigate to the login page first (browser_navigate), then call this with a concrete reason. The user gets live links (LAN + automatic public tunnel when available), logs in while none of the secret ever reaches you, then hands back and you continue already signed-in. Never ask for credentials in chat and never invent workarounds — this is the correct path.",

@@ -6,14 +6,14 @@ import type { ToolContext, ToolDef, ToolResult } from "../types.js";
 const inputSchema = z.object({
   path: z.string().describe("Path relative to the project root"),
   content: z.string(),
-  root: z.string().optional().describe("Which root to write to — omit for the shared project root, or 'self' for your own personal folder (notes/materials/data)"),
+  root: z.string().optional().describe("Which root to write to — omit for the shared project root, 'self' for your own personal folder (notes/materials/data), or a folder name from Your folders"),
 });
 type Input = z.infer<typeof inputSchema>;
 
 export const writeFileTool: ToolDef<Input> = {
   name: "write_file",
   description:
-    "Create or overwrite a file with the given content. Creates parent directories as needed. Pass root: 'self' to write into your own personal folder instead of the shared project.",
+    "Create or overwrite a file with the given content. Creates parent directories as needed. Pass root: 'self' to write into your own personal folder instead of the shared project. Text tool — never use desktop_* / browser_* to open an editor; do file work here.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
     if (Buffer.byteLength(input.content, "utf8") > 5_000_000) throw new Error(`Content too large — max 5000000 bytes`);

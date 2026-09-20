@@ -15,6 +15,7 @@ import {
 } from "./extraction.js";
 import { isNearDuplicate, keywordsFor } from "./tokenize.js";
 import { backfillLegacyMemory, loadMemoryState, loadPersona, saveMemoryState, writePersona, writeScenarioMirror } from "./recall.js";
+import { syncAtomVectors } from "./vector-store.js";
 
 export interface MemoryPipelineDeps {
   db: Database;
@@ -61,8 +62,8 @@ async function runPipelineInner(deps: MemoryPipelineDeps, agentId: string, sessi
   const agent = agentRows[0];
   if (!agent) return false;
 
-  await backfillLegacyMemory(deps.db, deps.paths, agentId).catch(() => 0);
-  const state = await loadMemoryState(deps.paths, agentId);
+  await backfillLegacyMemory(deps.db, deps.paths, agent.projectId, agentId).catch(() => 0);
+  const state = await loadMemoryState(deps.paths, agent.projectId, agentId);
 
   const history = await deps.db
     .select()
@@ -106,7 +107,7 @@ async function runPipelineInner(deps: MemoryPipelineDeps, agentId: string, sessi
       }
     }
     state.extractedThrough[sessionId] = lastId;
-    await saveMemoryState(deps.paths, agentId, state).catch(() => {});
+    await saveMemoryState(deps.paths, agent.projectId, agentId, state).catch(() => {});
   }
 
   // ── L1 → L2 ──────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ async function runPipelineInner(deps: MemoryPipelineDeps, agentId: string, sessi
     const clustered = await clusterScenarios(deps, agentId, agent, unclustered);
     if (clustered) {
       state.atomsAtLastCluster = totalAtoms;
-      await saveMemoryState(deps.paths, agentId, state).catch(() => {});
+      await saveMemoryState(deps.paths, agent.projectId, agentId, state).catch(() => {});
       didWork = true;
     }
   }
@@ -133,10 +134,15 @@ async function runPipelineInner(deps: MemoryPipelineDeps, agentId: string, sessi
     if (refreshed) {
       state.atomsAtLastPersona = totalAtoms;
       state.lastPersonaAt = new Date().toISOString();
-      await saveMemoryState(deps.paths, agentId, state).catch(() => {});
+      await saveMemoryState(deps.paths, agent.projectId, agentId, state).catch(() => {});
       didWork = true;
     }
   }
+
+  // Vector sidecar: embed whatever L1 atoms lack vectors (bounded per run,
+  // silent no-op without an embedder or sqlite-vec). Covers remember() writes
+  // and backfills, not just this run's distilled atoms.
+  await syncAtomVectors(deps.db, deps.paths, agentId).catch(() => 0);
 
   return didWork;
 }
@@ -230,7 +236,7 @@ async function storeAtoms(
 async function clusterScenarios(
   deps: MemoryPipelineDeps,
   agentId: string,
-  agent: { providerConfigId: string; model: string },
+  agent: { providerConfigId: string; model: string; projectId: string },
   unclustered: Array<typeof agentMemoryAtoms.$inferSelect>,
 ): Promise<boolean> {
   const existingScenarios = await deps.db.select().from(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, agentId)).limit(60);
@@ -292,19 +298,23 @@ async function clusterScenarios(
         .from(agentMemoryAtoms)
         .where(and(eq(agentMemoryAtoms.agentId, agentId), eq(agentMemoryAtoms.scenarioId, scenarioId!)))
         .limit(60);
-      await writeScenarioMirror(deps.paths, agentId, row, texts.map((t) => t.text)).catch(() => {});
+      await writeScenarioMirror(deps.paths, agent.projectId, agentId, row, texts.map((t) => t.text)).catch(() => {});
     }
   }
   return true;
 }
 
-async function refreshPersona(deps: MemoryPipelineDeps, agentId: string, agent: { providerConfigId: string; model: string }): Promise<boolean> {
+async function refreshPersona(
+  deps: MemoryPipelineDeps,
+  agentId: string,
+  agent: { providerConfigId: string; model: string; projectId: string },
+): Promise<boolean> {
   const [scenarios, atoms] = await Promise.all([
     deps.db.select().from(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, agentId)).orderBy(desc(agentMemoryScenarios.updatedAt)).limit(20),
     deps.db.select().from(agentMemoryAtoms).where(eq(agentMemoryAtoms.agentId, agentId)).orderBy(desc(agentMemoryAtoms.importance)).limit(30),
   ]);
   if (scenarios.length === 0 && atoms.length === 0) return false;
-  const previous = await loadPersona(deps.paths, agentId).catch(() => "");
+  const previous = await loadPersona(deps.paths, agent.projectId, agentId).catch(() => "");
   let raw: string;
   try {
     raw = await chatJson(
@@ -322,6 +332,6 @@ async function refreshPersona(deps: MemoryPipelineDeps, agentId: string, agent: 
   }
   const persona = parsePersonaResponse(raw);
   if (!persona) return false;
-  await writePersona(deps.paths, agentId, persona).catch(() => {});
+  await writePersona(deps.paths, agent.projectId, agentId, persona).catch(() => {});
   return true;
 }

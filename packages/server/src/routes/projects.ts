@@ -9,7 +9,6 @@ import { requireAuth, requireAdmin } from "../auth/plugin.js";
 import { accessibleProjectIds, hasProjectAccess } from "../auth/project-access.js";
 
 const memberSchema = z.object({ userId: z.string().min(1) });
-const autoApproveSchema = z.object({ autoApprove: z.boolean() });
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -106,18 +105,6 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: AppContext): vo
       return reply.code(204).send();
     });
 
-    // Toggling this lets the manager's hire_employee/fire_employee take effect
-    // immediately instead of waiting for the user (CEO) to approve each one.
-    instance.patch("/api/projects/:id/auto-approve", async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const parsed = autoApproveSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
-      if (!(await hasProjectAccess(ctx.db, request.user!, id))) return reply.code(403).send({ error: "No access to this project" });
-
-      await ctx.db.update(projects).set({ autoApprove: parsed.data.autoApprove }).where(eq(projects.id, id));
-      return { ok: true };
-    });
-
     instance.delete("/api/projects/:id", async (request, reply) => {
       const { id } = request.params as { id: string };
       if (!(await hasProjectAccess(ctx.db, request.user!, id))) return reply.code(403).send({ error: "No access to this project" });
@@ -132,7 +119,7 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: AppContext): vo
         return reply.code(409).send({ error: "Can't delete a project while one of its sessions is running" });
       }
 
-      // Deletes projectRoots/agents/sessions/messages/meetings via ON DELETE CASCADE.
+      // Deletes projectRoots/agents/sessions/messages via ON DELETE CASCADE.
       await ctx.db.delete(projects).where(eq(projects.id, id));
       return reply.code(204).send();
     });

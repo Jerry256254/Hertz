@@ -9,7 +9,7 @@ const inputSchema = z.object({
   glob: z.string().optional().default("**/*").describe("Restrict search to files matching this glob"),
   caseSensitive: z.boolean().optional().default(true),
   maxMatches: z.number().int().positive().max(200).optional().default(50),
-  root: z.string().optional().describe("Which root to search — omit for the shared project root, or 'self' for your own personal folder"),
+  root: z.string().optional().describe("Which root to search — omit for the shared project root, 'self' for your own personal folder, or a folder name from Your folders"),
 });
 type Input = z.infer<typeof inputSchema>;
 
@@ -21,7 +21,7 @@ interface Match {
 
 export const grepTool: ToolDef<Input> = {
   name: "grep",
-  description: "Search file contents for a regular expression, returning matching lines with file:line, not whole files.",
+  description: "Search file contents for a regular expression, returning matching lines with file:line, not whole files. Text tool — never use desktop_* / browser_* for file work.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
     const root = ctx.pathGuard.getRoot(input.root ?? ctx.rootId);

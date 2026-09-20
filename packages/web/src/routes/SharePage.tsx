@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { Markdown } from "../components/Markdown";
 import { Avatar } from "../components/ui";
+import { AgentAvatar } from "../components/AgentAvatar";
 
 interface SharedBlock {
   type: string;
@@ -59,16 +60,25 @@ export function SharePage() {
             </div>
             <span className="mono text-[10px] font-[700] tracking-[0.18em] text-fg-subtle">HERTZ · SDÍLENÝ CHAT</span>
           </div>
-          <h1 className="text-lg font-[700] tracking-[-0.02em] text-fg">{data.title}</h1>
-          <p className="mono mt-1 text-[11px] text-fg-subtle">
-            {data.agentName}
-            {data.projectName ? ` · ${data.projectName}` : ""} · sdíleno {new Date(data.sharedAt).toLocaleString()}
-          </p>
+          <div className="flex items-center gap-3">
+            <AgentAvatar seed={data.agentName} size={40} animate={false} />
+            <div className="min-w-0">
+              <h1 className="text-lg font-[700] tracking-[-0.02em] text-fg">{data.title}</h1>
+              <p className="mono mt-1 text-[11px] text-fg-subtle">
+                {data.agentName}
+                {data.projectName ? ` · ${data.projectName}` : ""} · sdíleno {new Date(data.sharedAt).toLocaleString()}
+              </p>
+            </div>
+          </div>
         </header>
         <div className="space-y-4">
           {data.messages.map((m, i) => (
             <div key={i} className="flex gap-3">
-              <Avatar label={m.role === "user" ? "Ty" : data.agentName} />
+              {m.role === "user" ? (
+                <Avatar label="Ty" />
+              ) : (
+                <AgentAvatar seed={data.agentName} size={32} animate={false} />
+              )}
               <div className="min-w-0 flex-1">
                 <p className="mono mb-1 text-[10px] font-[700] tracking-[0.1em] text-fg-subtle">
                   {m.role === "user" ? "TY" : data.agentName.toUpperCase()}

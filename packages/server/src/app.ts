@@ -12,10 +12,9 @@ import { registerAgentRoutes } from "./routes/agents.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerFileRoutes } from "./routes/files.js";
 import { registerFsBrowseRoutes } from "./routes/fs-browse.js";
+import { registerMountRoutes } from "./routes/mounts.js";
 import { registerUsageRoutes } from "./routes/usage.js";
 import { registerSetupRoutes } from "./routes/setup.js";
-import { registerMeetingRoutes } from "./routes/meetings.js";
-import { registerTaskRoutes } from "./routes/tasks.js";
 import { registerMcpRoutes } from "./routes/mcp.js";
 import { registerRoutineRoutes } from "./routes/routines.js";
 import { registerShellRoutes } from "./routes/shells.js";
@@ -29,7 +28,6 @@ import { registerChannelRoutes } from "./routes/channels.js";
 import { registerApiTokenRoutes } from "./routes/api-tokens.js";
 import { registerShareRoutes } from "./routes/share.js";
 import { registerSessionWebsocket } from "./ws/session-hub.js";
-import { registerMeetingWebsocket } from "./ws/meeting-hub.js";
 
 export interface BuildAppOptions {
   /** Directory containing the built web SPA (index.html + assets). Omit to run API-only (e.g. `pnpm dev` against the Vite dev server). */
@@ -55,9 +53,8 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerSessionRoutes(app, ctx);
   registerFileRoutes(app, ctx);
   registerFsBrowseRoutes(app, ctx);
+  registerMountRoutes(app, ctx);
   registerUsageRoutes(app, ctx);
-  registerMeetingRoutes(app, ctx);
-  registerTaskRoutes(app, ctx);
   registerMcpRoutes(app, ctx);
   registerRoutineRoutes(app, ctx);
   registerShellRoutes(app, ctx);
@@ -71,7 +68,6 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerApiTokenRoutes(app, ctx);
   registerShareRoutes(app, ctx);
   registerSessionWebsocket(app, ctx);
-  registerMeetingWebsocket(app, ctx);
 
   if (options.webDistDir) {
     await app.register(fastifyStatic, {

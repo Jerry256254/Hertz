@@ -8,6 +8,8 @@ import {
   keywordsFor,
   keywordOverlap,
   rankByRelevance,
+  scoreByRelevance,
+  fuseRankings,
   isNearDuplicate,
 } from "../dist/memory/tokenize.js";
 import {
@@ -28,6 +30,8 @@ import {
 } from "../dist/memory/extraction.js";
 import { recordToolStep, readRef, loadCanvas, readSteps } from "../dist/memory/short-term.js";
 import { renderMemoryBlock } from "../dist/memory/recall.js";
+import { VectorMemoryStore, getVectorStore } from "../dist/memory/vector-store.js";
+import { agentMemoryDir, agentSkillsDir, migrateAgentHome } from "../dist/paths.js";
 
 describe("memory tokenization", () => {
   it("tokenizes Czech + English words, lowercased, min length", () => {
@@ -86,6 +90,34 @@ describe("memory ranking", () => {
   it("handles empty input", () => {
     assert.deepEqual(rankByRelevance([], "query", 5), []);
     assert.deepEqual(rankByRelevance(items, "query", 0), []);
+  });
+
+  it("scoreByRelevance best-first matches rankByRelevance selection", () => {
+    const scored = scoreByRelevance(items, "the deploy script on the server broke", now);
+    assert.equal(scored[0].item.id, "fresh-relevant");
+    assert.ok(scored[0].score >= scored[1].score && scored[1].score >= scored[2].score);
+  });
+});
+
+describe("rank fusion (RRF)", () => {
+  it("ranks an item first in both rankings at the top", () => {
+    assert.deepEqual(
+      fuseRankings(["a", "b", "c"], [["a", "b", "c"], ["a", "c", "b"]], 3),
+      ["a", "b", "c"],
+    );
+  });
+
+  it("preserves a single ranking order", () => {
+    assert.deepEqual(fuseRankings(["a", "b"], [["b", "a"]], 2), ["b", "a"]);
+  });
+
+  it("keeps ids missing from every ranking at score zero, input order", () => {
+    assert.deepEqual(fuseRankings(["a", "x"], [["a"]], 2), ["a", "x"]);
+  });
+
+  it("respects the limit", () => {
+    assert.deepEqual(fuseRankings(["a", "b", "c"], [["a", "b", "c"]], 2), ["a", "b"]);
+    assert.deepEqual(fuseRankings(["a", "b"], [["a", "b"]], 0), []);
   });
 });
 
@@ -205,13 +237,14 @@ describe("memory block rendering", () => {
 describe("short-term offload + canvas", () => {
   async function makePaths() {
     const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-memory-"));
-    return { dataDir, paths: { dataDir } };
+    return { dataDir, paths: { dataDir, projectsDir: path.join(dataDir, "projects") } };
   }
 
   it("keeps small tool results inline but still records the step", async () => {
     const { dataDir, paths } = await makePaths();
     const res = await recordToolStep({
       paths: paths,
+      projectId: "proj-1",
       agentId: "agent-1",
       sessionId: "sess-1",
       tool: "read_file",
@@ -220,10 +253,10 @@ describe("short-term offload + canvas", () => {
     });
     assert.equal(res.offloaded, false);
     assert.equal(res.summary, "small output");
-    const steps = await readSteps(paths, "agent-1", "sess-1");
+    const steps = await readSteps(paths, "proj-1", "agent-1", "sess-1");
     assert.equal(steps.length, 1);
     assert.equal(steps[0].tool, "read_file");
-    assert.match(await loadCanvas(paths, "agent-1", "sess-1"), /read_file/);
+    assert.match(await loadCanvas(paths, "proj-1", "agent-1", "sess-1"), /read_file/);
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
@@ -232,6 +265,7 @@ describe("short-term offload + canvas", () => {
     const big = `line\n`.repeat(5000);
     const res = await recordToolStep({
       paths: paths,
+      projectId: "proj-1",
       agentId: "agent-1",
       sessionId: "sess-1",
       tool: "shell_exec",
@@ -243,23 +277,87 @@ describe("short-term offload + canvas", () => {
     assert.match(res.summary, /read_memory_ref/);
     assert.match(res.summary, new RegExp(res.nodeId));
     assert.ok(res.summary.length < big.length);
-    const recovered = await readRef(paths, "agent-1", res.nodeId, "sess-1");
+    const recovered = await readRef(paths, "proj-1", "agent-1", res.nodeId, "sess-1");
     assert.ok(recovered && recovered.includes("line\nline"));
     assert.match(recovered, /shell_exec/);
     // Cross-session recovery: node id resolves without the session too.
-    const recoveredAny = await readRef(paths, "agent-1", res.nodeId);
+    const recoveredAny = await readRef(paths, "proj-1", "agent-1", res.nodeId);
     assert.equal(recoveredAny, recovered);
-    assert.equal(await readRef(paths, "agent-1", "n000000"), undefined);
+    assert.equal(await readRef(paths, "proj-1", "agent-1", "n000000"), undefined);
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
   it("never offloads errors or drill-down tools", async () => {
     const { dataDir, paths } = await makePaths();
     const big = "x".repeat(20000);
-    const err = await recordToolStep({ paths, agentId: "a", sessionId: "s", tool: "shell_exec", input: {}, summary: big, isError: true });
+    const err = await recordToolStep({ paths, projectId: "p", agentId: "a", sessionId: "s", tool: "shell_exec", input: {}, summary: big, isError: true });
     assert.equal(err.offloaded, false);
-    const drill = await recordToolStep({ paths, agentId: "a", sessionId: "s", tool: "read_memory_ref", input: {}, summary: big });
+    const drill = await recordToolStep({ paths, projectId: "p", agentId: "a", sessionId: "s", tool: "read_memory_ref", input: {}, summary: big });
     assert.equal(drill.offloaded, false);
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+});
+
+describe("agent home migration", () => {
+  it("adopts a pre-pivot mind (agents/<id>/) into the employee home", async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-home-"));
+    const paths = { dataDir, projectsDir: path.join(dataDir, "projects") };
+    await fs.mkdir(path.join(dataDir, "agents", "a1", "memory", "scenarios"), { recursive: true });
+    await fs.mkdir(path.join(dataDir, "agents", "a1", "skills", "s1"), { recursive: true });
+    await fs.writeFile(path.join(dataDir, "agents", "a1", "memory", "persona.md"), "I am A1.", "utf8");
+    await fs.writeFile(path.join(dataDir, "agents", "a1", "soul.md"), "# Soul\nlegacy words", "utf8");
+    await fs.writeFile(path.join(dataDir, "agents", "a1", "skills", "s1", "SKILL.md"), "steps", "utf8");
+
+    await migrateAgentHome(paths, "proj-1", "a1");
+
+    assert.equal(await fs.readFile(path.join(agentMemoryDir(paths, "proj-1", "a1"), "persona.md"), "utf8"), "I am A1.");
+    assert.equal(await fs.readFile(path.join(agentMemoryDir(paths, "proj-1", "a1"), "soul.md"), "utf8"), "# Soul\nlegacy words");
+    assert.equal(await fs.readFile(path.join(agentSkillsDir(paths, "proj-1", "a1"), "s1", "SKILL.md"), "utf8"), "steps");
+    // Old shell is gone; second run is a no-op that never overwrites.
+    await fs.writeFile(path.join(agentMemoryDir(paths, "proj-1", "a1"), "persona.md"), "edited", "utf8");
+    await migrateAgentHome(paths, "proj-1", "a1");
+    assert.equal(await fs.readFile(path.join(agentMemoryDir(paths, "proj-1", "a1"), "persona.md"), "utf8"), "edited");
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+});
+
+describe("vector memory store", () => {
+  it("round-trips when sqlite-vec loads, degrades silently when it does not", async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-vec-"));
+    const store = new VectorMemoryStore(path.join(dataDir, "v.db"));
+    const init = store.init(4);
+    if (!init.ok) {
+      // Degraded contract: every operation is a silent no-op.
+      assert.equal(store.degraded, true);
+      assert.equal(store.upsertAtom("a", "agent", 2, [1, 2, 3, 4]), false);
+      assert.deepEqual(store.search([1, 2, 3, 4], 5), []);
+      assert.deepEqual([...store.knownAtomIds("agent")], []);
+      store.removeAtom("a");
+      store.removeAgent("agent");
+    } else {
+      assert.equal(store.upsertAtom("a1", "agent", 2, [1, 0, 0, 0]), true);
+      assert.equal(store.upsertAtom("a2", "agent", 2, [0, 1, 0, 0]), true);
+      const hits = store.search([1, 0, 0, 0], 5);
+      assert.equal(hits[0].atomId, "a1");
+      assert.ok(hits[0].score >= (hits[1]?.score ?? 0));
+      assert.deepEqual([...store.knownAtomIds("agent")].sort(), ["a1", "a2"]);
+      store.removeAtom("a1");
+      assert.deepEqual([...store.knownAtomIds("agent")], ["a2"]);
+      store.removeAgent("agent");
+      assert.deepEqual([...store.knownAtomIds("agent")], []);
+      const re = store.init(8);
+      assert.equal(re.ok, true);
+      assert.equal(re.needsReindex, true);
+    }
+    store.close();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  it("shares one store per file", async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-vec-"));
+    const paths = { dataDir };
+    assert.equal(getVectorStore(paths, "v.db"), getVectorStore(paths, "v.db"));
+    getVectorStore(paths, "v.db").close();
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 });

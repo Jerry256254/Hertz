@@ -20,6 +20,27 @@ export interface ContainerSpec {
 }
 
 /**
+ * Normalizes one bind source path for comparison: collapses `.`/`..` and
+ * duplicate separators, strips trailing slashes — so `/data/`, `/data` and
+ * `/x/../data` compare equal (symlinked parents like macOS /tmp are already
+ * canonicalised at the DB layer via realpath).
+ */
+export function normalizeBindPath(p: string): string {
+  let out = path.normalize(p.trim());
+  if (out.length > 1) out = out.replace(/[\\/]+$/, "");
+  return out;
+}
+
+/** Set-equality of requested mount paths vs actual container bind sources. Order-insensitive, normalized. */
+export function mountSetsEqual(requested: string[], actualBindSources: string[]): boolean {
+  const a = new Set(requested.map(normalizeBindPath));
+  const b = new Set(actualBindSources.map(normalizeBindPath));
+  if (a.size !== b.size) return false;
+  for (const p of a) if (!b.has(p)) return false;
+  return true;
+}
+
+/**
  * Gives every agent its own isolated "computer" — a long-lived Docker container
  * with the project and the agent's personal directory bind-mounted at their
  * host paths, resource caps, no-new-privileges, and restart-on-boot so a bot's
@@ -71,24 +92,74 @@ export class ComputerManager {
 
   /** Idempotent: reuses a running container, restarts a stopped one, creates otherwise. */
   async ensureContainer(spec: ContainerSpec): Promise<{ containerName: string; created: boolean }> {
+    const r = await this.syncMounts(spec);
+    return { containerName: r.containerName, created: r.created || r.recreated };
+  }
+
+  /**
+   * Reconciles the agent's container with the requested mount set. Mounts only
+   * take effect at container (re)create, so when the live container's binds
+   * (via docker-inspect) differ from the requested set — a mount was added,
+   * removed, or renamed — the container is destroyed and recreated. Unparseable
+   * binds fail safe towards recreating. Every run calls this, so mount changes
+   * take effect on the next run with no manual restart step.
+   */
+  async syncMounts(spec: ContainerSpec): Promise<{ containerName: string; created: boolean; recreated: boolean }> {
     const name = this.containerName(spec.agentId);
     const state = await this.status(spec.agentId);
-    if (state === "running") return { containerName: name, created: false };
-
-    if (state === "stopped") {
-      await this.run(["docker", "start", name]);
-      // After restart, verify desktop port still published — else recreate
-      const portOut = await this.run(["docker", "port", name, "6080"]);
-      if (portOut.exitCode !== 0 || !portOut.stdout.trim()) {
-        await this.run(["docker", "rm", "-f", name]);
-        // fall through to create new container below
-      } else {
-        return { containerName: name, created: false };
-      }
-    }
     if (state === "unavailable") {
-      throw new Error("Docker isn't available on this machine — switch the agent to the 'local' backend or install Docker");
+      throw new Error("Docker isn't available — install Docker or re-run the installer (local execution is disabled for isolation)");
     }
+    if (state === "missing") {
+      await this.createContainer(spec);
+      return { containerName: name, created: true, recreated: false };
+    }
+
+    const actual = await this.inspectBindSources(spec.agentId);
+    if (actual !== undefined && mountSetsEqual(spec.mountPaths, actual)) {
+      if (state === "stopped") {
+        await this.run(["docker", "start", name]);
+        // After restart, verify desktop port still published — else recreate
+        const portOut = await this.run(["docker", "port", name, "6080"]);
+        if (portOut.exitCode === 0 && portOut.stdout.trim()) {
+          return { containerName: name, created: false, recreated: false };
+        }
+        await this.run(["docker", "rm", "-f", name]);
+        await this.createContainer(spec);
+        return { containerName: name, created: false, recreated: true };
+      }
+      return { containerName: name, created: false, recreated: false };
+    }
+
+    await this.audit.record({
+      actorId: spec.agentId,
+      actorType: "agent",
+      action: "computer.mounts_resync",
+      target: name,
+      targetType: "container",
+      result: "allowed",
+      detail: { requested: spec.mountPaths, actual: actual ?? null },
+    });
+    await this.destroyContainer(spec.agentId);
+    await this.createContainer(spec);
+    return { containerName: name, created: false, recreated: true };
+  }
+
+  /** Bind sources (`src` of each `src:dst` bind) of the live container, or undefined when inspect fails. */
+  async inspectBindSources(agentId: string): Promise<string[] | undefined> {
+    const out = await this.run(["docker", "inspect", "-f", "{{json .HostConfig.Binds}}", this.containerName(agentId)]);
+    if (out.exitCode !== 0) return undefined;
+    try {
+      const binds = JSON.parse(out.stdout.trim()) as unknown;
+      if (!Array.isArray(binds)) return [];
+      return binds.filter((b): b is string => typeof b === "string").map((b) => b.split(":")[0]!);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async createContainer(spec: ContainerSpec): Promise<void> {
+    const name = this.containerName(spec.agentId);
 
     const image = spec.image?.trim() || DEFAULT_COMPUTER_IMAGE;
     const args = [
@@ -134,7 +205,6 @@ export class ComputerManager {
       }
     }
     await this.installBrowserDaemon(spec.agentId);
-    return { containerName: name, created: true };
   }
 
   /** Copies the Playwright daemon into the container (/opt/hertz/browser.mjs). Idempotent per container start. */

@@ -20,7 +20,6 @@ export interface ProjectRoot {
 export interface Project {
   id: string;
   name: string;
-  autoApprove: boolean;
   createdAt: string;
   roots: ProjectRoot[];
 }
@@ -59,54 +58,23 @@ export interface ModelInfo {
   contextWindow?: number;
 }
 
-export type AgentRole =
-  | "manager"
-  | "architect"
-  | "implementer"
-  | "reviewer"
-  | "tester"
-  | "researcher"
-  | "generalist";
-
-export const AGENT_ROLES: AgentRole[] = [
-  "architect",
-  "implementer",
-  "reviewer",
-  "tester",
-  "researcher",
-  "generalist",
-];
-
-export const ROLE_LABEL: Record<AgentRole, string> = {
-  manager: "Manager",
-  architect: "Architect",
-  implementer: "Implementer",
-  reviewer: "Reviewer",
-  tester: "Tester",
-  researcher: "Researcher",
-  generalist: "Generalist",
-};
-
+/** The single agent (GET /api/agent returns the row plus `isolated`). */
 export interface Agent {
   id: string;
   projectId: string;
-  providerConfigId: string;
   name: string;
-  role: AgentRole;
+  providerConfigId: string;
   model: string;
-  mode: "manual" | "plan" | "auto";
-  status: "idle" | "running" | "error" | "terminated";
-  lastStatus?: string | null;
-  jobDescription?: string | null;
-  approvalStatus: "pending" | "approved" | "rejected";
-  pendingTermination: boolean;
-  mascot?: string | null;
-  computerBackend?: "local" | "docker";
-  computerImage?: string | null;
-  heartbeatMinutes?: number;
-  heartbeatPrompt?: string | null;
+  systemPrompt: string | null;
+  lastStatus: string | null;
+  computerBackend: "local" | "docker";
+  computerImage: string | null;
+  mascot: string | null;
+  heartbeatMinutes: number;
+  heartbeatPrompt: string | null;
+  lastHeartbeatAt: string | null;
   createdAt: string;
-  homeProjectName?: string;
+  isolated: boolean;
 }
 
 export interface AgentMemoryNote {
@@ -144,26 +112,6 @@ export interface AgentLayeredMemory {
   atoms: AgentMemoryAtom[];
 }
 
-export interface HertzTask {
-  id: string;
-  projectId: string;
-  title: string;
-  description: string;
-  status: "open" | "in_progress" | "done";
-  createdAt: string;
-  updatedAt: string;
-  assignees: TaskAssignee[];
-}
-
-export interface TaskAssignee {
-  id: string;
-  taskId: string;
-  agentId: string;
-  sessionId: string | null;
-  agentName: string;
-  agentRole: AgentRole;
-}
-
 export interface HertzSession {
   id: string;
   agentId: string;
@@ -177,28 +125,17 @@ export interface HertzSession {
   updatedAt: string;
 }
 
-export interface Meeting {
+export interface SessionListItem {
   id: string;
+  agentId: string;
   projectId: string;
   title: string;
-  status: "active" | "ended";
+  status: string;
   createdAt: string;
   updatedAt: string;
+  agentName: string;
+  projectName: string;
 }
-
-export interface MeetingMessage {
-  id: string;
-  meetingId: string;
-  senderAgentId: string | null;
-  content: ContentBlock[];
-  createdAt: string;
-}
-
-export type MeetingEvent =
-  | { type: "message"; message: MeetingMessage }
-  | { type: "turn_started"; agentId: string; agentName: string }
-  | { type: "error"; message: string }
-  | { type: "done" };
 
 export interface PersistedMessage {
   id: string;
@@ -244,22 +181,6 @@ export type AgentLoopEvent =
   | { type: "awaiting_input"; question: string }
   | { type: "error"; message: string }
   | { type: "done" };
-
-/** One direct agent ↔ agent chat thread (a session with kind = "conversation"). */
-export interface ConversationSummary {
-  id: string;
-  agentId: string;
-  peerAgentId: string;
-  projectId?: string;
-  title: string;
-  status: string;
-  agentName: string;
-  peerAgentName: string | null;
-  updatedAt: string;
-  lastMessageAt: string | null;
-  lastMessagePreview: string | null;
-  lastSenderAgentId: string | null;
-}
 
 export interface Routine {
   id: string;
@@ -310,4 +231,80 @@ export interface McpToolsForAgent {
 export interface FileEntry {
   name: string;
   type: "file" | "directory" | "symlink";
+}
+
+/** Permanent host-folder mount visible to the agent's computer. */
+export interface Mount {
+  id: string;
+  projectId: string;
+  agentId: string | null;
+  name: string;
+  hostPath: string;
+  purpose: string | null;
+  createdByUserId: string | null;
+  createdAt: string;
+}
+
+export interface MountList {
+  mounts: Mount[];
+  builtIn: { name: string; hostPath: string; purpose: string } | null;
+}
+
+export type HostAccessOp = "read" | "rewrite" | "create" | "delete";
+
+export interface HostAccessPayload {
+  op: HostAccessOp;
+  hostPath: string;
+  content?: string;
+  reason: string;
+}
+
+export interface HostAccessResult {
+  ok: boolean;
+  output?: string;
+  bytes?: number;
+  error?: string;
+}
+
+export interface ApprovalItem {
+  id: string;
+  projectId: string;
+  agentId: string;
+  sessionId: string;
+  summary: string;
+  detail: string | null;
+  kind: "generic" | "host_access";
+  payload: string | null;
+  result: string | null;
+  status: "pending" | "approved" | "rejected";
+  decidedByUserId: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+  agentName: string;
+  projectName: string;
+  sessionTitle: string;
+  decidedByEmail: string | null;
+}
+
+export interface ChannelConfig {
+  id: string;
+  kind: "telegram" | "discord";
+  label: string;
+  tokenHint: string;
+  defaultAgentId: string | null;
+  allowedChats: string[];
+  enabled: boolean;
+  running: boolean;
+  botLabel: string | null;
+  createdAt: string;
+}
+
+export interface ChannelBinding {
+  id: string;
+  channelId: string;
+  externalChatId: string;
+  sessionId: string;
+  projectId: string | null;
+  sessionTitle: string | null;
+  createdAt: string;
 }

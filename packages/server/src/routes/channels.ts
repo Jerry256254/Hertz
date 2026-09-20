@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { newId } from "../db/client.js";
@@ -77,14 +77,13 @@ export function registerChannelRoutes(app: FastifyInstance, ctx: AppContext): vo
       };
     });
 
-    /** Agents eligible as a channel's default — any approved, non-terminated bot. */
+    /** Agents eligible as a channel's default. */
     instance.get("/api/channels/agents", async (request, reply) => {
       if (!requireAdmin(request)) return reply.code(403).send({ error: "Admin only" });
       const rows = await ctx.db
         .select({ id: agents.id, name: agents.name, projectId: agents.projectId, projectName: projects.name })
         .from(agents)
         .innerJoin(projects, eq(agents.projectId, projects.id))
-        .where(and(eq(agents.approvalStatus, "approved")))
         .orderBy(desc(agents.createdAt))
         .limit(200);
       return { agents: rows };

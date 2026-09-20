@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   standard_profile TEXT,
-  auto_approve INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
 
@@ -34,6 +33,20 @@ CREATE TABLE IF NOT EXISTS project_roots (
   absolute_path TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_project_roots_project ON project_roots(project_id);
+
+CREATE TABLE IF NOT EXISTS mounts (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  host_path TEXT NOT NULL,
+  purpose TEXT,
+  created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mounts_project ON mounts(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mounts_project_name ON mounts(project_id, name);
+CREATE INDEX IF NOT EXISTS idx_mounts_agent ON mounts(agent_id);
 
 CREATE TABLE IF NOT EXISTS provider_configs (
   id TEXT PRIMARY KEY,
@@ -59,16 +72,10 @@ CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'generalist',
   provider_config_id TEXT NOT NULL REFERENCES provider_configs(id) ON DELETE CASCADE,
   model TEXT NOT NULL,
   system_prompt TEXT,
-  mode TEXT NOT NULL DEFAULT 'manual',
-  status TEXT NOT NULL DEFAULT 'idle',
   last_status TEXT,
-  job_description TEXT,
-  approval_status TEXT NOT NULL DEFAULT 'approved',
-  pending_termination INTEGER NOT NULL DEFAULT 0,
   computer_backend TEXT NOT NULL DEFAULT 'docker',
   computer_image TEXT,
   mascot TEXT,
@@ -78,15 +85,6 @@ CREATE TABLE IF NOT EXISTS agents (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
-
-CREATE TABLE IF NOT EXISTS agent_projects (
-  id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_agent_projects_agent ON agent_projects(agent_id);
-CREATE INDEX IF NOT EXISTS idx_agent_projects_project ON agent_projects(project_id);
 
 CREATE TABLE IF NOT EXISTS agent_memory (
   id TEXT PRIMARY KEY,
@@ -133,8 +131,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'chat',
-  peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
   mode TEXT NOT NULL DEFAULT 'autonomous',
   status TEXT NOT NULL DEFAULT 'active',
   metadata TEXT,
@@ -193,51 +189,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_session ON audit_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_project ON audit_log(project_id);
 
-CREATE TABLE IF NOT EXISTS meetings (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_meetings_project ON meetings(project_id);
-
-CREATE TABLE IF NOT EXISTS meeting_participants (
-  id TEXT PRIMARY KEY,
-  meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_meeting_participants_meeting ON meeting_participants(meeting_id);
-
-CREATE TABLE IF NOT EXISTS meeting_messages (
-  id TEXT PRIMARY KEY,
-  meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  sender_agent_id TEXT,
-  content TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_meeting_messages_meeting ON meeting_messages(meeting_id);
-
-CREATE TABLE IF NOT EXISTS tasks (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'open',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
-
-CREATE TABLE IF NOT EXISTS task_assignees (
-  id TEXT PRIMARY KEY,
-  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
-
 CREATE TABLE IF NOT EXISTS mcp_servers (
   id TEXT PRIMARY KEY,
   agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
@@ -265,17 +216,6 @@ CREATE TABLE IF NOT EXISTS routines (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_routines_project ON routines(project_id);
-
-CREATE TABLE IF NOT EXISTS employee_messages (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  from_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  to_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  body TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_employee_messages_project ON employee_messages(project_id);
-CREATE INDEX IF NOT EXISTS idx_employee_messages_to ON employee_messages(to_agent_id);
 
 CREATE TABLE IF NOT EXISTS employee_shells (
   id TEXT PRIMARY KEY,
@@ -344,6 +284,9 @@ CREATE TABLE IF NOT EXISTS approvals (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   summary TEXT NOT NULL,
   detail TEXT,
+  kind TEXT NOT NULL DEFAULT 'generic',
+  payload TEXT,
+  result TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
   decided_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL,
@@ -351,6 +294,7 @@ CREATE TABLE IF NOT EXISTS approvals (
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_project ON approvals(project_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+CREATE INDEX IF NOT EXISTS idx_approvals_session ON approvals(session_id);
 
 CREATE TABLE IF NOT EXISTS oauth_tokens (
   id TEXT PRIMARY KEY,
@@ -380,15 +324,6 @@ CREATE TABLE IF NOT EXISTS channel_bindings (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_bindings_chat ON channel_bindings(channel_id, external_chat_id);
 
-CREATE TABLE IF NOT EXISTS session_participants (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_session_participants_session ON session_participants(session_id);
-CREATE INDEX IF NOT EXISTS idx_session_participants_agent ON session_participants(agent_id);
-
 CREATE TABLE IF NOT EXISTS api_tokens (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -416,12 +351,6 @@ CREATE TABLE IF NOT EXISTS shared_chats (
  */
 const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agents ADD COLUMN last_status TEXT",
-  "ALTER TABLE agents ADD COLUMN job_description TEXT",
-  "ALTER TABLE agents ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'",
-  "ALTER TABLE agents ADD COLUMN pending_termination INTEGER NOT NULL DEFAULT 0",
-  "ALTER TABLE projects ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0",
-  "ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'",
-  "ALTER TABLE sessions ADD COLUMN peer_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
   "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'",
   "ALTER TABLE messages ADD COLUMN sender_agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
   "ALTER TABLE agents ADD COLUMN computer_backend TEXT NOT NULL DEFAULT 'docker'",
@@ -435,16 +364,61 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agent_memory ADD COLUMN last_used_at INTEGER",
   "ALTER TABLE agents ADD COLUMN mascot TEXT",
   "ALTER TABLE users ADD COLUMN monthly_budget_usd REAL",
+  "ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'generic'",
+  "ALTER TABLE approvals ADD COLUMN payload TEXT",
+  "ALTER TABLE approvals ADD COLUMN result TEXT",
 ];
 
-/** One row per agent↔agent conversation pair, enforced by a partial unique index — must run after the sessions columns exist, so it lives here rather than in BOOTSTRAP_SQL. */
-const INDEX_MIGRATIONS: string[] = [
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_conversation_pair ON sessions(project_id, agent_id, peer_agent_id) WHERE kind = 'conversation'",
+/**
+ * Single-agent pivot: the org layer (meetings, tasks, agent↔agent messaging,
+ * group sessions) is gone. Existing installs keep users/projects/keys/chats,
+ * but the org tables and columns are dropped. Runs before bootstrap so a
+ * fresh CREATE never sees the old shape.
+ */
+const DROP_TABLES: string[] = [
+  "meeting_messages",
+  "meeting_participants",
+  "meetings",
+  "task_assignees",
+  "tasks",
+  "employee_messages",
+  "session_participants",
+  "agent_projects",
+];
+
+const DROP_COLUMNS: Array<{ table: string; column: string }> = [
+  { table: "agents", column: "role" },
+  { table: "agents", column: "mode" },
+  { table: "agents", column: "status" },
+  { table: "agents", column: "job_description" },
+  { table: "agents", column: "approval_status" },
+  { table: "agents", column: "pending_termination" },
+  { table: "sessions", column: "kind" },
+  { table: "sessions", column: "peer_agent_id" },
+  { table: "projects", column: "auto_approve" },
+];
+
+const DROP_INDEXES: string[] = [
+  "idx_sessions_conversation_pair",
 ];
 
 export async function runMigrations(client: Client): Promise<void> {
-  // Docker-only platform: every agent gets its own computer.
-  await client.execute("UPDATE agents SET computer_backend = 'docker' WHERE computer_backend != 'docker'").catch(() => {});
+  // Grandfathered local-backend agents keep their value (the API can no longer
+  // select 'local', but existing rows keep working with an "unisolated" label).
+  for (const table of DROP_TABLES) {
+    await client.execute(`DROP TABLE IF EXISTS ${table}`);
+  }
+  for (const index of DROP_INDEXES) {
+    await client.execute(`DROP INDEX IF EXISTS ${index}`);
+  }
+  for (const { table, column } of DROP_COLUMNS) {
+    try {
+      await client.execute(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    } catch (err) {
+      // Missing table/column on fresh DBs — only real failures propagate.
+      if (!/no such (table|column)/i.test((err as Error).message)) throw err;
+    }
+  }
   const statements = BOOTSTRAP_SQL.split(";")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -457,8 +431,5 @@ export async function runMigrations(client: Client): Promise<void> {
     } catch (err) {
       if (!/duplicate column name/i.test((err as Error).message)) throw err;
     }
-  }
-  for (const ddl of INDEX_MIGRATIONS) {
-    await client.execute(ddl);
   }
 }

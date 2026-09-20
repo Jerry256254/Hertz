@@ -4,11 +4,17 @@ import { z } from "zod";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { auditLog } from "../db/schema.js";
-import type { OrgToolDef } from "./org-tools.js";
+import type { AgentToolDef } from "./tool-def.js";
 import type { HertzPaths } from "../paths.js";
-import { agentSkillsDir } from "../paths.js";
+import { agentSkillsDir, assertInside } from "../paths.js";
+import { resolveAgentProjectId } from "../memory/recall.js";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-_]{1,47}$/;
+
+/** Defense in depth: strip any directory components, then the SLUG_RE check still applies. */
+function safeSkillName(name: string): string {
+  return path.basename(name);
+}
 
 const saveSchema = z.object({
   name: z
@@ -37,14 +43,17 @@ async function safeRead(dir: string, file: string): Promise<string | null> {
  * steps only when relevant. This is what turns a one-off chat into durable,
  * reusable automation.
  */
-export function createSkillTools(db: Database, paths: HertzPaths): OrgToolDef[] {
-  async function skillsRoot(agentId: string): Promise<string> {
-    const dir = agentSkillsDir(paths, agentId);
+export function createSkillTools(db: Database, paths: HertzPaths): AgentToolDef[] {
+  /** Skills live in the agent's home (his own project), following him across every chat. */
+  async function skillsRoot(agentId: string): Promise<string | undefined> {
+    const projectId = await resolveAgentProjectId(db, agentId).catch(() => undefined);
+    if (!projectId) return undefined;
+    const dir = agentSkillsDir(paths, projectId, agentId);
     await fs.mkdir(dir, { recursive: true });
     return dir;
   }
 
-  const saveSkill: OrgToolDef = {
+  const saveSkill: AgentToolDef = {
     name: "save_skill",
     description:
       "Save a repeatable procedure you've figured out as a personal skill (survives across projects and chats; the user can see it). Use after completing anything you'd do again: a report someone liked, a deployment dance, a data-pull with quirks. Write instructions as if briefing a competent stranger — exact tool calls, commands, file paths, edge cases.",
@@ -52,8 +61,8 @@ export function createSkillTools(db: Database, paths: HertzPaths): OrgToolDef[] 
     async execute(rawInput, ctx) {
       const input = saveSchema.parse(rawInput);
       const root = await skillsRoot(ctx.actor.actorId);
-      const dir = path.join(root, input.name);
-      if (!dir.startsWith(root)) return { summary: "Invalid skill name.", isError: true };
+      if (!root) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
+      const dir = assertInside(root, path.join(root, safeSkillName(input.name)), "skill");
       await fs.mkdir(dir, { recursive: true });
 
       const frontmatter = `---\nname: ${input.name}\ndescription: ${input.description}\nupdated: ${new Date().toISOString()}\n---\n\n`;
@@ -83,12 +92,13 @@ export function createSkillTools(db: Database, paths: HertzPaths): OrgToolDef[] 
     },
   };
 
-  const listSkills: OrgToolDef = {
+  const listSkills: AgentToolDef = {
     name: "list_skills",
     description: "List your saved skills (name + when-to-use). Consult this before reinventing a procedure — if a skill fits, read_skill and follow it.",
     inputSchema: z.object({}),
     async execute(_input, ctx) {
-      const root = agentSkillsDir(paths, ctx.actor.actorId);
+      const root = await skillsRoot(ctx.actor.actorId);
+      if (!root) return { summary: "(skills unavailable)" };
       let entries: string[] = [];
       try {
         entries = await fs.readdir(root);
@@ -106,14 +116,17 @@ export function createSkillTools(db: Database, paths: HertzPaths): OrgToolDef[] 
     },
   };
 
-  const readSkill: OrgToolDef = {
+  const readSkill: AgentToolDef = {
     name: "read_skill",
     description: "Read the full step-by-step instructions of one of your saved skills. Use list_skills first if you're not sure of the name.",
     inputSchema: readSchema,
     async execute(rawInput, ctx) {
       const input = readSchema.parse(rawInput);
-      if (!SLUG_RE.test(input.name)) return { summary: "Invalid skill name.", isError: true };
-      const raw = await safeRead(path.join(agentSkillsDir(paths, ctx.actor.actorId), input.name), "SKILL.md");
+      const name = safeSkillName(input.name);
+      if (!SLUG_RE.test(name)) return { summary: "Invalid skill name.", isError: true };
+      const root = await skillsRoot(ctx.actor.actorId);
+      if (!root) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
+      const raw = await safeRead(assertInside(root, path.join(root, name), "skill"), "SKILL.md");
       if (!raw) return { summary: `No skill named "${input.name}" — check list_skills.`, isError: true };
       // Strip frontmatter; the body is what matters.
       const body = raw.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
@@ -121,15 +134,18 @@ export function createSkillTools(db: Database, paths: HertzPaths): OrgToolDef[] 
     },
   };
 
-  const deleteSkill: OrgToolDef = {
+  const deleteSkill: AgentToolDef = {
     name: "delete_skill",
     description: "Delete one of your saved skills (it's outdated or wrong).",
     inputSchema: readSchema,
     async execute(rawInput, ctx) {
       const input = readSchema.parse(rawInput);
-      if (!SLUG_RE.test(input.name)) return { summary: "Invalid skill name.", isError: true };
-      await fs.rm(path.join(agentSkillsDir(paths, ctx.actor.actorId), input.name), { recursive: true, force: true });
-      return { summary: `Skill "${input.name}" deleted.` };
+      const name = safeSkillName(input.name);
+      if (!SLUG_RE.test(name)) return { summary: "Invalid skill name.", isError: true };
+      const root = await skillsRoot(ctx.actor.actorId);
+      if (!root) return { summary: "Skills are unavailable — the agent has no home project.", isError: true };
+      await fs.rm(assertInside(root, path.join(root, name), "skill"), { recursive: true, force: true });
+      return { summary: `Skill "${name}" deleted.` };
     },
   };
 
@@ -142,8 +158,8 @@ export interface SkillIndexEntry {
   description: string;
 }
 
-export async function skillsIndexFor(paths: HertzPaths, agentId: string): Promise<SkillIndexEntry[]> {
-  const root = agentSkillsDir(paths, agentId);
+export async function skillsIndexFor(paths: HertzPaths, projectId: string, agentId: string): Promise<SkillIndexEntry[]> {
+  const root = agentSkillsDir(paths, projectId, agentId);
   let entries: string[] = [];
   try {
     entries = await fs.readdir(root);

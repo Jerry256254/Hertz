@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import type { AgentLoopManager, PersistencePort, ProviderPort } from "@kuclab-hertz/core";
 import { repairSessionHistory } from "@kuclab-hertz/core";
+import type { AuditSink } from "@kuclab-hertz/sandbox";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { Database } from "../db/client.js";
 import { agents, projectRoots, sessions } from "../db/schema.js";
+import { mountsFor } from "../mounts/mounts.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
 import { employeeDir, ensureEmployeeDirs } from "../paths.js";
@@ -12,9 +14,8 @@ import type { JobQueue, JobHandler } from "../queue/job-queue.js";
 import type { ComputerManager } from "../computer/computer-manager.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
 import { runMemoryPipeline } from "../memory/pipeline.js";
-import { runGroupTurn } from "../groups.js";
 
-/** Text of the most recent real (non-tool-result) user message — the group trigger. */
+/** Text of the most recent real (non-tool-result) user message — used for memory recall ranking. */
 async function extractLastUserText(deps: RunJobsDeps, sessionId: string): Promise<string> {
   try {
     const history = await deps.persistence.listMessages(sessionId);
@@ -34,13 +35,13 @@ async function extractLastUserText(deps: RunJobsDeps, sessionId: string): Promis
 }
 
 /**
- * The one way work gets done: every agent run — human chat, colleague reply,
- * delegated task, routine, heartbeat, channel inbound, crash recovery — is an
- * "agent_run" job whose handler rebuilds the full AgentLoopConfig from the DB
- * right before executing. Rebuilding late (instead of snapshotting at enqueue
- * time) means memory notes, colleague messages, model changes, and moved
- * project roots are always current when the job finally runs, and the exact
- * same code path serves fresh runs and post-crash resumes.
+ * The one way work gets done: every agent run — human chat, routine,
+ * heartbeat, channel inbound, crash recovery — is an "agent_run" job whose
+ * handler rebuilds the full AgentLoopConfig from the DB right before
+ * executing. Rebuilding late (instead of snapshotting at enqueue time) means
+ * memory notes, model changes, and moved project roots are always current
+ * when the job finally runs, and the exact same code path serves fresh runs
+ * and post-crash resumes.
  */
 export interface AgentRunJobPayload {
   sessionId: string;
@@ -52,14 +53,8 @@ export interface AgentRunJobPayload {
   prePersisted?: boolean;
   /** Persisted as the triggering user message unless prePersisted. */
   userMessage?: ContentBlock[];
-  /** Set on direct-conversation replies so the prompt addresses the peer correctly. */
-  conversationPeerName?: string;
   /** Skip the loop's automatic memory note (heartbeats — they'd spam memory every tick). */
   suppressAutoMemory?: boolean;
-  /** Group chats: answer only as this participant (e.g. the agent who asked a pending question). */
-  forceAgentId?: string;
-  /** Conversation threads: which agent of the pair answers this turn (defaults to session.agentId). */
-  respondAsAgentId?: string;
 }
 
 /** Per (providerConfigId, model) → supportsVision cache; providers are asked once. */
@@ -91,14 +86,16 @@ export interface RunJobsDeps {
   agentLoop: AgentLoopManager;
   queue: JobQueue;
   computer: ComputerManager;
+  audit: AuditSink;
   fallbackUserId: () => Promise<string>;
 }
 
 /**
  * Wires the agent's "computer" for this run. Docker-backend agents get a
  * dedicated container with the project root + personal dir mounted at host
- * paths; if Docker isn't available we fail soft to local execution (audited)
- * rather than blocking all work.
+ * paths. VM-only isolation: when Docker is unavailable the run FAILS LOUDLY
+ * (audited + thrown, so the job retries and the user sees a real error) —
+ * silently falling back to un-isolated local host execution is forbidden.
  */
 async function prepareComputer(deps: RunJobsDeps, agent: typeof agents.$inferSelect, mountPaths: string[]) {
   if (agent.computerBackend !== "docker") return undefined;
@@ -110,8 +107,18 @@ async function prepareComputer(deps: RunJobsDeps, agent: typeof agents.$inferSel
     });
     return deps.computer.runtime(agent.id);
   } catch (err) {
-    console.warn(`[hertz] docker computer unavailable for ${agent.name}: ${(err as Error).message} — falling back to local`);
-    return undefined;
+    const message = (err as Error).message;
+    await deps.audit.record({
+      actorId: agent.id,
+      actorType: "agent",
+      projectId: agent.projectId,
+      action: "computer.unavailable",
+      target: agent.id,
+      targetType: "agent",
+      result: "error",
+      detail: { error: message },
+    });
+    throw new Error(`Docker computer unavailable for ${agent.name}: ${message} — refusing to run un-isolated on the host`);
   }
 }
 
@@ -138,28 +145,12 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
     const session = sessionRows[0];
     if (!session || session.status === "archived") return;
 
-    // Group chats fan out inside the same thread: every participant answers in
-    // turn (or only the @mentioned ones), sharing one history.
-    if (session.kind === "group") {
-      const triggerText = await extractLastUserText(deps, session.id);
-      await runGroupTurn({ ...deps, computer: deps.computer as any } as any, session.id, triggerText, payload.forceAgentId);
-      return;
-    }
-
-    const agentRows = await deps.db
-      .select()
-      .from(agents)
-      .where(eq(agents.id, payload.respondAsAgentId ?? session.agentId))
-      .limit(1);
+    const agentRows = await deps.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1);
     const agent = agentRows[0];
-    if (!agent || agent.approvalStatus !== "approved" || agent.status === "terminated") return;
+    if (!agent) return;
 
-    const isConversation = session.kind === "conversation";
     const mode = payload.mode ?? normalizeSessionMode(session.mode);
-    const excludeTools = [
-      ...(payload.excludeTools ?? []),
-      ...(isConversation && !(payload.excludeTools ?? []).includes("message_employee") ? ["message_employee"] : []),
-    ];
+    const excludeTools = [...(payload.excludeTools ?? [])];
 
     const rootRows = await deps.db.select().from(projectRoots).where(eq(projectRoots.projectId, session.projectId));
     const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
@@ -167,7 +158,17 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
 
     await ensureEmployeeDirs(deps.paths, session.projectId, agent.id);
     const selfDir = employeeDir(deps.paths, session.projectId, agent.id);
-    const computer = await prepareComputer(deps, agent, [mainRoot.absolutePath, selfDir]);
+    // The agent's home (his memory/skills) rides into the container too — it
+    // is usually the same directory as selfDir, mounted once via the Set.
+    await ensureEmployeeDirs(deps.paths, agent.projectId, agent.id);
+    const homeDir = employeeDir(deps.paths, agent.projectId, agent.id);
+    // Permanent user-approved mounts: extra bind-mounts + extra PathGuard roots.
+    const mountRows = await mountsFor(deps.db, session.projectId, agent.id);
+    const computer = await prepareComputer(
+      deps,
+      agent,
+      [...new Set([mainRoot.absolutePath, selfDir, homeDir, ...mountRows.map((m) => m.hostPath)])],
+    );
 
     // Every active run gets its visible desktop up (Xvfb + VNC + noVNC), so the
     // user can watch/take over at any moment. Fire-and-forget: never blocks work.
@@ -176,12 +177,14 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
         console.warn(`[hertz] desktop auto-start for ${agent.name}: ${(err as Error).message}`);
       });
     }
+    const sandboxRoots: Record<string, string> = {
+      [mainRoot.rootId]: mainRoot.absolutePath,
+      self: selfDir,
+    };
+    for (const m of mountRows) sandboxRoots[m.name] = m.hostPath;
     deps.sandboxRegistry.register(
       session.id,
-      {
-        [mainRoot.rootId]: mainRoot.absolutePath,
-        self: selfDir,
-      },
+      sandboxRoots,
       computer,
       // The browser daemon rides on the same container; only meaningful when it's up.
       computer && agent.computerBackend === "docker" ? deps.computer.browserSession(agent.id) : undefined,
@@ -218,14 +221,15 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
         model: agent.model,
         providerConfigId: agent.providerConfigId,
         systemPrompt: await buildSystemPrompt(deps.db, agent, {
-          conversationPeerName: payload.conversationPeerName,
-          mode: isConversation ? undefined : mode,
+          mode,
           paths: deps.paths,
+          projectId: agent.projectId,
           sessionId: session.id,
+          mounts: mountRows,
           conversationContext: await extractLastUserText(deps, session.id),
           visionSupport: await modelSupportsVision(deps, agent.providerConfigId, agent.model),
         }),
-        mode: isConversation ? "auto" : mode,
+        mode,
         excludeTools: excludeTools.length > 0 ? excludeTools : undefined,
         prePersisted: prePersisted || !payload.userMessage,
         suppressAutoMemory: payload.suppressAutoMemory,

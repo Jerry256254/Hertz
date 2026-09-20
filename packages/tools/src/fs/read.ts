@@ -6,7 +6,7 @@ const inputSchema = z.object({
   path: z.string().describe("Path relative to the project root"),
   startLine: z.number().int().positive().optional().describe("1-indexed, inclusive"),
   endLine: z.number().int().positive().optional().describe("1-indexed, inclusive"),
-  root: z.string().optional().describe("Which root to read from — omit for the shared project root, or 'self' for your own personal folder (notes/materials/data)"),
+  root: z.string().optional().describe("Which root to read from — omit for the shared project root, 'self' for your own personal folder (notes/materials/data), or a folder name from Your folders"),
 });
 type Input = z.infer<typeof inputSchema>;
 
@@ -15,7 +15,7 @@ const DEFAULT_MAX_LINES = 2000;
 export const readFileTool: ToolDef<Input> = {
   name: "read_file",
   description:
-    "Read a file, optionally restricted to a line range. Prefer a range for large files — reading the whole file wastes context. Pass root: 'self' to read from your own personal folder instead of the shared project.",
+    "Read a file, optionally restricted to a line range. Prefer a range for large files — reading the whole file wastes context. Pass root: 'self' to read from your own personal folder instead of the shared project. Text tool — never use desktop_* / browser_* to open an editor; do file work here.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
     const abs = ctx.pathGuard.resolve(ctx.actor, input.root ?? ctx.rootId, input.path);

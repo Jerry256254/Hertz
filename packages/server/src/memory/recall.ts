@@ -3,12 +3,13 @@ import path from "node:path";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agentMemory, agentMemoryAtoms, agentMemoryScenarios } from "../db/schema.js";
+import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agents } from "../db/schema.js";
 import type { HertzPaths } from "../paths.js";
 import { agentMemoryDir, agentMemoryStatePath, agentPersonaPath, agentScenariosDir, legacySoulPath } from "../paths.js";
 import { loadAgentMemoryConfig } from "./config.js";
-import { keywordsFor, rankByRelevance } from "./tokenize.js";
+import { fuseRankings, keywordsFor, rankByRelevance, scoreByRelevance } from "./tokenize.js";
 import { loadCanvas } from "./short-term.js";
+import { searchAtomVectors } from "./vector-store.js";
 
 export type MemoryAtom = typeof agentMemoryAtoms.$inferSelect;
 export type MemoryScenario = typeof agentMemoryScenarios.$inferSelect;
@@ -27,18 +28,39 @@ export function emptyMemoryState(): MemoryState {
   return { extractedThrough: {}, atomsAtLastCluster: 0, atomsAtLastPersona: 0, lastPersonaAt: null, legacyBackfilled: false };
 }
 
-export async function loadMemoryState(paths: HertzPaths, agentId: string): Promise<MemoryState> {
+/**
+ * The agent's home project — his memory/skills live under the employee home
+ * there (agents.projectId, not the current session's project, so one agent
+ * has exactly one home across every chat). Cached for the process lifetime;
+ * projectId is never reassigned.
+ */
+const homeProjectCache = new Map<string, string>();
+
+export async function resolveAgentProjectId(db: Database, agentId: string): Promise<string | undefined> {
+  const hit = homeProjectCache.get(agentId);
+  if (hit) return hit;
   try {
-    const raw = await fs.readFile(agentMemoryStatePath(paths, agentId), "utf8");
+    const rows = await db.select({ projectId: agents.projectId }).from(agents).where(eq(agents.id, agentId)).limit(1);
+    const pid = rows[0]?.projectId;
+    if (pid) homeProjectCache.set(agentId, pid);
+    return pid ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function loadMemoryState(paths: HertzPaths, projectId: string, agentId: string): Promise<MemoryState> {
+  try {
+    const raw = await fs.readFile(agentMemoryStatePath(paths, projectId, agentId), "utf8");
     return { ...emptyMemoryState(), ...(JSON.parse(raw) as Partial<MemoryState>) };
   } catch {
     return emptyMemoryState();
   }
 }
 
-export async function saveMemoryState(paths: HertzPaths, agentId: string, state: MemoryState): Promise<void> {
-  await fs.mkdir(agentMemoryDir(paths, agentId), { recursive: true });
-  await fs.writeFile(agentMemoryStatePath(paths, agentId), JSON.stringify(state, null, 2), "utf8");
+export async function saveMemoryState(paths: HertzPaths, projectId: string, agentId: string, state: MemoryState): Promise<void> {
+  await fs.mkdir(agentMemoryDir(paths, projectId, agentId), { recursive: true });
+  await fs.writeFile(agentMemoryStatePath(paths, projectId, agentId), JSON.stringify(state, null, 2), "utf8");
 }
 
 /**
@@ -46,8 +68,8 @@ export async function saveMemoryState(paths: HertzPaths, agentId: string, state:
  * become L1 atoms, preserving importance + keywords. Idempotent via the state
  * flag; legacy rows are left untouched for rollback.
  */
-export async function backfillLegacyMemory(db: Database, paths: HertzPaths, agentId: string): Promise<number> {
-  const state = await loadMemoryState(paths, agentId);
+export async function backfillLegacyMemory(db: Database, paths: HertzPaths, projectId: string, agentId: string): Promise<number> {
+  const state = await loadMemoryState(paths, projectId, agentId);
   if (state.legacyBackfilled) return 0;
   const legacy = await db.select().from(agentMemory).where(eq(agentMemory.agentId, agentId)).orderBy(desc(agentMemory.createdAt)).limit(500);
   let imported = 0;
@@ -65,41 +87,54 @@ export async function backfillLegacyMemory(db: Database, paths: HertzPaths, agen
     imported++;
   }
   state.legacyBackfilled = true;
-  await saveMemoryState(paths, agentId, state);
+  await saveMemoryState(paths, projectId, agentId, state);
   return imported;
 }
 
 /** L3 persona text for prompt injection (migrates legacy soul.md on first read). */
-export async function loadPersona(paths: HertzPaths, agentId: string): Promise<string> {
-  const personaPath = agentPersonaPath(paths, agentId);
+export async function loadPersona(paths: HertzPaths, projectId: string, agentId: string): Promise<string> {
+  const personaPath = agentPersonaPath(paths, projectId, agentId);
   try {
     const raw = await fs.readFile(personaPath, "utf8");
     return raw.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
   } catch {
     /* fall through to soul migration */
   }
-  try {
-    const soul = await fs.readFile(legacySoulPath(paths, agentId), "utf8");
-    const body = soul.replace(/^# Soul[\s\S]*?_\n/, "").trim();
-    if (body) {
-      await writePersona(paths, agentId, body);
-      return body;
+  // Legacy soul: the adopted copy in the home first, then the pre-pivot path
+  // (for installs whose home migration hasn't run yet).
+  for (const soulPath of [
+    path.join(agentMemoryDir(paths, projectId, agentId), "soul.md"),
+    legacySoulPath(paths, agentId),
+  ]) {
+    try {
+      const soul = await fs.readFile(soulPath, "utf8");
+      const body = soul.replace(/^# Soul[\s\S]*?_\n/, "").trim();
+      if (body) {
+        await writePersona(paths, projectId, agentId, body);
+        return body;
+      }
+    } catch {
+      /* try the next location */
     }
-  } catch {
-    /* no soul either */
   }
   return "";
 }
 
-export async function writePersona(paths: HertzPaths, agentId: string, body: string): Promise<void> {
-  await fs.mkdir(agentMemoryDir(paths, agentId), { recursive: true });
+export async function writePersona(paths: HertzPaths, projectId: string, agentId: string, body: string): Promise<void> {
+  await fs.mkdir(agentMemoryDir(paths, projectId, agentId), { recursive: true });
   const frontmatter = `---\nupdated: ${new Date().toISOString()}\nlayer: L3-persona\n---\n\n`;
-  await fs.writeFile(agentPersonaPath(paths, agentId), `${frontmatter}${body.trim()}\n`, "utf8");
+  await fs.writeFile(agentPersonaPath(paths, projectId, agentId), `${frontmatter}${body.trim()}\n`, "utf8");
 }
 
 /** White-box mirror of one L2 scenario row → scenarios/<slug>.md. */
-export async function writeScenarioMirror(paths: HertzPaths, agentId: string, scenario: MemoryScenario, atomTexts: string[]): Promise<void> {
-  const dir = agentScenariosDir(paths, agentId);
+export async function writeScenarioMirror(
+  paths: HertzPaths,
+  projectId: string,
+  agentId: string,
+  scenario: MemoryScenario,
+  atomTexts: string[],
+): Promise<void> {
+  const dir = agentScenariosDir(paths, projectId, agentId);
   await fs.mkdir(dir, { recursive: true });
   const body = [
     `---`,
@@ -126,6 +161,37 @@ export interface LayeredRecall {
 }
 
 /**
+ * Hybrid L1 ranking: keyword scoring fused (RRF) with the sqlite-vec cosine
+ * ranking when vectors are available. Without paths, an embedder, or the
+ * native extension this degrades to pure keyword ranking — same order as
+ * rankByRelevance. Returns oldest-first for stable prompt narratives.
+ */
+async function rankAtomsHybrid(
+  db: Database,
+  paths: HertzPaths | undefined,
+  agentId: string,
+  atomRows: MemoryAtom[],
+  query: string,
+  limit: number,
+): Promise<MemoryAtom[]> {
+  const keywordRanking = scoreByRelevance(atomRows, query).map((s) => s.item.id);
+  const rankings = [keywordRanking];
+  if (paths && query.trim()) {
+    const vectorRanking = await searchAtomVectors(db, paths, agentId, query, limit).catch(() => [] as string[]);
+    if (vectorRanking.length > 0) rankings.push(vectorRanking);
+  }
+  const byId = new Map(atomRows.map((a) => [a.id, a]));
+  return fuseRankings(
+    atomRows.map((a) => a.id),
+    rankings,
+    limit,
+  )
+    .map((id) => byId.get(id))
+    .filter((a): a is MemoryAtom => a !== undefined)
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+/**
  * Progressive disclosure for prompt injection: persona (L3) always, then the
  * top-ranked scenarios (L2) and atoms (L1) for the current conversation, then
  * the live session canvas (short-term symbols). Refreshes lastUsedAt for what
@@ -137,6 +203,7 @@ export async function recallForPrompt(
   agentId: string,
   contextText: string,
   sessionId?: string,
+  projectId?: string,
 ): Promise<LayeredRecall> {
   const config = loadAgentMemoryConfig();
   const [atomRows, scenarioRows] = await Promise.all([
@@ -144,7 +211,7 @@ export async function recallForPrompt(
     db.select().from(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, agentId)).orderBy(desc(agentMemoryScenarios.updatedAt)).limit(60),
   ]);
 
-  const atoms = rankByRelevance([...atomRows].reverse(), contextText, config.promptMaxAtoms);
+  const atoms = await rankAtomsHybrid(db, paths, agentId, [...atomRows].reverse(), contextText, config.promptMaxAtoms);
   const scenarios = rankByRelevance(
     scenarioRows.map((s) => ({ ...s, importance: 3, keywords: keywordsFor(`${s.title} ${s.summary}`), createdAt: s.updatedAt })),
     contextText,
@@ -154,12 +221,15 @@ export async function recallForPrompt(
   let persona = "";
   let canvas = "";
   if (paths) {
-    const [p, c] = await Promise.all([
-      loadPersona(paths, agentId).catch(() => ""),
-      sessionId ? loadCanvas(paths, agentId, sessionId).catch(() => "") : Promise.resolve(""),
-    ]);
-    persona = p.slice(0, config.promptMaxPersonaChars);
-    canvas = c;
+    const pid = projectId ?? (await resolveAgentProjectId(db, agentId).catch(() => undefined));
+    if (pid) {
+      const [p, c] = await Promise.all([
+        loadPersona(paths, pid, agentId).catch(() => ""),
+        sessionId ? loadCanvas(paths, pid, agentId, sessionId).catch(() => "") : Promise.resolve(""),
+      ]);
+      persona = p.slice(0, config.promptMaxPersonaChars);
+      canvas = c;
+    }
   }
 
   // Touch what we injected (fire-and-forget semantics via await-all; cheap single round-trip each).
@@ -204,16 +274,18 @@ export interface MemorySearchHit {
 
 /**
  * recall_memory tool backend: hybrid search across L2 + L1 with full
- * traceability (scenario → atom → source conversation).
+ * traceability (scenario → atom → source conversation). L1 atoms fuse keyword
+ * scoring with sqlite-vec cosine similarity when `paths` unlocks the vector
+ * sidecar; without it (or without an embedder) search stays keyword-only.
  */
-export async function searchMemory(db: Database, agentId: string, query: string): Promise<MemorySearchHit[]> {
+export async function searchMemory(db: Database, agentId: string, query: string, paths?: HertzPaths): Promise<MemorySearchHit[]> {
   const config = loadAgentMemoryConfig();
   const [atomRows, scenarioRows] = await Promise.all([
     db.select().from(agentMemoryAtoms).where(eq(agentMemoryAtoms.agentId, agentId)).orderBy(desc(agentMemoryAtoms.createdAt)).limit(400),
     db.select().from(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, agentId)).limit(60),
   ]);
   const byId = new Map(scenarioRows.map((s) => [s.id, s]));
-  const rankedAtoms = rankByRelevance([...atomRows].reverse(), query, config.recallMaxResults);
+  const rankedAtoms = await rankAtomsHybrid(db, paths, agentId, [...atomRows].reverse(), query, config.recallMaxResults);
   const rankedScenarios = rankByRelevance(
     scenarioRows.map((s) => ({ ...s, importance: 3, keywords: keywordsFor(`${s.title} ${s.summary}`), createdAt: s.updatedAt })),
     query,

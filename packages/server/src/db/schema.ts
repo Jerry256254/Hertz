@@ -48,8 +48,6 @@ export const projects = sqliteTable("projects", {
   name: text("name").notNull(),
   /** Free-form JSON pointer to a kuclab.config.json override for this project, if any. */
   standardProfile: text("standard_profile"),
-  /** When true, the manager's hire_employee and fire_employee requests take effect immediately instead of waiting for the user's approval. */
-  autoApprove: integer("auto_approve", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -68,32 +66,42 @@ export const projectRoots = sqliteTable("project_roots", {
   absolutePath: text("absolute_path").notNull(),
 });
 
+/**
+ * Permanent folder mounts: user-approved host directories bind-mounted into
+ * the agent's container and registered as extra PathGuard roots. V1 keeps
+ * project_roots(main) as the source of truth for the project folder — mounts
+ * are ADDITIONAL roots only (name 'main' is reserved, see mounts/mounts.ts).
+ * agentId null = visible to the whole project, else scoped to one agent.
+ */
+export const mounts = sqliteTable("mounts", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  agentId: text("agent_id").references(() => agents.id, { onDelete: "cascade" }),
+  /** Agent-visible slug, unique per project — also the PathGuard root id. */
+  name: text("name").notNull(),
+  /** Absolute, realpath-canonicalised host directory. Immutable after creation. */
+  hostPath: text("host_path").notNull(),
+  /** User-written text shown to the agent in its "Your folders" prompt block. */
+  purpose: text("purpose"),
+  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const agents = sqliteTable("agents", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  role: text("role", {
-    enum: ["manager", "architect", "implementer", "reviewer", "tester", "researcher", "generalist"],
-  })
-    .notNull()
-    .default("generalist"),
   providerConfigId: text("provider_config_id")
     .notNull()
     .references(() => providerConfigs.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
   systemPrompt: text("system_prompt"),
-  mode: text("mode", { enum: ["manual", "plan", "auto"] }).notNull().default("manual"),
-  status: text("status", { enum: ["idle", "running", "error", "terminated"] }).notNull().default("idle"),
-  /** One-line, human-facing summary of the outcome of this agent's most recent run — "Done.", "3 intros drafted…" — shown under their name in the sidebar. */
+  /** One-line, human-facing summary of the outcome of the agent's most recent run — "Done.", "3 intros drafted…". */
   lastStatus: text("last_status"),
-  /** What this employee is for, written by the manager at hire time — shown to the user and to the agent itself. */
-  jobDescription: text("job_description"),
-  /** New hires (via hire_employee) start "pending" and can't run until the user (CEO) approves them. Directly-created agents (POST /api/agents by the user) start "approved". */
-  approvalStatus: text("approval_status", { enum: ["pending", "approved", "rejected"] }).notNull().default("approved"),
-  /** Set by the manager's fire_employee when the project isn't on auto-approve — the user (CEO) must approve or reject before status can become "terminated". */
-  pendingTermination: integer("pending_termination", { mode: "boolean" }).notNull().default(false),
   /**
    * Where this agent's "computer" lives: "local" = host processes (original
    * behavior), "docker" = a dedicated container per agent (Grok-Bot-style own
@@ -114,22 +122,6 @@ export const agents = sqliteTable("agents", {
   /** Standing instructions consulted at every heartbeat ("check my inbox and summarize anything urgent"). */
   heartbeatPrompt: text("heartbeat_prompt"),
   lastHeartbeatAt: integer("last_heartbeat_at", { mode: "timestamp_ms" }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
-
-/**
- * Additional projects an agent works on beyond its home project (agents.projectId).
- * Employees (not managers) can be attached to any number of projects so the same
- * identity — and the same memory below — carries across all of them.
- */
-export const agentProjects = sqliteTable("agent_projects", {
-  id: text("id").primaryKey(),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -221,10 +213,6 @@ export const sessions = sqliteTable("sessions", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
-  /** "chat" = human ↔ agent thread; "conversation" = a direct agent ↔ agent chat (peerAgentId set); "group" = a messenger-style group with multiple bot participants (session_participants). */
-  kind: text("kind", { enum: ["chat", "conversation", "group"] }).notNull().default("chat"),
-  /** For kind = "conversation": the other agent in the pair. Stored as the lexicographically larger id so each pair has exactly one session. */
-  peerAgentId: text("peer_agent_id").references(() => agents.id, { onDelete: "cascade" }),
   /** How the agent works in this session: "plan" = think/answer only, no tools; "auto" = full tools, may ask the user; "autonomous" = never asks, works until the goal is done. */
   mode: text("mode", { enum: ["plan", "auto", "autonomous"] }).notNull().default("autonomous"),
   status: text("status", { enum: ["active", "paused", "completed", "error", "archived", "awaiting_input"] })
@@ -246,7 +234,7 @@ export const messages = sqliteTable("messages", {
   role: text("role", { enum: ["system", "user", "assistant", "tool"] }).notNull(),
   /** JSON-serialized ContentBlock[] (text/image/tool_use/tool_result) from @kuclab-hertz/providers. */
   content: text("content").notNull(),
-  /** Null = the human user; otherwise the agent that produced this message (conversation threads have both sides in one session). */
+  /** Null = the human user; otherwise the agent that produced this message. */
   senderAgentId: text("sender_agent_id").references(() => agents.id, { onDelete: "cascade" }),
   /** JSON-serialized raw tool call/result pairs, kept alongside content for UI rendering. */
   toolCalls: text("tool_calls"),
@@ -331,68 +319,6 @@ export const auditLog = sqliteTable("audit_log", {
  * visible to the user for oversight, per the product requirement that the human
  * can see agent-to-agent communication, not just delegate blindly to it.
  */
-export const meetings = sqliteTable("meetings", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  status: text("status", { enum: ["active", "ended"] }).notNull().default("active"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
-
-export const meetingParticipants = sqliteTable("meeting_participants", {
-  id: text("id").primaryKey(),
-  meetingId: text("meeting_id")
-    .notNull()
-    .references(() => meetings.id, { onDelete: "cascade" }),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-});
-
-export const meetingMessages = sqliteTable("meeting_messages", {
-  id: text("id").primaryKey(),
-  meetingId: text("meeting_id")
-    .notNull()
-    .references(() => meetings.id, { onDelete: "cascade" }),
-  /** Null = the human user spoke; otherwise the id of the agent whose turn produced this message. */
-  senderAgentId: text("sender_agent_id"),
-  content: text("content").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
-
-/**
- * A task is work the user hands to a chosen subset of the team at once — not
- * everyone, only whoever is picked. Creating one starts a real session per
- * assignee, seeded with the task brief, so each assignee actually goes to work
- * rather than just being "notified."
- */
-export const tasks = sqliteTable("tasks", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  description: text("description").notNull(),
-  status: text("status", { enum: ["open", "in_progress", "done"] }).notNull().default("open"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
-
-export const taskAssignees = sqliteTable("task_assignees", {
-  id: text("id").primaryKey(),
-  taskId: text("task_id")
-    .notNull()
-    .references(() => tasks.id, { onDelete: "cascade" }),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  /** The session where this assignee's work on the task actually happens. */
-  sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
-});
-
 /**
  * An MCP server an agent can call tools on, in addition to the built-in fs/shell/
  * web/org/memory toolset. Global (agentId null) servers are available to every
@@ -437,27 +363,6 @@ export const routines = sqliteTable("routines", {
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   lastRunAt: integer("last_run_at", { mode: "timestamp_ms" }),
   nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
-
-/**
- * Direct, async messages between employees (or an employee broadcasting to a
- * few colleagues) — distinct from a Meeting (user-convened, sequential turns)
- * and from assign_task (manager delegating and blocking on the result). Always
- * visible to the user for oversight, same principle as meetings.
- */
-export const employeeMessages = sqliteTable("employee_messages", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  fromAgentId: text("from_agent_id")
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  toAgentId: text("to_agent_id")
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  body: text("body").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -580,6 +485,16 @@ export const approvals = sqliteTable("approvals", {
   summary: text("summary").notNull(),
   /** Longer context: what exactly would be done, to whom, with what content. */
   detail: text("detail"),
+  /**
+   * 'generic' = plain human-in-the-loop gate (agent describes, user decides);
+   * 'host_access' = machine-readable one-shot host-filesystem op filed via
+   * request_host_access (payload = HostAccessPayload JSON, result = HostAccessResult JSON).
+   */
+  kind: text("kind", { enum: ["generic", "host_access"] }).notNull().default("generic"),
+  /** JSON-encoded HostAccessPayload for kind='host_access'; null otherwise. */
+  payload: text("payload"),
+  /** JSON-encoded HostAccessResult once a host_access op has been executed; null until then. */
+  result: text("result"),
   status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
   decidedByUserId: text("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
@@ -632,17 +547,6 @@ export const channelBindings = sqliteTable("channel_bindings", {
  * participant answers in turn (or only those @mentioned by name) — like a
  * messenger group where your bots work together and you watch it happen.
  */
-export const sessionParticipants = sqliteTable("session_participants", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id")
-    .notNull()
-    .references(() => sessions.id, { onDelete: "cascade" }),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
-
 /**
  * Per-user OAuth tokens for provider logins (e.g. "Sign in with Mistral") —
  * the refresh token is encrypted at rest; the access token lives in the

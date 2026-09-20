@@ -13,7 +13,7 @@ import { createProviderRegistry } from "./providers/provider-registry.js";
 import { createToolPort } from "./tools/tool-port.js";
 import { SandboxRegistry } from "./sandbox/sandbox-registry.js";
 import { createDbAuditSink } from "./audit/db-audit-sink.js";
-import { MeetingOrchestrator } from "./meetings/meeting-orchestrator.js";
+
 import { McpRegistry } from "./mcp/mcp-registry.js";
 import { RoutineScheduler } from "./routines/routine-scheduler.js";
 import { ShellManager } from "./shells/shell-manager.js";
@@ -25,6 +25,8 @@ import { DesktopManager } from "./computer/desktop-manager.js";
 import { HeartbeatScheduler } from "./heartbeats/heartbeat-scheduler.js";
 import { ChannelManager } from "./channels/manager.js";
 import { agents, projectRoots, users } from "./db/schema.js";
+import { mountsFor } from "./mounts/mounts.js";
+import { initMemoryEmbedderRegistry } from "./memory/embed.js";
 
 export interface AppContext {
   paths: HertzPaths;
@@ -33,7 +35,7 @@ export interface AppContext {
   audit: AuditSink;
   sandboxRegistry: SandboxRegistry;
   agentLoop: AgentLoopManager;
-  meetingOrchestrator: MeetingOrchestrator;
+
   mcpRegistry: McpRegistry;
   routineScheduler: RoutineScheduler;
   shellManager: ShellManager;
@@ -72,6 +74,8 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   await runMigrations(client);
 
   const masterKey = await loadOrCreateMasterKey(paths);
+  // Lets memory recall resolve the agent's embedding provider on demand.
+  initMemoryEmbedderRegistry(masterKey);
   const audit = createDbAuditSink(db, paths);
   const sandboxRegistry = new SandboxRegistry(audit, paths);
   const persistence = createPersistenceAdapter(db);
@@ -93,9 +97,16 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
       .where(eq(projectRoots.projectId, agent.projectId));
     const mainRoot = roots.find((r) => (r.absolutePath ?? "").length > 0);
     await ensureEmployeeDirs(paths, agent.projectId, agentId);
+    const mountRows = await mountsFor(db, agent.projectId, agentId);
     return {
       image: agent.image,
-      mountPaths: [...new Set([...(mainRoot ? [mainRoot.absolutePath] : []), employeeDir(paths, agent.projectId, agentId)])],
+      mountPaths: [
+        ...new Set([
+          ...(mainRoot ? [mainRoot.absolutePath] : []),
+          employeeDir(paths, agent.projectId, agentId),
+          ...mountRows.map((m) => m.hostPath),
+        ]),
+      ],
     };
   });
   const shellPrefixResolver = async (ownerAgentId: string, cwd: string): Promise<string[] | undefined> => {
@@ -106,7 +117,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const shellManager = new ShellManager(audit, shellPrefixResolver);
   const queue = new JobQueue(db);
 
-  // ToolPort's org tools (assign_task) need to trigger the agent loop, but the
+  // The tool layer needs to trigger the agent loop, but the
   // agent loop needs a ToolPort to be constructed — break the cycle with a lazy
   // getter, filled in once agentLoop exists below.
   let agentLoopRef: AgentLoopManager | undefined;
@@ -150,6 +161,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     agentLoop,
     queue,
     computer,
+    audit,
     fallbackUserId,
   };
   queue.register("agent_run", createAgentRunHandler(runJobsDeps));
@@ -165,8 +177,6 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   }
   queue.start();
 
-  const meetingOrchestrator = new MeetingOrchestrator({ db, providers, userId: fallbackUserId });
-
   const routineScheduler = new RoutineScheduler({
     db,
     queue,
@@ -177,7 +187,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const heartbeatScheduler = new HeartbeatScheduler({ db, queue });
   heartbeatScheduler.start();
 
-  const channels = new ChannelManager({ db, masterKey, agentLoop, persistence, queue, fallbackUserId });
+  const channels = new ChannelManager({ db, masterKey, agentLoop, persistence, queue, audit, fallbackUserId });
   await channels.start();
 
   return {
@@ -187,7 +197,6 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     audit,
     sandboxRegistry,
     agentLoop,
-    meetingOrchestrator,
     mcpRegistry,
     routineScheduler,
     shellManager,

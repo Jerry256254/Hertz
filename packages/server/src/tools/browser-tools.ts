@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ToolContext, ToolResult } from "@kuclab-hertz/tools";
-import type { OrgToolDef } from "./org-tools.js";
+import type { AgentToolDef } from "./tool-def.js";
 
 /**
  * Browser automation for agents running in their own container — the
@@ -10,7 +10,7 @@ import type { OrgToolDef } from "./org-tools.js";
  * materials folder where both the agent (read_file) and the user (file
  * explorer) can see them.
  */
-export function createBrowserTools(): OrgToolDef[] {
+export function createBrowserTools(): AgentToolDef[] {
   async function run(ctx: ToolContext, action: string, params: Record<string, unknown>): Promise<ToolResult> {
     if (!ctx.browser) {
       return {
@@ -28,7 +28,7 @@ export function createBrowserTools(): OrgToolDef[] {
     return { summary: parts.length > 0 ? parts.join("\n") : "done" };
   }
 
-  const navigate: OrgToolDef = {
+  const navigate: AgentToolDef = {
     name: "browser_navigate",
     description:
       "Open a URL in YOUR persistent browser (Chromium inside your computer). Logins survive across browser_* calls within a session. Returns title/URL; follow with browser_snapshot to read content.",
@@ -38,7 +38,7 @@ export function createBrowserTools(): OrgToolDef[] {
     },
   };
 
-  const snapshot: OrgToolDef = {
+  const snapshot: AgentToolDef = {
     name: "browser_snapshot",
     description: "Read the current page: URL, title, and visible text (truncated). Use after navigate/click to see what you're working with.",
     inputSchema: z.object({}),
@@ -47,7 +47,7 @@ export function createBrowserTools(): OrgToolDef[] {
     },
   };
 
-  const click: OrgToolDef = {
+  const click: AgentToolDef = {
     name: "browser_click",
     description: "Click something on the current page: either a CSS/xpath selector or visible text (use text for buttons/links). Waits briefly for navigation.",
     inputSchema: z.object({
@@ -63,7 +63,7 @@ export function createBrowserTools(): OrgToolDef[] {
     },
   };
 
-  const typeText: OrgToolDef = {
+  const typeText: AgentToolDef = {
     name: "browser_type",
     description: "Type text into an input field (clears it first), e.g. login forms. Pair with browser_press('Enter') or browser_click on the submit button.",
     inputSchema: z.object({ selector: z.string(), text: z.string().max(10_000) }),
@@ -73,7 +73,7 @@ export function createBrowserTools(): OrgToolDef[] {
     },
   };
 
-  const press: OrgToolDef = {
+  const press: AgentToolDef = {
     name: "browser_press",
     description: "Press a keyboard key in the browser ('Enter', 'Escape', 'Tab', …).",
     inputSchema: z.object({ key: z.string().min(1) }),
@@ -83,7 +83,7 @@ export function createBrowserTools(): OrgToolDef[] {
     },
   };
 
-  const screenshot: OrgToolDef = {
+  const screenshot: AgentToolDef = {
     name: "browser_screenshot",
     description:
       "Save a PNG of the current page into your materials folder (root 'self') so both you and the user can view it. Pass a path like 'materials/login-page.png'.",

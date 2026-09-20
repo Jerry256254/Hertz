@@ -13,6 +13,16 @@ function numEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function boolEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  return raw !== "0" && raw.toLowerCase() !== "false";
+}
+
+function strEnv(name: string, fallback: string): string {
+  return process.env[name]?.trim() || fallback;
+}
+
 export interface AgentMemoryConfig {
   /** L0 → L1: distill atoms every N new conversation turns (user+assistant pair = 1). */
   extractEveryNTurns: number;
@@ -36,6 +46,18 @@ export interface AgentMemoryConfig {
   offloadExcerptChars: number;
   /** Canvas keeps the last N steps; older ones stay in steps.jsonl + refs. */
   canvasMaxSteps: number;
+  /** Vector recall (TencentDB-style): node:sqlite + sqlite-vec sidecar file. */
+  vectorDbFileName: string;
+  /** OpenAI-compatible embedding model for atom vectors (agent provider's key is reused). */
+  embedModel: string;
+  embedDimensions: number;
+  embedTimeoutMs: number;
+  embedMaxInputChars: number;
+  /** Include `dimensions` in the embeddings request (disable for BGE-style models). */
+  embedSendDimensions: boolean;
+  embedBatchSize: number;
+  /** Max atoms (re-)embedded per pipeline run — bounds API cost on large backlogs. */
+  reindexPerRun: number;
 }
 
 export function loadAgentMemoryConfig(): AgentMemoryConfig {
@@ -53,5 +75,13 @@ export function loadAgentMemoryConfig(): AgentMemoryConfig {
     offloadThresholdChars: numEnv("HERTZ_MEMORY_OFFLOAD_THRESHOLD_CHARS", 6000),
     offloadExcerptChars: numEnv("HERTZ_MEMORY_OFFLOAD_EXCERPT_CHARS", 2000),
     canvasMaxSteps: numEnv("HERTZ_MEMORY_CANVAS_MAX_STEPS", 40),
+    vectorDbFileName: strEnv("HERTZ_MEMORY_VECTOR_DB", "memory-vectors.db"),
+    embedModel: strEnv("HERTZ_MEMORY_EMBED_MODEL", "text-embedding-3-small"),
+    embedDimensions: numEnv("HERTZ_MEMORY_EMBED_DIMENSIONS", 1536),
+    embedTimeoutMs: numEnv("HERTZ_MEMORY_EMBED_TIMEOUT_MS", 15_000),
+    embedMaxInputChars: numEnv("HERTZ_MEMORY_EMBED_MAX_CHARS", 5000),
+    embedSendDimensions: boolEnv("HERTZ_MEMORY_EMBED_SEND_DIMENSIONS", true),
+    embedBatchSize: numEnv("HERTZ_MEMORY_EMBED_BATCH", 20),
+    reindexPerRun: numEnv("HERTZ_MEMORY_REINDEX_PER_RUN", 100),
   };
 }

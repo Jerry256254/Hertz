@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agents, sessionTokens, users } from "../db/schema.js";
 import type { HertzPaths } from "../paths.js";
-import { agentMemoryDir, agentSkillsDir, legacySoulPath } from "../paths.js";
+import { agentMemoryDir, agentSkillsDir, legacyAgentDir, legacySoulPath } from "../paths.js";
+import { resolveAgentProjectId } from "../memory/recall.js";
 import { hashPassword } from "../auth/password.js";
 
 /**
@@ -70,16 +71,19 @@ export async function wipeAgentMemory(
   await db.delete(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, agentId));
   await db.delete(agentMemory).where(eq(agentMemory.agentId, agentId));
 
+  const homeProjectId = await resolveAgentProjectId(db, agentId).catch(() => undefined);
   const stats: WipeStats = {
     atoms: atomRows.length,
     scenarios: scenarioRows.length,
     legacyNotes: legacyRows.length,
-    memoryDirRemoved: await rmIfExists(agentMemoryDir(paths, agentId)),
+    memoryDirRemoved: homeProjectId ? await rmIfExists(agentMemoryDir(paths, homeProjectId, agentId)) : false,
     soulRemoved: await rmIfExists(legacySoulPath(paths, agentId)),
     skillsRemoved: false,
   };
-  if (opts.withSkills) {
-    stats.skillsRemoved = await rmIfExists(agentSkillsDir(paths, agentId));
+  // Pre-pivot leftovers (memory/, skills/, soul.md that never migrated).
+  await rmIfExists(legacyAgentDir(paths, agentId));
+  if (opts.withSkills && homeProjectId) {
+    stats.skillsRemoved = await rmIfExists(agentSkillsDir(paths, homeProjectId, agentId));
   }
   return stats;
 }

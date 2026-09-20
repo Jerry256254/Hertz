@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { agents, sessions } from "../db/schema.js";
@@ -51,13 +51,7 @@ export class HeartbeatScheduler {
     const candidates = await this.deps.db
       .select()
       .from(agents)
-      .where(
-        and(
-          sql`${agents.heartbeatMinutes} > 0`,
-          eq(agents.approvalStatus, "approved"),
-          ne(agents.status, "terminated"),
-        ),
-      );
+      .where(sql`${agents.heartbeatMinutes} > 0`);
     for (const agent of candidates) {
       const intervalMs = agent.heartbeatMinutes * 60_000;
       if (agent.lastHeartbeatAt && now.getTime() - agent.lastHeartbeatAt.getTime() < intervalMs) continue;

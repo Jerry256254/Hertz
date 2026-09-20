@@ -4,7 +4,7 @@ import { Plus, TerminalSquare } from "lucide-react";
 import { api } from "../lib/api";
 import type { EmployeeShell } from "../lib/types";
 import { Badge, Button, Card, EmptyState, Input } from "./ui";
-import { DeleteButton } from "./DeleteButton";
+import { Trash2 } from "lucide-react";
 
 function ShellRow({ shell }: { shell: EmployeeShell }) {
   const queryClient = useQueryClient();
@@ -41,7 +41,15 @@ function ShellRow({ shell }: { shell: EmployeeShell }) {
           </div>
           <Badge tone={shell.alive ? "accent" : "neutral"}>{shell.alive ? "live" : "not running"}</Badge>
         </button>
-        {shell.owned && <DeleteButton title="Close shell" onDelete={() => remove.mutate()} />}
+        {shell.owned && (
+          <button
+            title="Close shell"
+            onClick={() => { if (window.confirm(`Zavřít terminál „${shell.name}"?`)) remove.mutate(); }}
+            className="rounded-full p-2 text-fg-subtle hover:bg-bg-sunken hover:text-danger"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
       {buffer !== undefined && (
         <pre className="mono mt-2.5 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-bg-sunken p-2 text-[11px] leading-relaxed text-fg-muted">

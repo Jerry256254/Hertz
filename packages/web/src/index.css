@@ -1,24 +1,5 @@
+@import "./design/tokens.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-.agent-mascot {
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-xs);
-  user-select: none;
-}
-
-.container-app {
-  width: min(1180px, 100% - 24px);
-  margin-inline: auto;
-}
-@media (min-width: 768px) {
-  .container-app { width: min(1180px, 100% - 40px); }
-}
-@media (min-width: 1280px) {
-  .container-app { width: min(1180px, 100% - 48px); }
-}
-
-/* hairline stack helper */
-.stack-hairline > * + * { border-top: 1px solid var(--color-border); }

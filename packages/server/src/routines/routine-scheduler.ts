@@ -49,7 +49,7 @@ export async function fireRoutine(deps: RoutineSchedulerDeps, routine: typeof ro
 
   const agentRows = await db.select().from(agents).where(eq(agents.id, routine.agentId)).limit(1);
   const agent = agentRows[0];
-  if (!agent || agent.approvalStatus !== "approved" || agent.status === "terminated") {
+  if (!agent) {
     // Dead target: disable instead of retrying forever.
     await db.update(routines).set({ enabled: false }).where(eq(routines.id, routine.id));
     return;

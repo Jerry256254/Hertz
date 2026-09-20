@@ -7,7 +7,7 @@ const inputSchema = z.object({
   oldString: z.string(),
   newString: z.string(),
   replaceAll: z.boolean().optional().default(false),
-  root: z.string().optional().describe("Which root to edit in — omit for the shared project root, or 'self' for your own personal folder"),
+  root: z.string().optional().describe("Which root to edit in — omit for the shared project root, 'self' for your own personal folder, or a folder name from Your folders"),
 });
 type Input = z.infer<typeof inputSchema>;
 
@@ -26,7 +26,7 @@ function countOccurrences(haystack: string, needle: string): number {
 export const editFileTool: ToolDef<Input> = {
   name: "edit_file",
   description:
-    "Replace an exact string in a file. oldString must match exactly once unless replaceAll is set.",
+    "Replace an exact string in a file. oldString must match exactly once unless replaceAll is set. Text tool — never use desktop_* / browser_* to open an editor; do file work here.",
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
     const abs = ctx.pathGuard.resolve(ctx.actor, input.root ?? ctx.rootId, input.path);

@@ -2,8 +2,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "../db/client.js";
 import type { Database } from "../db/client.js";
-import { agents, employeeShellGrants, employeeShells, projectRoots } from "../db/schema.js";
-import type { OrgToolDef } from "./org-tools.js";
+import { agents, auditLog, employeeShellGrants, employeeShells, projectRoots } from "../db/schema.js";
+import type { AgentToolDef } from "./tool-def.js";
 import type { ShellManager } from "../shells/shell-manager.js";
 
 const createShellSchema = z.object({ name: z.string().min(1) });
@@ -35,8 +35,8 @@ async function accessibleShells(db: Database, agentId: string) {
  * than one named shell and share access with a colleague, same as a human
  * team would share a terminal session.
  */
-export function createShellTools(db: Database, shellManager: ShellManager): OrgToolDef[] {
-  const createShell: OrgToolDef = {
+export function createShellTools(db: Database, shellManager: ShellManager): AgentToolDef[] {
+  const createShell: AgentToolDef = {
     name: "create_shell",
     description: "Open a new named, persistent Linux shell for yourself — state (cwd, env vars, background jobs) survives between commands, unlike shell_exec.",
     inputSchema: createShellSchema,
@@ -54,7 +54,7 @@ export function createShellTools(db: Database, shellManager: ShellManager): OrgT
     },
   };
 
-  const listMyShells: OrgToolDef = {
+  const listMyShells: AgentToolDef = {
     name: "list_my_shells",
     description: "List every persistent shell you own or that's been shared with you, with its id and owner.",
     inputSchema: z.object({}),
@@ -72,15 +72,34 @@ export function createShellTools(db: Database, shellManager: ShellManager): OrgT
     },
   };
 
-  const runInShell: OrgToolDef = {
+  const runInShell: AgentToolDef = {
     name: "run_in_shell",
-    description: "Run a command in one of your persistent shells (see list_my_shells for ids) and wait for it to finish. No allowlist here — this is a real shell, so be careful.",
+    description: "Run a command in one of your persistent shells (see list_my_shells for ids) and wait for it to finish. No allowlist here — this is a real shell, so be careful. Text tool — never use desktop_* / browser_* to type into a terminal; do terminal work here.",
     inputSchema: runInShellSchema,
     async execute(rawInput, ctx) {
       const input = runInShellSchema.parse(rawInput);
       const shells = await accessibleShells(db, ctx.actor.actorId);
       const shell = shells.find((s) => s.id === input.shellId);
       if (!shell) return { summary: `No accessible shell with id ${input.shellId}. Use list_my_shells first.`, isError: true };
+
+      // Grandfathered local-backend agents run this shell as raw host bash
+      // with zero containment — honest labelling, not fake containment.
+      const ownerRows = await db.select({ backend: agents.computerBackend }).from(agents).where(eq(agents.id, shell.ownerAgentId)).limit(1);
+      if (ownerRows[0] && ownerRows[0].backend !== "docker") {
+        await db.insert(auditLog).values({
+          id: newId(),
+          actorId: ctx.actor.actorId,
+          actorType: "agent",
+          sessionId: ctx.actor.sessionId ?? null,
+          projectId: shell.projectId,
+          action: "shell.persistent.unjailed",
+          target: shell.id,
+          targetType: "shell",
+          result: "allowed",
+          detail: JSON.stringify({ warning: "local-backend agent ran an unrestricted host shell (not isolated)" }),
+          at: new Date(),
+        });
+      }
 
       const rootRows = await db.select().from(projectRoots).where(eq(projectRoots.projectId, shell.projectId));
       const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
@@ -98,7 +117,7 @@ export function createShellTools(db: Database, shellManager: ShellManager): OrgT
     },
   };
 
-  const shareShell: OrgToolDef = {
+  const shareShell: AgentToolDef = {
     name: "share_shell",
     description: "Give a colleague access to one of your persistent shells, by name (matched against the project team).",
     inputSchema: shareShellSchema,

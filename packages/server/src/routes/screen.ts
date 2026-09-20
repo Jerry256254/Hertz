@@ -84,7 +84,7 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
           },
         ]);
         try {
-          await enqueueAgentRun(ctx, { sessionId: pending.sessionId, prePersisted: true, forceAgentId: id }, { maxAttempts: 2 });
+          await enqueueAgentRun(ctx, { sessionId: pending.sessionId, prePersisted: true }, { maxAttempts: 2 });
         } catch {
           /* already running — inbound will be picked up mid-run */
         }

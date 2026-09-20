@@ -48,9 +48,9 @@ export function DirectoryPicker({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 flex h-[28rem] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-bg-raised shadow-popover">
+        <Dialog.Content className="fixed left-1/2 top-1/2 flex h-[28rem] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-[20px] border border-border bg-bg-raised shadow-popover">
           <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-4">
-            <Dialog.Title className="text-sm font-semibold text-fg">Choose a directory</Dialog.Title>
+            <Dialog.Title className="text-sm font-semibold text-fg">Vyber složku</Dialog.Title>
             <Dialog.Close asChild>
               <button className="text-fg-muted hover:text-fg">
                 <X size={16} />
@@ -63,7 +63,7 @@ export function DirectoryPicker({
               onClick={() => data && setPath(data.home)}
               className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg"
             >
-              <House size={12} /> Home
+              <House size={12} /> Domů
             </button>
             <button
               onClick={() => data?.parent && setPath(data.parent)}
@@ -77,7 +77,7 @@ export function DirectoryPicker({
               disabled={!data}
               className="ml-auto flex items-center gap-1 rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-hover disabled:opacity-30"
             >
-              <FolderPlus size={12} /> New folder
+              <FolderPlus size={12} /> Nová složka
             </button>
             <span className="mono min-w-0 max-w-[40%] flex-shrink truncate px-1.5 text-xs text-fg-subtle">{data?.path ?? path}</span>
           </div>
@@ -95,7 +95,7 @@ export function DirectoryPicker({
                 autoFocus
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="New folder name"
+                placeholder="Název nové složky"
                 className="h-7 min-w-0 flex-1 rounded-md border border-border bg-bg-raised px-2 text-xs text-fg outline-none focus:border-accent"
               />
               <Button type="submit" size="sm" variant="primary" disabled={!newFolderName.trim() || createFolder.isPending}>
@@ -105,7 +105,7 @@ export function DirectoryPicker({
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {isLoading && <p className="p-3 text-xs text-fg-muted">Loading…</p>}
+            {isLoading && <p className="p-3 text-xs text-fg-muted">Načítám…</p>}
             {error && <p className="p-3 text-xs text-danger">{(error as Error).message}</p>}
             {data?.entries.map((entry) => (
               <button
@@ -118,13 +118,13 @@ export function DirectoryPicker({
               </button>
             ))}
             {data && data.entries.length === 0 && (
-              <p className="p-3 text-xs text-fg-subtle">No subdirectories here.</p>
+              <p className="p-3 text-xs text-fg-subtle">Tady nejsou žádné podsložky.</p>
             )}
           </div>
 
           <div className="flex flex-shrink-0 items-center justify-between border-t border-border px-4 py-3">
             <span className="flex items-center gap-1.5 text-xs text-fg-muted">
-              <FolderOpen size={13} /> Selecting current folder
+              <FolderOpen size={13} /> Vybere se aktuální složka
             </span>
             <Button
               variant="primary"
@@ -135,7 +135,7 @@ export function DirectoryPicker({
               }}
               disabled={!data}
             >
-              Use this folder
+              Použít tuhle složku
             </Button>
           </div>
         </Dialog.Content>

@@ -18,17 +18,17 @@ export function LoginPage() {
 
   return (
     <div className="flex h-full items-center justify-center bg-bg px-4 py-8">
-      <form onSubmit={onSubmit} className="w-full max-w-[380px] rounded-xl border border-border bg-bg-raised p-6 shadow-sm md:p-7">
+      <form onSubmit={onSubmit} className="w-full max-w-[380px] rounded-[24px] border border-border bg-bg-raised p-6 shadow-sm md:p-8">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center bg-fg text-bg-raised mono text-[12px] font-[700] tracking-[0.08em]">H</div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-[15px] font-[800] text-white">M</div>
           <div className="leading-none">
-            <p className="mono text-[11px] font-[700] tracking-[0.16em] text-fg">HERTZ</p>
-            <p className="mono text-[10px] font-[500] tracking-[0.1em] text-fg-subtle">WORKSPACE</p>
+            <p className="text-[12px] font-[800] tracking-[0.14em] text-fg">MUSE</p>
+            <p className="mt-1 text-[10px] font-[600] tracking-[0.1em] text-fg-subtle">OSOBNÍ AGENT</p>
           </div>
         </div>
 
-        <h1 className="font-display text-[22px] leading-none tracking-[-0.03em] text-fg">Přihlášení</h1>
-        <p className="mono mt-1.5 text-[11px] leading-relaxed text-fg-muted">Běží lokálně na tvém stroji — bez cloudu, bez telemetrie.</p>
+        <h1 className="text-[22px] tracking-[-0.02em] text-fg">Přihlášení</h1>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">Běží lokálně na tvém stroji — bez cloudu, bez telemetrie.</p>
 
         <div className="mt-6 space-y-3">
           <div>
@@ -41,12 +41,12 @@ export function LoginPage() {
           </div>
         </div>
 
-        {error && <p className="mt-3 rounded-md border border-danger/20 bg-danger-wash px-3 py-2 mono text-[12px] text-danger">{error}</p>}
+        {error && <p className="mt-3 rounded-[14px] border border-danger/20 bg-danger-wash px-4 py-2.5 text-[12.5px] text-danger">{error}</p>}
 
         <Button type="submit" variant="primary" size="md" disabled={submitting} className="mt-5 w-full">
           {submitting ? "Přihlašuji…" : "Přihlásit se"}
         </Button>
-        <p className="mono mt-3 text-center text-[10px] leading-relaxed tracking-wide text-fg-faint">chráněno lokálním účtem · data zůstávají u tebe</p>
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-fg-faint">chráněno lokálním účtem · data zůstávají u tebe</p>
       </form>
     </div>
   );

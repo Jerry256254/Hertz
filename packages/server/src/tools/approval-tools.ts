@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import type { OrgToolDef } from "./org-tools.js";
+import type { AgentToolDef } from "./tool-def.js";
 import { approvals, sessions } from "../db/schema.js";
 
 const requestSchema = z.object({
@@ -23,8 +23,8 @@ const requestSchema = z.object({
  * awaiting_input until it's decided, then resumes automatically with the
  * verdict — so "Mám poslat tento e-mail?" actually gates the sending.
  */
-export function createApprovalTools(db: Database): OrgToolDef[] {
-  const requestApproval: OrgToolDef = {
+export function createApprovalTools(db: Database): AgentToolDef[] {
+  const requestApproval: AgentToolDef = {
     name: "request_approval",
     description:
       "Ask the user (CEO) to approve a sensitive or hard-to-reverse action BEFORE doing it — sending e-mail/messages on their behalf, spending money, deleting or publishing content, contacting third parties, changing account settings. Prepare everything first, describe precisely what would happen, then call this and STOP; you'll be resumed automatically with their decision. Not for ordinary work decisions — only actions with real-world consequences.",
@@ -79,13 +79,23 @@ export function createApprovalTools(db: Database): OrgToolDef[] {
   return [requestApproval];
 }
 
+export interface ApprovalDecision {
+  approvalId: string;
+  sessionId: string;
+  summary: string;
+  kind: string;
+  payload: string | null;
+  agentId: string;
+  projectId: string;
+}
+
 /** Resolves an approval and returns the session id whose run should resume (if any). */
 export async function decideApproval(
   db: Database,
   approvalId: string,
   decision: "approved" | "rejected",
   userId: string,
-): Promise<{ sessionId: string; summary: string } | undefined> {
+): Promise<ApprovalDecision | undefined> {
   const rows = await db.select().from(approvals).where(and(eq(approvals.id, approvalId), eq(approvals.status, "pending"))).limit(1);
   const approval = rows[0];
   if (!approval) return undefined;
@@ -95,5 +105,13 @@ export async function decideApproval(
     .set({ status: decision, decidedByUserId: userId || null, decidedAt: new Date() })
     .where(eq(approvals.id, approvalId));
 
-  return { sessionId: approval.sessionId, summary: approval.summary };
+  return {
+    approvalId: approval.id,
+    sessionId: approval.sessionId,
+    summary: approval.summary,
+    kind: approval.kind,
+    payload: approval.payload,
+    agentId: approval.agentId,
+    projectId: approval.projectId,
+  };
 }

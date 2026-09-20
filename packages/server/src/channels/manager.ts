@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { AgentLoopEvent, AgentLoopManager, PersistencePort } from "@kuclab-hertz/core";
 import type { ContentBlock } from "@kuclab-hertz/providers";
+import type { AuditSink } from "@kuclab-hertz/sandbox";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { agents, approvals, channelBindings, channelConfigs, sessions } from "../db/schema.js";
@@ -8,6 +9,12 @@ import { decryptSecret } from "../secrets/key-encryption.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import type { JobQueue } from "../queue/job-queue.js";
 import { decideApproval } from "../tools/approval-tools.js";
+import {
+  executeHostAccessOp,
+  formatHostAccessExecutedInbound,
+  formatHostAccessRejectedInbound,
+  parseHostAccessPayload,
+} from "../tools/host-access-tools.js";
 import { TelegramDriver } from "./telegram.js";
 import { DiscordDriver } from "./discord.js";
 import type { ChannelDriver, InboundMessage } from "./types.js";
@@ -19,6 +26,7 @@ export interface ChannelManagerDeps {
   agentLoop: AgentLoopManager;
   persistence: PersistencePort;
   queue: JobQueue;
+  audit: AuditSink;
   fallbackUserId: () => Promise<string>;
 }
 
@@ -178,7 +186,7 @@ export class ChannelManager {
       if (session && session.status !== "archived") {
         const agentRows = await this.deps.db.select().from(agents).where(eq(agents.id, session.agentId)).limit(1);
         const agent = agentRows[0];
-        if (agent && agent.approvalStatus === "approved" && agent.status !== "terminated") return session.id;
+        if (agent) return session.id;
       }
       await this.deps.db.delete(channelBindings).where(eq(channelBindings.id, bindings[0].id));
     }
@@ -189,7 +197,7 @@ export class ChannelManager {
     }
     const agentRows = await this.deps.db.select().from(agents).where(eq(agents.id, config.defaultAgentId)).limit(1);
     const agent = agentRows[0];
-    if (!agent || agent.approvalStatus !== "approved" || agent.status === "terminated") {
+    if (!agent) {
       await driver.sendText(externalChatId, "⚠️ The default agent for this bot is unavailable — pick another one on the Channels page.").catch(() => {});
       return undefined;
     }
@@ -340,13 +348,65 @@ export class ChannelManager {
       return;
     }
 
+    // Host-access approvals decided from chat execute the op the same way as
+    // the WebUI inbox does — the agent must never be told "approved" without
+    // the server having performed the op.
+    let inboundText: string;
+    if (result.kind === "host_access") {
+      const payload = parseHostAccessPayload(result.payload);
+      if (!payload) {
+        inboundText = `[Your host-access request "${result.summary}" (via chat channel) had an unreadable payload — the server could not execute it. Continue inside your own files.]`;
+      } else if (decision === "rejected") {
+        await this.deps.audit.record({
+          actorId: ownerId,
+          actorType: "user",
+          sessionId: result.sessionId,
+          projectId: result.projectId,
+          action: "host_access.rejected",
+          target: payload.hostPath,
+          targetType: "host_path",
+          result: "denied",
+          detail: { op: payload.op, hostPath: payload.hostPath, approvalId, via: "channel" },
+        });
+        inboundText = formatHostAccessRejectedInbound(payload);
+      } else {
+        await this.deps.audit.record({
+          actorId: ownerId,
+          actorType: "user",
+          sessionId: result.sessionId,
+          projectId: result.projectId,
+          action: "host_access.approved",
+          target: payload.hostPath,
+          targetType: "host_path",
+          result: "allowed",
+          detail: { op: payload.op, hostPath: payload.hostPath, approvalId, via: "channel" },
+        });
+        const opResult = await executeHostAccessOp(payload);
+        await this.deps.db.update(approvals).set({ result: JSON.stringify(opResult) }).where(eq(approvals.id, approvalId));
+        await this.deps.audit.record({
+          actorId: ownerId,
+          actorType: "user",
+          sessionId: result.sessionId,
+          projectId: result.projectId,
+          action: "host_access.executed",
+          target: payload.hostPath,
+          targetType: "host_path",
+          result: opResult.ok ? "allowed" : "error",
+          detail: { op: payload.op, hostPath: payload.hostPath, ok: opResult.ok, bytes: opResult.bytes, error: opResult.error, via: "channel" },
+        });
+        inboundText = formatHostAccessExecutedInbound(payload, opResult);
+      }
+    } else {
+      inboundText =
+        decision === "approved"
+          ? `[The user APPROVED your request "${result.summary}" (via chat channel).] Proceed exactly as described.`
+          : `[The user REJECTED your request "${result.summary}" (via chat channel).] Do not perform it. Continue without it — propose an alternative only if it's essential to the task.`;
+    }
+
     await this.deps.agentLoop.appendInbound(result.sessionId, [
       {
         type: "text",
-        text:
-          decision === "approved"
-            ? `[The user APPROVED your request "${result.summary}" (via chat channel).] Proceed exactly as described.`
-            : `[The user REJECTED your request "${result.summary}" (via chat channel).] Do not perform it. Continue without it — propose an alternative only if it's essential to the task.`,
+        text: inboundText,
       },
     ]);
     const metaRows = await this.deps.db.select({ metadata: sessions.metadata }).from(sessions).where(eq(sessions.id, result.sessionId)).limit(1);

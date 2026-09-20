@@ -1,18 +1,17 @@
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";import { zodToJsonSchema } from "zod-to-json-schema";
 import { ALL_TOOLS, runTool, toProviderToolDefinitions } from "@kuclab-hertz/tools";
 import type { AgentLoopManager, PersistencePort, ProviderPort, ToolPort } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
-import { agents } from "../db/schema.js";
-import { createOrgTools, type OrgToolDef } from "./org-tools.js";
+import type { AgentToolDef } from "./tool-def.js";
 import { createMemoryTools } from "./memory-tools.js";
-import { createMessagingTools } from "./messaging-tools.js";
 import { createShellTools } from "./shell-tools.js";
 import { createApprovalTools } from "./approval-tools.js";
+import { createHostAccessTools } from "./host-access-tools.js";
 import { createSkillTools } from "./skill-tools.js";
 import { createBrowserTools } from "./browser-tools.js";
 import { createDesktopTools } from "./desktop-tools.js";
 import { recordToolStep } from "../memory/short-term.js";
+import { resolveAgentProjectId } from "../memory/recall.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
@@ -41,22 +40,12 @@ function toJsonSchema(schema: import("zod").ZodTypeAny): Record<string, unknown>
   return json;
 }
 
-function toDefs(tools: OrgToolDef[]) {
+function toDefs(tools: AgentToolDef[]) {
   return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: toJsonSchema(t.inputSchema) }));
 }
 
-/**
- * Managers keep read-only tools (for reviewing what employees produced) but
- * lose direct write access — otherwise it's too easy for a manager to just do
- * the work itself instead of hiring/briefing employees for it, which defeats
- * the entire point of the org structure. This is enforced here, not just in
- * the system prompt, so it holds even if a model ignores its instructions.
- * run_in_shell and save_note are included because both can write to disk.
- */
-const MANAGER_RESTRICTED_TOOLS = new Set(["write_file", "edit_file", "shell_exec", "run_in_shell", "save_note"]);
-
 /** Asks the human user a question and stops until they answer (auto mode only — withheld in plan/autonomous). */
-const ASK_USER_DEF: OrgToolDef = {
+const ASK_USER_DEF: AgentToolDef = {
   name: "ask_user",
   description:
     "Ask the human user a single, concrete question you genuinely cannot resolve yourself (a preference, a decision, missing information only they have). The run pauses and the question is shown in the UI with an answer field; you continue when they answer. Don't use it for things you can decide or look up yourself.",
@@ -67,60 +56,34 @@ const ASK_USER_DEF: OrgToolDef = {
 };
 
 /**
- * Every agent gets the base fs/shell/web/todo tools plus memory (remember/
- * list_memory/forget). Manager-role agents additionally get the org-
- * management tools (hire_employee, list_employees, assign_task) but lose
- * MANAGER_RESTRICTED_TOOLS — see above.
+ * The single agent gets everything: base fs/shell/web/todo tools plus memory,
+ * shells, approvals, skills, browser, desktop, MCP and ask_user. No roles, no
+ * gates — one superintelligent agent with full tool access.
  */
 export function createToolPort(deps: ToolPortDeps): ToolPort {
-  const orgTools = createOrgTools(deps);
   const memoryTools = createMemoryTools(deps.db, deps.paths);
-  const messagingTools = createMessagingTools({
-    db: deps.db,
-    queue: deps.queue,
-    getAgentLoop: deps.getAgentLoop,
-  });
   const shellTools = createShellTools(deps.db, deps.shellManager);
   const approvalTools = createApprovalTools(deps.db);
+  const hostAccessTools = createHostAccessTools(deps.db);
   const skillTools = createSkillTools(deps.db, deps.paths);
   const browserTools = createBrowserTools();
   const desktopTools = createDesktopTools(deps.db, deps.masterKey, deps.desktop);
   const allByName = new Map(
-    [...orgTools, ...memoryTools, ...messagingTools, ...shellTools, ...approvalTools, ...skillTools, ...browserTools, ...desktopTools, ASK_USER_DEF].map((t) => [t.name, t]),
+    [...memoryTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...skillTools, ...browserTools, ...desktopTools, ASK_USER_DEF].map((t) => [t.name, t]),
   );
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
   const memoryDefs = toDefs(memoryTools);
-  const messagingDefs = toDefs(messagingTools);
   const shellDefs = toDefs(shellTools);
-  const orgDefs = toDefs(orgTools);
-  const approvalDefs = toDefs(approvalTools);
+  const approvalDefs = [...toDefs(approvalTools), ...toDefs(hostAccessTools)];
   const skillDefs = toDefs(skillTools);
+  const computerDefs = [...toDefs(browserTools), ...toDefs(desktopTools)];
   const askUserDefs = toDefs([ASK_USER_DEF]);
-
-  async function isManager(agentId: string): Promise<boolean> {
-    const rows = await deps.db.select({ role: agents.role }).from(agents).where(eq(agents.id, agentId)).limit(1);
-    return rows[0]?.role === "manager";
-  }
-
-  /** Browser tools exist only for agents whose computer is a container. */
-  async function hasDockerComputer(agentId: string): Promise<boolean> {
-    const rows = await deps.db
-      .select({ backend: agents.computerBackend })
-      .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.computerBackend, "docker")))
-      .limit(1);
-    return rows.length > 0;
-  }
 
   return {
     async listDefinitions(agentId) {
-      const managerRole = await isManager(agentId);
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      const filteredBaseDefs = managerRole ? baseDefs.filter((d) => !MANAGER_RESTRICTED_TOOLS.has(d.name)) : baseDefs;
-      const dockerDefs = (await hasDockerComputer(agentId)) ? [...toDefs(browserTools), ...toDefs(desktopTools)] : [];
-      const defs = [...filteredBaseDefs, ...memoryDefs, ...messagingDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...dockerDefs, ...mcpDefs, ...askUserDefs];
-      return managerRole ? [...defs, ...orgDefs] : defs;
+      return [...baseDefs, ...memoryDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...computerDefs, ...mcpDefs, ...askUserDefs];
     },
     async run(name, input, ctx) {
       const tool = allByName.get(name);
@@ -129,11 +92,6 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
         result = await deps.mcpRegistry.run(name, input);
       } else if (tool) {
         result = await tool.execute(input, ctx);
-      } else if (MANAGER_RESTRICTED_TOOLS.has(name) && ctx.actor.actorType === "agent" && (await isManager(ctx.actor.actorId))) {
-        return {
-          summary: "As the manager you don't have direct write access — hire the right role with hire_employee if you don't have them yet, then delegate this with assign_task.",
-          isError: true,
-        };
       } else {
         result = await runTool(name, input, ctx);
       }
@@ -143,16 +101,21 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
       const sessionId = ctx.actor.sessionId;
       if (sessionId) {
         try {
-          const recorded = await recordToolStep({
-            paths: deps.paths,
-            agentId: ctx.actor.actorId,
-            sessionId,
-            tool: name,
-            input,
-            summary: result.summary,
-            isError: result.isError,
-          });
-          if (recorded.offloaded) result = { ...result, summary: recorded.summary };
+          // Canvas lives in the agent's home (his own project, cached lookup).
+          const projectId = await resolveAgentProjectId(deps.db, ctx.actor.actorId);
+          if (projectId) {
+            const recorded = await recordToolStep({
+              paths: deps.paths,
+              projectId,
+              agentId: ctx.actor.actorId,
+              sessionId,
+              tool: name,
+              input,
+              summary: result.summary,
+              isError: result.isError,
+            });
+            if (recorded.offloaded) result = { ...result, summary: recorded.summary };
+          }
         } catch {
           /* memory recording must never break a tool call */
         }

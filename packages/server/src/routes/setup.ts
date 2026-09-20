@@ -21,7 +21,9 @@ const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
  */
 export function registerSetupRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get("/api/setup/status", async () => {
-    return { needsSetup: !(await hasAnyUser(ctx)) };
+    // VM-only isolation: new installs need Docker — the setup wizard shows an
+    // "Install Docker / fix permissions" blocking step when this is false.
+    return { needsSetup: !(await hasAnyUser(ctx)), dockerAvailable: await ctx.computer.isDockerAvailable() };
   });
 
   app.get("/api/setup/presets", async () => {

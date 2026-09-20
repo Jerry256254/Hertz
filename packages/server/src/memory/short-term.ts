@@ -26,6 +26,8 @@ export interface OffloadDecision {
  */
 export async function recordToolStep(opts: {
   paths: HertzPaths;
+  /** The agent's home project (agents.projectId) — canvases live in his home, not the session's project. */
+  projectId: string;
   agentId: string;
   sessionId: string;
   sessionTitle?: string;
@@ -36,7 +38,7 @@ export async function recordToolStep(opts: {
 }): Promise<OffloadDecision> {
   const config = loadAgentMemoryConfig();
   const nodeId = newNodeId();
-  const dir = agentSessionMemoryDir(opts.paths, opts.agentId, opts.sessionId);
+  const dir = agentSessionMemoryDir(opts.paths, opts.projectId, opts.agentId, opts.sessionId);
   const shouldOffload =
     !OFFLOAD_EXCLUDED_TOOLS.has(opts.tool) && opts.summary.length > config.offloadThresholdChars && !opts.isError;
 
@@ -103,9 +105,9 @@ async function countSteps(dir: string): Promise<number> {
   }
 }
 
-export async function readSteps(paths: HertzPaths, agentId: string, sessionId: string): Promise<CanvasStep[]> {
+export async function readSteps(paths: HertzPaths, projectId: string, agentId: string, sessionId: string): Promise<CanvasStep[]> {
   try {
-    const raw = await fs.readFile(path.join(agentSessionMemoryDir(paths, agentId, sessionId), STEPS_FILE), "utf8");
+    const raw = await fs.readFile(path.join(agentSessionMemoryDir(paths, projectId, agentId, sessionId), STEPS_FILE), "utf8");
     const out: CanvasStep[] = [];
     for (const line of raw.split("\n")) {
       if (!line.trim()) continue;
@@ -138,9 +140,9 @@ async function rebuildCanvas(dir: string, sessionTitle: string, maxSteps: number
 }
 
 /** Loads the session canvas for prompt injection (empty string when the session has no steps yet). */
-export async function loadCanvas(paths: HertzPaths, agentId: string, sessionId: string): Promise<string> {
+export async function loadCanvas(paths: HertzPaths, projectId: string, agentId: string, sessionId: string): Promise<string> {
   try {
-    return await fs.readFile(path.join(agentSessionMemoryDir(paths, agentId, sessionId), CANVAS_FILE), "utf8");
+    return await fs.readFile(path.join(agentSessionMemoryDir(paths, projectId, agentId, sessionId), CANVAS_FILE), "utf8");
   } catch {
     return "";
   }
@@ -151,13 +153,19 @@ export async function loadCanvas(paths: HertzPaths, agentId: string, sessionId: 
  * first, then every other session of the same agent (nodeIds are unique per
  * agent, so cross-session recovery just works).
  */
-export async function readRef(paths: HertzPaths, agentId: string, nodeId: string, sessionId?: string): Promise<string | undefined> {
+export async function readRef(
+  paths: HertzPaths,
+  projectId: string,
+  agentId: string,
+  nodeId: string,
+  sessionId?: string,
+): Promise<string | undefined> {
   const clean = nodeId.trim().replace(/[^a-zA-Z0-9_]/g, "");
   if (!clean) return undefined;
   const candidates: string[] = [];
-  if (sessionId) candidates.push(path.join(agentSessionMemoryDir(paths, agentId, sessionId), REFS_DIR, `${clean}.md`));
+  if (sessionId) candidates.push(path.join(agentSessionMemoryDir(paths, projectId, agentId, sessionId), REFS_DIR, `${clean}.md`));
   try {
-    const base = path.join(agentMemoryDir(paths, agentId), "sessions");
+    const base = path.join(agentMemoryDir(paths, projectId, agentId), "sessions");
     const entries = await fs.readdir(base);
     for (const entry of entries.sort()) {
       if (entry === sessionId) continue;

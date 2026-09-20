@@ -37,10 +37,10 @@ export default {
         "info-wash": "var(--color-info-wash)",
       },
       fontFamily: {
-        mono: ["'Fragment Mono'", "'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
-        sans: ["'Instrument Sans'", "system-ui", "-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "sans-serif"],
-        serif: ["'Newsreader'", "Georgia", "serif"],
-        display: ["'Newsreader'", "Georgia", "serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+        sans: ["system-ui", "-apple-system", "BlinkMacSystemFont", "SF Pro Text", "'Segoe UI'", "sans-serif"],
+        serif: ["Georgia", "serif"],
+        display: ["Georgia", "serif"],
       },
       fontSize: {
         xs: "var(--font-size-xs)",
