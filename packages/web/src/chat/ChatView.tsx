@@ -68,7 +68,6 @@ export function ChatView({
   const [isPaused, setIsPaused] = useState(false);
   const [runError, setRunError] = useState<string | undefined>(undefined);
   const [answerText, setAnswerText] = useState("");
-  const [shareState, setShareState] = useState<"idle" | "copied" | "error">("idle");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -207,28 +206,6 @@ export function ChatView({
     onError: (err) => setRunError(err instanceof ApiError ? err.message : "Odpověď se nepodařilo odeslat"),
   });
 
-  async function share() {
-    try {
-      let token: string | null = null;
-      try {
-        const existing = await api.get<{ token: string | null }>(`/sessions/${sessionId}/share`);
-        token = existing.token;
-      } catch {
-        token = null;
-      }
-      if (!token) {
-        const created = await api.post<{ token: string }>(`/sessions/${sessionId}/share`);
-        token = created.token;
-      }
-      await navigator.clipboard.writeText(`${window.location.origin}/s/${token}`);
-      setShareState("copied");
-      setTimeout(() => setShareState("idle"), 2000);
-    } catch {
-      setShareState("error");
-      setTimeout(() => setShareState("idle"), 2000);
-    }
-  }
-
   function submitAnswer(e: FormEvent) {
     e.preventDefault();
     if (!answerText.trim()) return;
@@ -299,9 +276,6 @@ export function ChatView({
           <span className="text-[14px] font-[600] text-fg">{agent.name}</span>
           <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-live pulse-live" : "bg-live"}`} title={isRunning ? "Pracuje" : "Připojeno"} />
         </span>
-        <button onClick={() => void share()} className="pressable rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white hover:bg-accent-hover">
-          {shareState === "copied" ? "Zkopírováno ✓" : shareState === "error" ? "Chyba" : "Pozvat"}
-        </button>
       </header>
 
       {/* messages */}
