@@ -17,7 +17,7 @@ function checkNodeVersion(): void {
   }
 }
 
-/** `hertz update` — same logic as the WebUI button: pull, build, restart service. */
+/** `hzcli update` — same logic as the WebUI button: pull, build, restart service. */
 function runUpdate(): void {
   const candidates = [
     path.resolve(process.cwd(), "scripts", "update.sh"),
@@ -36,17 +36,17 @@ function runUpdate(): void {
 
 function printHelp(): void {
   console.log(`
-${kleur.bold("hertz")} — self-hosted autonomous agent platform
+${kleur.bold("hzcli")} — self-hosted autonomous agent platform
 
-  ${kleur.cyan("hertz start")}                    start the server + WebUI
-  ${kleur.cyan("hertz setup")}                    network setup (host/port wizard)
-  ${kleur.cyan("hertz update")}                   pull, rebuild, restart (data preserved)
-  ${kleur.cyan("hertz users")}                    list user accounts
-  ${kleur.cyan("hertz passwd [email]")}           reset a user's password (recovery, no current password needed)
-  ${kleur.cyan("hertz wipe-memory --all")}        completely erase every agent's memory
-  ${kleur.cyan("hertz wipe-memory --agent <id>")} completely erase one agent's memory
-  ${kleur.cyan("hertz factory-reset")}            delete EVERYTHING back to first-install state
-  ${kleur.cyan("hertz help")}                     this help
+  ${kleur.cyan("hzcli start")}                    start the server + WebUI
+  ${kleur.cyan("hzcli setup")}                    network setup (host/port wizard)
+  ${kleur.cyan("hzcli update")}                   pull, rebuild, restart (data preserved)
+  ${kleur.cyan("hzcli users")}                    list user accounts
+  ${kleur.cyan("hzcli passwd [email]")}           reset a user's password (recovery, no current password needed)
+  ${kleur.cyan("hzcli wipe-memory --all")}        completely erase every agent's memory
+  ${kleur.cyan("hzcli wipe-memory --agent <id>")} completely erase one agent's memory
+  ${kleur.cyan("hzcli factory-reset")}            delete EVERYTHING back to first-install state
+  ${kleur.cyan("hzcli help")}                     this help
 
 Admin commands work directly on the data dir (${kleur.dim(process.env.HERTZ_DATA_DIR ?? "~/.kuclab-hertz")})
 and never boot the server — safe to run while it is stopped.
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
     if (command === "start") {
       console.error(
         kleur.red(
-          "No network config found. Run `hertz setup` first (from a source checkout: `pnpm setup`).",
+          "No network config found. Run `hzcli setup` first (from a source checkout: `pnpm setup`).",
         ),
       );
       process.exit(1);

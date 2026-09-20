@@ -14,7 +14,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "clean": "turbo run clean && rm -rf node_modules",
-    "hertz": "node packages/cli/dist/bin.js",
+    "hzcli": "node packages/cli/dist/bin.js",
     "setup": "node packages/cli/dist/bin.js setup",
     "start": "node packages/cli/dist/bin.js start"
   },

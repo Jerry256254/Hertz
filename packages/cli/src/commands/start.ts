@@ -71,7 +71,7 @@ export async function startServer(ctx: AppContext, config: HertzConfig): Promise
       kleur.yellow(
         "⚠ This server listens on 127.0.0.1 only — it is NOT reachable from other machines\n" +
           "  (LAN, Tailscale, VPN). If you browse from this same computer, you're fine.\n" +
-          "  To allow remote access, run the setup again (`pnpm setup` or `pnpm hertz setup`)\n" +
+          "  To allow remote access, run the setup again (`pnpm setup` or `pnpm hzcli setup`)\n" +
           '  and choose "All interfaces", or set "host": "0.0.0.0" in ~/.kuclab-hertz/config.json,\n' +
           "  then restart the server.\n",
       ),

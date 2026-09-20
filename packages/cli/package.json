@@ -6,7 +6,7 @@
   "author": "KucLab",
   "type": "module",
   "bin": {
-    "kuclab-hertz": "./dist/bin.js"
+    "hzcli": "./dist/bin.js"
   },
   "files": [
     "dist"

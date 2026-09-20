@@ -86,7 +86,7 @@ export async function runUsers(): Promise<void> {
 }
 
 /**
- * `hertz passwd [email]` — recovery password reset. Anyone with terminal
+ * `hzcli passwd [email]` — recovery password reset. Anyone with terminal
  * access to this machine owns the install anyway, so no current password is
  * asked; web sessions are killed so a stale login can't linger.
  */
@@ -104,7 +104,7 @@ export async function runPasswd(args: string[]): Promise<void> {
   const emailArg = args.find((a) => !a.startsWith("-"));
   let user = emailArg ? users.find((u) => u.email === emailArg) : undefined;
   if (emailArg && !user) {
-    fail(`No user with email "${emailArg}". Run \`hertz users\` to list accounts.`);
+    fail(`No user with email "${emailArg}". Run \`hzcli users\` to list accounts.`);
   }
   if (!user) {
     if (users.length === 1) {
@@ -113,7 +113,7 @@ export async function runPasswd(args: string[]): Promise<void> {
       console.log("Multiple users exist — specify which one:\n");
       for (const u of users) console.log(`  ${kleur.cyan(u.email)}`);
       console.log();
-      fail("Usage: hertz passwd <email>");
+      fail("Usage: hzcli passwd <email>");
     }
   }
 
@@ -143,10 +143,10 @@ export async function runPasswd(args: string[]): Promise<void> {
 
 export function printWipeMemoryHelp(): void {
   console.log(`
-${kleur.bold("hertz wipe-memory")} — completely erase agent memory
+${kleur.bold("hzcli wipe-memory")} — completely erase agent memory
 
-  ${kleur.cyan("hertz wipe-memory --all")}              wipe every agent's memory
-  ${kleur.cyan("hertz wipe-memory --agent <id|name>")}  wipe one agent's memory
+  ${kleur.cyan("hzcli wipe-memory --all")}              wipe every agent's memory
+  ${kleur.cyan("hzcli wipe-memory --agent <id|name>")}  wipe one agent's memory
 
 Removes L1 atoms, L2 scenarios, legacy notes, persona.md, session canvases
 (refs/steps) and state.json. Skills survive unless ${kleur.cyan("--with-skills")} is given.
@@ -154,7 +154,7 @@ Flags: ${kleur.cyan("--with-skills")}, ${kleur.cyan("--yes")} / ${kleur.cyan("-y
 `);
 }
 
-/** `hertz wipe-memory --all | --agent <id|name>` — total memory erasure. */
+/** `hzcli wipe-memory --all | --agent <id|name>` — total memory erasure. */
 export async function runWipeMemory(args: string[]): Promise<void> {
   if (hasFlag(args, "--help", "-h") || args.length === 0) {
     printWipeMemoryHelp();
@@ -238,7 +238,7 @@ async function removeAgentContainers(): Promise<void> {
 }
 
 /**
- * `hertz factory-reset` — back to a pristine first-install state. When the
+ * `hzcli factory-reset` — back to a pristine first-install state. When the
  * server is running it can't wipe under itself, so the reset is staged via
  * reset.flag (consumed on next boot, like the WebUI button); when stopped,
  * the data dir is wiped immediately.

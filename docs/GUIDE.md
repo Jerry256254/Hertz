@@ -33,7 +33,7 @@ cd Hertz
 pnpm install
 pnpm build
 pnpm setup   # first run only — network config
-pnpm start   # server + WebUI (or: pnpm hertz start)
+pnpm start   # server + WebUI (or: pnpm hzcli start)
 ```
 
 ---
