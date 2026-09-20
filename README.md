@@ -293,7 +293,9 @@ Everything is local, in `~/.kuclab-hertz/`:
 | `pnpm install` fails on a native module (argon2) | Install build tools: Debian/Ubuntu `sudo apt install -y build-essential python3`, macOS `xcode-select --install` |
 | Browser shows nothing at localhost:4173 | Check the terminal for the exact address/port; make sure the server is still running |
 | Can't reach the WebUI from another machine (LAN/Tailscale) | The server binds to 127.0.0.1 only. Run `pnpm setup` and choose "All interfaces (0.0.0.0)", or set `"host": "0.0.0.0"` in `~/.kuclab-hertz/config.json`, restart — then open `http://<server-ip>:4173`. If a firewall still blocks it: `sudo ufw allow 4173/tcp` (Ubuntu) or `sudo firewall-cmd --add-port=4173/tcp --permanent && sudo firewall-cmd --reload` (Fedora) |
-| Forgot password | For now ask on the project's issues page; future versions get a reset CLI |
+| Forgot password | Run `hertz passwd <email>` in a terminal (from checkout: `node packages/cli/dist/bin.js passwd <email>`) — works even while the server is stopped; `hertz users` lists accounts |
+| Agent remembers wrong/stale things | `hertz wipe-memory --agent <name>` erases one agent's memory completely (`--all` for everyone, `--with-skills` to include skills) |
+| Want to start over completely | `hertz factory-reset` deletes everything back to first-install state (asks for typed confirmation) |
 | Provider scan finds no models | Double-check the API key and that the provider isn't blocked by a firewall/proxy |
 | A bot seems stuck | Open its session and press **Stop**, then send a new message; the durable queue never loses the work |
 | Session shows `active` after a crash | Rebooting the server auto-resumes it (look for `[hertz] recovered after restart` in the log) |

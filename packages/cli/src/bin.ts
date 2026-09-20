@@ -7,6 +7,7 @@ import { createAppContext } from "@kuclab-hertz/server";
 import { loadConfig } from "./config.js";
 import { runNetworkSetup } from "./commands/setup.js";
 import { startServer } from "./commands/start.js";
+import { runFactoryReset, runPasswd, runUsers, runWipeMemory } from "./commands/admin.js";
 
 function checkNodeVersion(): void {
   const major = Number(process.versions.node.split(".")[0]);
@@ -33,12 +34,54 @@ function runUpdate(): void {
   child.on("close", (code) => process.exit(code ?? 1));
 }
 
+function printHelp(): void {
+  console.log(`
+${kleur.bold("hertz")} — self-hosted autonomous agent platform
+
+  ${kleur.cyan("hertz start")}                    start the server + WebUI
+  ${kleur.cyan("hertz setup")}                    network setup (host/port wizard)
+  ${kleur.cyan("hertz update")}                   pull, rebuild, restart (data preserved)
+  ${kleur.cyan("hertz users")}                    list user accounts
+  ${kleur.cyan("hertz passwd [email]")}           reset a user's password (recovery, no current password needed)
+  ${kleur.cyan("hertz wipe-memory --all")}        completely erase every agent's memory
+  ${kleur.cyan("hertz wipe-memory --agent <id>")} completely erase one agent's memory
+  ${kleur.cyan("hertz factory-reset")}            delete EVERYTHING back to first-install state
+  ${kleur.cyan("hertz help")}                     this help
+
+Admin commands work directly on the data dir (${kleur.dim(process.env.HERTZ_DATA_DIR ?? "~/.kuclab-hertz")})
+and never boot the server — safe to run while it is stopped.
+`);
+}
+
 async function main(): Promise<void> {
   checkNodeVersion();
 
   const command = process.argv[2];
   if (command === "update") {
     runUpdate();
+    return;
+  }
+
+  // Headless admin commands — direct data-dir access, no server boot, so they
+  // work while stopped or when locked out of the WebUI.
+  if (command === "users") {
+    await runUsers();
+    return;
+  }
+  if (command === "passwd") {
+    await runPasswd(process.argv.slice(3));
+    return;
+  }
+  if (command === "wipe-memory") {
+    await runWipeMemory(process.argv.slice(3));
+    return;
+  }
+  if (command === "factory-reset") {
+    await runFactoryReset(process.argv.slice(3));
+    return;
+  }
+  if (command === "help" || command === "--help" || command === "-h") {
+    printHelp();
     return;
   }
 
