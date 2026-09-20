@@ -4,7 +4,7 @@ import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { AuditSink } from "@kuclab-hertz/sandbox";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agents, approvals, channelBindings, channelConfigs, sessions } from "../db/schema.js";
+import { agents, approvals, channelBindings, channelConfigs, messages, sessions } from "../db/schema.js";
 import { decryptSecret } from "../secrets/key-encryption.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import type { JobQueue } from "../queue/job-queue.js";
@@ -18,7 +18,7 @@ import {
 import { TelegramDriver } from "./telegram.js";
 import { DiscordDriver } from "./discord.js";
 import type { ChannelDriver, InboundMessage } from "./types.js";
-import { isNewChatCommand, parseDecisionCommand } from "./types.js";
+import { isClearCommand, isNewChatCommand, parseDecisionCommand } from "./types.js";
 
 export interface ChannelManagerDeps {
   db: Database;
@@ -135,8 +135,25 @@ export class ChannelManager {
 
     const allowlist = parseAllowlist(config.allowedChatsJson);
     if (allowlist.length > 0 && !allowlist.includes(chatPart(msg.externalChatId)) && !allowlist.includes(msg.externalChatId)) {
-      await driver.sendText(msg.externalChatId, "⛔ This chat isn't on this bot's allowlist.").catch(() => {});
+      await driver.sendText(msg.externalChatId, "This chat isn't on this bot's allowlist.").catch(() => {});
       return;
+    }
+
+    const senderAllowlist = parseAllowlist(config.allowedSendersJson);
+    if (senderAllowlist.length > 0) {
+      const senderKey = msg.senderId.trim();
+      const labelKey = msg.senderLabel.trim();
+      const bareLabel = labelKey.startsWith("@") ? labelKey.slice(1) : labelKey;
+      const wanted = new Set(senderAllowlist.map((s) => s.trim()).filter(Boolean));
+      const ok =
+        (senderKey && (wanted.has(senderKey) || wanted.has(`${msg.externalChatId.split(":")[0]}:${senderKey}`))) ||
+        wanted.has(labelKey) ||
+        wanted.has(`@${bareLabel}`) ||
+        wanted.has(bareLabel);
+      if (!ok) {
+        await driver.sendText(msg.externalChatId, "You're not on this bot's sender allowlist.").catch(() => {});
+        return;
+      }
     }
 
     const decision = parseDecisionCommand(msg.text);
@@ -149,7 +166,15 @@ export class ChannelManager {
       await this.deps.db
         .delete(channelBindings)
         .where(and(eq(channelBindings.channelId, configId), eq(channelBindings.externalChatId, msg.externalChatId)));
-      await driver.sendText(msg.externalChatId, "🆕 New chat started — what should we work on?").catch(() => {});
+      await driver.sendText(msg.externalChatId, "New chat started — what should we work on?").catch(() => {});
+      return;
+    }
+
+    if (isClearCommand(msg.text)) {
+      const cleared = await this.clearBoundChat(configId, msg.externalChatId);
+      await driver
+        .sendText(msg.externalChatId, cleared ? "Chat cleared. Memory, skills and notes are untouched." : "Nothing to clear — no active chat here yet.")
+        .catch(() => {});
       return;
     }
 
@@ -167,6 +192,23 @@ export class ChannelManager {
     }
     tap.workingNotified = false;
     await enqueueAgentRun(this.deps, { sessionId, userId: await this.deps.fallbackUserId(), userMessage: content }, { maxAttempts: 2 });
+  }
+
+  /** /clear from chat: wipe the bound session's messages (memory/skills/notes survive). */
+  private async clearBoundChat(configId: string, externalChatId: string): Promise<boolean> {
+    const bindings = await this.deps.db
+      .select()
+      .from(channelBindings)
+      .where(and(eq(channelBindings.channelId, configId), eq(channelBindings.externalChatId, externalChatId)))
+      .limit(1);
+    const binding = bindings[0];
+    if (!binding) return false;
+    await this.deps.db.delete(messages).where(eq(messages.sessionId, binding.sessionId));
+    await this.deps.db
+      .update(sessions)
+      .set({ status: "active", metadata: null, updatedAt: new Date() })
+      .where(eq(sessions.id, binding.sessionId));
+    return true;
   }
 
   private async resolveSession(
@@ -192,13 +234,13 @@ export class ChannelManager {
     }
 
     if (!config.defaultAgentId) {
-      await driver.sendText(externalChatId, "⚠️ No default agent is set for this bot — configure one on the Channels page first.").catch(() => {});
+      await driver.sendText(externalChatId, "No default agent is set for this bot — configure one on the Channels page first.").catch(() => {});
       return undefined;
     }
     const agentRows = await this.deps.db.select().from(agents).where(eq(agents.id, config.defaultAgentId)).limit(1);
     const agent = agentRows[0];
     if (!agent) {
-      await driver.sendText(externalChatId, "⚠️ The default agent for this bot is unavailable — pick another one on the Channels page.").catch(() => {});
+      await driver.sendText(externalChatId, "The default agent for this bot is unavailable — pick another one on the Channels page.").catch(() => {});
       return undefined;
     }
 
@@ -208,7 +250,7 @@ export class ChannelManager {
       id: sessionId,
       agentId: agent.id,
       projectId: agent.projectId,
-      title: `💬 ${senderLabel} (${config.kind})`,
+      title: `${senderLabel} (${config.kind})`,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -246,7 +288,7 @@ export class ChannelManager {
     if (event.type === "tool_call") {
       if (!tap.workingNotified && !tap.buffer.trim()) {
         tap.workingNotified = true;
-        await this.broadcast(tap, "⏳ Working on it…");
+        await this.broadcast(tap, "Working on it…");
       }
       return;
     }
@@ -265,12 +307,12 @@ export class ChannelManager {
           return;
         }
       }
-      if (event.question) await this.broadcast(tap, `❓ ${event.question}`);
+      if (event.question) await this.broadcast(tap, event.question);
       return;
     }
     if (event.type === "error") {
       await this.flush(tap);
-      await this.broadcast(tap, `⚠️ ${event.message ?? "Something went wrong."}`);
+      await this.broadcast(tap, event.message ?? "Something went wrong.");
       this.dropTap(sessionId);
       return;
     }
@@ -433,7 +475,7 @@ export class ChannelManager {
     }
 
     await driver
-      .sendText(externalChatId, decision === "approved" ? `✅ Approved: ${result.summary}` : `❌ Rejected: ${result.summary}`)
+      .sendText(externalChatId, decision === "approved" ? `Approved: ${result.summary}` : `Rejected: ${result.summary}`)
       .catch(() => {});
   }
 

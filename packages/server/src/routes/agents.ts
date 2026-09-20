@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agents, messages, projectRoots, sessions } from "../db/schema.js";
+import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agents, channelBindings, messages, projectRoots, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { hasProjectAccess } from "../auth/project-access.js";
@@ -166,7 +166,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
 
     /**
      * The main chat: exactly one permanent thread between the user and the
-     * agent per project. Returns it — creating it on first touch.
+     * agent. Flagged in the DB — never a channel session, never a side chat.
+     * Pre-flag installs adopt their oldest unbound session, so the existing
+     * main thread survives the upgrade instead of forking a new one.
      */
     instance.post("/api/agents/:id/ensure-chat", async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -179,13 +181,28 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
       if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
 
-      const existing = await ctx.db
+      const flagged = await ctx.db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.agentId, id), eq(sessions.isMainChat, true)))
+        .limit(1);
+      if (flagged[0]) return { id: flagged[0].id };
+
+      // Adopt the oldest session that isn't owned by a channel (side chats
+      // created earlier stay side chats — only one becomes main).
+      const boundRows = await ctx.db.select({ sessionId: channelBindings.sessionId }).from(channelBindings);
+      const bound = new Set(boundRows.map((b) => b.sessionId));
+      const candidates = await ctx.db
         .select({ id: sessions.id })
         .from(sessions)
         .where(eq(sessions.agentId, id))
-        .orderBy(desc(sessions.updatedAt))
-        .limit(1);
-      if (existing[0]) return { id: existing[0].id };
+        .orderBy(sessions.createdAt)
+        .limit(50);
+      const adopted = candidates.find((c) => !bound.has(c.id));
+      if (adopted) {
+        await ctx.db.update(sessions).set({ isMainChat: true }).where(eq(sessions.id, adopted.id));
+        return { id: adopted.id };
+      }
 
       const sid = newId();
       const now = new Date();
@@ -196,13 +213,14 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         title: agent.name,
         mode: "autonomous",
         status: "active",
+        isMainChat: true,
         createdAt: now,
         updatedAt: now,
       });
       return reply.code(201).send({ id: sid });
     });
 
-    /** Clears the agent's chat history (messages only — memory and skills stay). */
+    /** Clears the agent's chat history (messages only — memory and skills stay). Channel sessions belong to external chats and are left alone. */
     instance.post("/api/agents/:id/clear-chat", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = ensureChatSchema.safeParse(request.body ?? {});
@@ -210,10 +228,12 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const projectId = parsed.data.projectId;
       if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access" });
 
-      const chatRows = await ctx.db
+      const boundRows = await ctx.db.select({ sessionId: channelBindings.sessionId }).from(channelBindings);
+      const bound = new Set(boundRows.map((b) => b.sessionId));
+      const chatRows = (await ctx.db
         .select({ id: sessions.id })
         .from(sessions)
-        .where(eq(sessions.agentId, id));
+        .where(eq(sessions.agentId, id))).filter((s) => !bound.has(s.id));
       for (const s of chatRows) {
         if (ctx.agentLoop.isRunning(s.id)) {
           return reply.code(409).send({ error: "The agent is running — stop it before clearing the chat." });

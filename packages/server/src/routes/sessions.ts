@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
 import type { AppContext } from "../context.js";
-import { agents, projects, sessions } from "../db/schema.js";
+import { agents, messages, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
@@ -230,6 +230,20 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         updatedAt: new Date(),
       })
       .where(eq(sessions.id, id));
+    return { ok: true };
+  });
+
+  /** /clear — wipes this chat's messages only. Memory, skills, notes stay; the session itself survives. */
+  instance.post("/api/sessions/:id/clear", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const cSess = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
+    if (!cSess[0]) return reply.code(404).send({ error: "Session not found" });
+    if (!(await hasProjectAccess(ctx.db, request.user!, cSess[0].projectId))) return reply.code(403).send({ error: "No access" });
+    if (ctx.agentLoop.isRunning(id)) {
+      return reply.code(409).send({ error: "Stop the agent before clearing this chat." });
+    }
+    await ctx.db.delete(messages).where(eq(messages.sessionId, id));
+    await ctx.db.update(sessions).set({ status: "active", metadata: null, updatedAt: new Date() }).where(eq(sessions.id, id));
     return { ok: true };
   });
 

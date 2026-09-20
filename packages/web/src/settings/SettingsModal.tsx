@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bell, Blocks, ChevronRight, Cpu, FolderOpen, HeartHandshake, Landmark, LogOut,
+  Bell, Blocks, ChevronRight, FolderOpen, HeartHandshake, Landmark, LogOut,
   Pencil, Plus, Scale, Send, Server, ShieldCheck, Trash2, Wallet, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
@@ -13,7 +13,7 @@ import { ModelPicker } from "../components/ModelPicker";
 import { AgentAvatar } from "../components/AgentAvatar";
 import { ApprovalCard } from "../panels/Approvals";
 
-type Section = "general" | "folders" | "providers" | "permissions" | "channels" | "connectors" | "wallet" | "computer" | "data" | "help" | "legal";
+type Section = "general" | "folders" | "providers" | "permissions" | "channels" | "connectors" | "wallet" | "data" | "help" | "legal";
 
 const NAV: Array<{ id: Section; label: string; icon: React.ReactNode; admin?: boolean }> = [
   { id: "general", label: "Obecné", icon: <Bell size={15} /> },
@@ -23,7 +23,6 @@ const NAV: Array<{ id: Section; label: string; icon: React.ReactNode; admin?: bo
   { id: "channels", label: "Kanály zpráv", icon: <Send size={15} /> },
   { id: "connectors", label: "Konektory", icon: <Blocks size={15} /> },
   { id: "wallet", label: "Peněženka", icon: <Wallet size={15} /> },
-  { id: "computer", label: "Zařízení", icon: <Cpu size={15} /> },
   { id: "data", label: "Nastavení dat", icon: <Landmark size={15} /> },
   { id: "help", label: "Nápověda a podpora", icon: <HeartHandshake size={15} /> },
   { id: "legal", label: "Právní údaje", icon: <Scale size={15} /> },
@@ -83,7 +82,6 @@ export function SettingsModal({ agent, projectId, initialSection = "general", on
             {section === "channels" && <ChannelsSection agent={agent} />}
             {section === "connectors" && <ConnectorsSection agent={agent} />}
             {section === "wallet" && <WalletSection />}
-            {section === "computer" && <ComputerSection agent={agent} />}
             {section === "data" && <DataSection agent={agent} projectId={projectId} />}
             {section === "help" && <HelpSection />}
             {section === "legal" && <LegalSection />}
@@ -492,6 +490,12 @@ function ChannelsSection({ agent }: { agent: Agent }) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["channels"] }),
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Test selhal"),
   });
+  const saveLists = useMutation({
+    mutationFn: ({ id, allowedChats, allowedSenders }: { id: string; allowedChats: string[]; allowedSenders: string[] }) =>
+      api.patch(`/channels/${id}`, { allowedChats, allowedSenders }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["channels"] }),
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
+  });
 
   if (isError) {
     return <p className="max-w-[520px] text-[13px] leading-relaxed text-fg-muted">Kanály zpráv může spravovat jen administrátor.</p>;
@@ -504,29 +508,19 @@ function ChannelsSection({ agent }: { agent: Agent }) {
       </p>
       {err && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{err}</p>}
 
-      <p className="mb-2 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">PŘIPOJENO</p>
+      <p className="mb-2 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Připojeno</p>
       {channels.length === 0 && <p className="mb-2 text-[13px] text-fg-subtle">Zatím nic nepřipojeno.</p>}
       {channels.map((c) => (
-        <div key={c.id} className="mb-2 rounded-[16px] border border-border bg-bg-raised px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.kind === "telegram" ? "bg-[#229ed9]/15 text-[#229ed9]" : "bg-[#5865f2]/15 text-[#8b90ff]"}`}>
-              <Send size={15} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13.5px] font-[600] text-fg">{c.label}</p>
-              <p className="truncate text-[12px] text-fg-muted">
-                {c.kind} · {c.botLabel ?? c.tokenHint} · {c.running ? "běží" : c.enabled ? "zapnuto" : "vypnuto"}
-              </p>
-            </div>
-            <button onClick={() => toggle.mutate(c)} className={`flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 ${c.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}>
-              <span className="h-5 w-5 rounded-full bg-white shadow" />
-            </button>
-          </div>
-          <div className="mt-2 flex gap-2 pl-12">
-            <button onClick={() => test.mutate(c.id)} disabled={test.isPending} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg">Otestovat</button>
-            <button onClick={() => { if (window.confirm(`Odpojit „${c.label}"?`)) remove.mutate(c.id); }} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-danger">Odpojit</button>
-          </div>
-        </div>
+        <ChannelCard
+          key={c.id}
+          channel={c}
+          onToggle={() => toggle.mutate(c)}
+          onTest={() => test.mutate(c.id)}
+          testing={test.isPending}
+          onRemove={() => { if (window.confirm(`Odpojit „${c.label}"?`)) remove.mutate(c.id); }}
+          onSaveLists={(allowedChats, allowedSenders) => saveLists.mutate({ id: c.id, allowedChats, allowedSenders })}
+          saving={saveLists.isPending}
+        />
       ))}
 
       {showAdd ? (
@@ -550,6 +544,68 @@ function ChannelsSection({ agent }: { agent: Agent }) {
         <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
           <Plus size={15} /> Připojit kanál
         </button>
+      )}
+    </div>
+  );
+}
+
+function ChannelCard({
+  channel: c,
+  onToggle,
+  onTest,
+  testing,
+  onRemove,
+  onSaveLists,
+  saving,
+}: {
+  channel: ChannelConfig;
+  onToggle: () => void;
+  onTest: () => void;
+  testing: boolean;
+  onRemove: () => void;
+  onSaveLists: (allowedChats: string[], allowedSenders: string[]) => void;
+  saving: boolean;
+}) {
+  const [listsOpen, setListsOpen] = useState(false);
+  const [chats, setChats] = useState(c.allowedChats.join(", "));
+  const [senders, setSenders] = useState((c.allowedSenders ?? []).join(", "));
+
+  const parseList = (raw: string) => raw.split(",").map((x) => x.trim()).filter(Boolean);
+  const dirty = parseList(chats).join(",") !== [...c.allowedChats].sort().join(",") || parseList(senders).join(",") !== [...(c.allowedSenders ?? [])].sort().join(",");
+
+  return (
+    <div className="mb-2 rounded-[16px] border border-border bg-bg-raised px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.kind === "telegram" ? "bg-[#229ed9]/15 text-[#229ed9]" : "bg-[#5865f2]/15 text-[#8b90ff]"}`}>
+          <Send size={15} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13.5px] font-[600] text-fg">{c.label}</p>
+          <p className="truncate text-[12px] text-fg-muted">
+            {c.kind} · {c.botLabel ?? c.tokenHint} · {c.running ? "běží" : c.enabled ? "zapnuto" : "vypnuto"}
+          </p>
+        </div>
+        <button onClick={onToggle} className={`flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 ${c.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}>
+          <span className="h-5 w-5 rounded-full bg-white shadow" />
+        </button>
+      </div>
+      <div className="mt-2 flex gap-2 pl-12">
+        <button onClick={onTest} disabled={testing} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg">Otestovat</button>
+        <button onClick={() => setListsOpen((v) => !v)} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg">Kdo smí psát</button>
+        <button onClick={onRemove} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-danger">Odpojit</button>
+      </div>
+      {listsOpen && (
+        <div className="mt-3 space-y-2.5 border-t border-border pl-12 pr-1 pt-3">
+          <Field label="Povolené chaty (ID, čárkou; prázdné = všechny)" hint="Telegram: ID chatu zobrazí např. @userinfobot. Discord: ID kanálu.">
+            <input value={chats} onChange={(e) => setChats(e.target.value)} placeholder="123456789, -100123456" className={inputCls} />
+          </Field>
+          <Field label="Povolení odesílatelé (ID nebo @nick, čárkou; prázdné = všichni)" hint="Bot odpoví jen těmto lidem — ostatní dostanou zamítnutí.">
+            <input value={senders} onChange={(e) => setSenders(e.target.value)} placeholder="@sefa, 123456789" className={inputCls} />
+          </Field>
+          <button onClick={() => onSaveLists(parseList(chats), parseList(senders))} disabled={saving || !dirty} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+            {saving ? "Ukládám…" : "Uložit seznamy"}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -692,52 +748,6 @@ function WalletSection() {
 
 /* ── Zařízení (počítač) ─────────────────────────────────────────────── */
 
-function ComputerSection({ agent }: { agent: Agent }) {
-  const queryClient = useQueryClient();
-  const [msg, setMsg] = useState<string | null>(null);
-  const { data } = useQuery({
-    queryKey: ["computer", agent.id],
-    queryFn: () => api.get<{ backend: string; status: string; image?: string | null; containerName?: string; error?: string }>(`/agents/${agent.id}/computer`),
-  });
-  const restart = useMutation({
-    mutationFn: () => api.post(`/agents/${agent.id}/computer/restart`),
-    onSuccess: () => {
-      setMsg("Počítač se restartuje…");
-      setTimeout(() => setMsg(null), 4000);
-      void queryClient.invalidateQueries({ queryKey: ["computer", agent.id] });
-    },
-    onError: (e) => setMsg(e instanceof ApiError ? e.message : "Restart selhal"),
-  });
-
-  return (
-    <div className="max-w-[520px]">
-      <div className="mb-4 rounded-[16px] border border-border bg-bg-raised p-4 text-[13px] leading-relaxed">
-        <InfoRow label="Prostředí" value={data?.backend ?? "…"} />
-        <InfoRow label="Stav" value={data?.status ?? "…"} />
-        {data?.image && <InfoRow label="Obraz" value={data.image} mono />}
-        {data?.containerName && <InfoRow label="Kontejner" value={data.containerName} mono />}
-        {data?.error && <p className="mono mt-2 text-[12px] text-danger">{data.error}</p>}
-      </div>
-      <button onClick={() => restart.mutate()} disabled={restart.isPending || agent.computerBackend !== "docker"} title={agent.computerBackend !== "docker" ? "Místní běh nemá co restartovat" : "Znovu vytvořit kontejner"} className="pressable rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
-        {restart.isPending ? "Restartuji…" : "Restartovat počítač"}
-      </button>
-      {msg && <p className="mt-2 text-[13px] text-fg-muted">{msg}</p>}
-      <p className="mt-3 text-[12.5px] leading-relaxed text-fg-subtle">
-        Restart znovu vytvoří kontejner a nahraje aktuální složky ze záložky Složky. Rozdělaná práce v terminálech se ztratí.
-      </p>
-    </div>
-  );
-}
-
-function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <p className="flex items-center justify-between gap-3 py-1 text-fg-muted">
-      <span className="text-[12.5px]">{label}</span>
-      <span className={`text-[12.5px] text-fg ${mono ? "mono" : ""}`}>{value}</span>
-    </p>
-  );
-}
-
 /* ── Nastavení dat ──────────────────────────────────────────────────── */
 
 function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) {
@@ -833,7 +843,7 @@ function HelpSection() {
         <li>Když potřebuje sáhnout mimo svůj počítač nebo udělat něco citlivého, přijde ti žádost o schválení.</li>
         <li>Živé dění sleduj v náhledu (tlačítko „Otevřít náhled") — a když se agent zasekne na přihlášení, obrazovku mu převezmi.</li>
         <li>Trvalé složky přidáš v záložce Složky, opakované úkoly v panelu agenta → Rutiny.</li>
-        <li>Příkaz <span className="mono text-fg">/compact</span> v chatu zhustí dlouhou konverzaci.</li>
+        <li>Příkazy v chatu: <span className="mono text-fg">/compact</span> zhustí konverzaci, <span className="mono text-fg">/clear</span> vyčistí chat (paměť zůstane), <span className="mono text-fg">/export</span> stáhne přepis jako Markdown.</li>
       </ul>
     </div>
   );

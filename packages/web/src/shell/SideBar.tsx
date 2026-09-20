@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageCircle, Plus, Search, Send, Trash2 } from "lucide-react";
+import { MessageCircle, Plus, Search, Send, Trash2, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { Agent, ChannelBinding, ChannelConfig, SessionListItem } from "../lib/types";
 import { relTime, truncate } from "../lib/format";
@@ -15,6 +15,7 @@ export function SideBar({
   onSelectChat,
   onSelectChannel,
   onOpenSearch,
+  onClose,
 }: {
   agent: Agent;
   projectId: string;
@@ -24,6 +25,7 @@ export function SideBar({
   onSelectChat: (sessionId: string) => void;
   onSelectChannel: (binding: ChannelBinding) => void;
   onOpenSearch: () => void;
+  onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -61,9 +63,11 @@ export function SideBar({
   });
 
   const mine = (sessionsData?.sessions ?? []).filter((s) => s.agentId === agent.id);
-  const sideChats = mine.filter((s) => s.id !== mainChatId).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
   const channels = channelsData?.channels ?? [];
   const bindings = bindingsData?.bindings ?? [];
+  const boundSessionIds = new Set(bindings.map((b) => b.sessionId));
+  // Channel sessions live in the channels section — never duplicated as side chats.
+  const sideChats = mine.filter((s) => s.id !== mainChatId && !boundSessionIds.has(s.id)).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
   const channelName = (id: string) => channels.find((c) => c.id === id)?.label ?? "Kanál";
 
   return (
@@ -76,6 +80,9 @@ export function SideBar({
             <span className="h-2 w-2 rounded-full bg-live" /> Připojeno
           </span>
         </span>
+        <button onClick={onClose} title="Zavřít panel" className="pressable rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg">
+          <X size={15} />
+        </button>
       </div>
       <div className="shrink-0 px-3 pt-2">
         <button onClick={onOpenSearch} className="pressable flex w-full items-center gap-2.5 rounded-full border border-border bg-bg-raised px-4 py-2.5 text-[13.5px] text-fg-subtle hover:bg-bg-hover hover:text-fg-muted">
@@ -98,7 +105,7 @@ export function SideBar({
           </button>
         )}
 
-        <p className="px-3 pb-1 pt-4 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">KANÁLY</p>
+        <p className="px-3 pb-1 pt-4 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Kanály</p>
         {bindings.length === 0 && (
           <p className="px-3 py-1.5 text-[12.5px] leading-snug text-fg-subtle">
             {channels.length === 0 ? "Žádné kanály. Připoj Telegram/Discord v Nastavení → Kanály zpráv." : "Zatím žádná konverzace z kanálů."}
@@ -122,7 +129,7 @@ export function SideBar({
         ))}
 
         <div className="flex items-center justify-between px-3 pb-1 pt-4">
-          <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">POSTRANNÍ CHATY</p>
+          <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Postranní chaty</p>
           <button onClick={() => createChat.mutate()} disabled={createChat.isPending} title="Nový postranní chat" className="pressable flex h-7 w-7 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted hover:text-fg disabled:opacity-40">
             <Plus size={14} />
           </button>

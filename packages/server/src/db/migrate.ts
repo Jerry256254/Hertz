@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   status TEXT NOT NULL DEFAULT 'active',
   metadata TEXT,
   parent_session_id TEXT,
+  is_main_chat INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -311,6 +312,7 @@ CREATE TABLE IF NOT EXISTS channel_configs (
   encrypted_token TEXT NOT NULL,
   default_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
   allowed_chats_json TEXT,
+  allowed_senders_json TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
@@ -365,6 +367,8 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agents ADD COLUMN mascot TEXT",
   "ALTER TABLE users ADD COLUMN monthly_budget_usd REAL",
   "ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'generic'",
+  "ALTER TABLE sessions ADD COLUMN is_main_chat INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE channel_configs ADD COLUMN allowed_senders_json TEXT",
   "ALTER TABLE approvals ADD COLUMN payload TEXT",
   "ALTER TABLE approvals ADD COLUMN result TEXT",
 ];

@@ -16,6 +16,8 @@ const createSchema = z.object({
   defaultAgentId: z.string().optional(),
   /** External chat/channel ids allowed to use the bot; empty = anyone who finds it. */
   allowedChats: z.array(z.string().min(1)).max(200).optional(),
+  /** Sender ids/usernames allowed to use the bot; empty = anyone in an allowed chat. */
+  allowedSenders: z.array(z.string().min(1)).max(200).optional(),
 });
 
 const updateSchema = z.object({
@@ -23,6 +25,7 @@ const updateSchema = z.object({
   token: z.string().min(10).optional(),
   defaultAgentId: z.string().nullable().optional(),
   allowedChats: z.array(z.string().min(1)).max(200).nullable().optional(),
+  allowedSenders: z.array(z.string().min(1)).max(200).nullable().optional(),
   enabled: z.boolean().optional(),
 });
 
@@ -53,13 +56,16 @@ export function registerChannelRoutes(app: FastifyInstance, ctx: AppContext): vo
             } catch {
               /* corrupted token — UI offers re-entry */
             }
-            let allowedChats: string[] = [];
-            try {
-              const parsed = c.allowedChatsJson ? (JSON.parse(c.allowedChatsJson) as unknown) : [];
-              if (Array.isArray(parsed)) allowedChats = parsed.filter((x): x is string => typeof x === "string");
-            } catch {
-              allowedChats = [];
-            }
+            const parseList = (raw: string | null): string[] => {
+              try {
+                const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+                return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+              } catch {
+                return [];
+              }
+            };
+            const allowedChats = parseList(c.allowedChatsJson);
+            const allowedSenders = parseList(c.allowedSendersJson);
             return {
               id: c.id,
               kind: c.kind,
@@ -67,6 +73,7 @@ export function registerChannelRoutes(app: FastifyInstance, ctx: AppContext): vo
               tokenHint,
               defaultAgentId: c.defaultAgentId,
               allowedChats,
+              allowedSenders,
               enabled: c.enabled,
               running: live.has(c.id),
               botLabel: live.get(c.id) ?? null,
@@ -119,6 +126,7 @@ export function registerChannelRoutes(app: FastifyInstance, ctx: AppContext): vo
         encryptedToken: encryptSecret(ctx.masterKey, parsed.data.token),
         defaultAgentId: parsed.data.defaultAgentId ?? null,
         allowedChatsJson: parsed.data.allowedChats?.length ? JSON.stringify(parsed.data.allowedChats) : null,
+        allowedSendersJson: parsed.data.allowedSenders?.length ? JSON.stringify(parsed.data.allowedSenders) : null,
         enabled: true,
         createdAt: new Date(),
       });
@@ -155,6 +163,9 @@ export function registerChannelRoutes(app: FastifyInstance, ctx: AppContext): vo
       }
       if (parsed.data.allowedChats !== undefined) {
         patch.allowedChatsJson = parsed.data.allowedChats?.length ? JSON.stringify(parsed.data.allowedChats) : null;
+      }
+      if (parsed.data.allowedSenders !== undefined) {
+        patch.allowedSendersJson = parsed.data.allowedSenders?.length ? JSON.stringify(parsed.data.allowedSenders) : null;
       }
       if (parsed.data.enabled !== undefined) patch.enabled = parsed.data.enabled;
 

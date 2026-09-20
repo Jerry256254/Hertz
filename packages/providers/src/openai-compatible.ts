@@ -12,6 +12,7 @@ import type {
   UsageInfo,
 } from "./types.js";
 import { ProviderError } from "./types.js";
+import { knownModelsForEndpoint, mergeModelLists } from "./known-models.js";
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -125,7 +126,9 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
       throw new ProviderError(opts.id, `listModels failed: ${await res.text()}`, res.status);
     }
     const body = (await res.json()) as { data: Array<{ id: string }> };
-    return body.data.map((m) => ({ id: m.id, displayName: m.id, supportsTools: true }));
+    const scanned = body.data.map((m) => ({ id: m.id, displayName: m.id, supportsTools: true }));
+    // Union with curated ids — /models lags releases on some first-party endpoints.
+    return mergeModelLists(scanned, knownModelsForEndpoint(opts.baseUrl));
   }
 
   async function chat(req: ChatRequest): Promise<ChatResponse> {

@@ -293,6 +293,7 @@ export interface ChannelConfig {
   tokenHint: string;
   defaultAgentId: string | null;
   allowedChats: string[];
+  allowedSenders: string[];
   enabled: boolean;
   running: boolean;
   botLabel: string | null;

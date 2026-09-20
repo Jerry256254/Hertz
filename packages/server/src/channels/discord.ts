@@ -208,6 +208,7 @@ export class DiscordDriver implements ChannelDriver {
       await cb.onMessage({
         externalChatId: `discord:${msg.channel_id}`,
         senderLabel: `@${msg.author.username}`,
+        senderId: msg.author.id,
         text: msg.content.trim(),
       });
     }
@@ -228,7 +229,7 @@ export class DiscordDriver implements ChannelDriver {
   async sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void> {
     // Buttons would need an application id + interaction flow; text commands
     // (/approve <id>, /reject <id>) decide instead — same verdict, less setup.
-    const lines = [`🔐 **Approval needed**`, ``, summary];
+    const lines = [`**Approval needed**`, ``, summary];
     if (detail?.trim()) lines.push(``, detail.trim().slice(0, 1500));
     lines.push(``, `Reply with \`/approve ${approvalId}\` or \`/reject ${approvalId}\`.`);
     await this.sendText(externalChatId, lines.join("\n"));

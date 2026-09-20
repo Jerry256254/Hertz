@@ -7,7 +7,7 @@ import { relTime } from "../lib/format";
 import { Markdown } from "../components/Markdown";
 
 /** Memory view: persona (L3) / scenarios (L2) / atoms (L1). */
-export function MemoryView({ agent, onOpenSoul }: { agent: Agent; onOpenSoul: () => void }) {
+export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; onOpenSoul: () => void; bare?: boolean }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"persona" | "scenarios" | "atoms">("persona");
   const { data, isLoading } = useQuery({
@@ -21,19 +21,21 @@ export function MemoryView({ agent, onOpenSoul }: { agent: Agent; onOpenSoul: ()
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-[60px] shrink-0 items-center gap-3 px-3 md:px-5">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-info-wash text-info"><Brain size={18} /></span>
-        <div>
-          <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Paměť</p>
-          <p className="text-[12px] text-fg-muted">Co si {agent.name} pamatuje</p>
-        </div>
-        <span className="flex-1" />
-        <button onClick={onOpenSoul} className="pressable rounded-full border border-border bg-bg-raised px-4 py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover">
-          Otevřít SOUL.md
-        </button>
-      </header>
+      {!bare && (
+        <header className="flex h-[60px] shrink-0 items-center gap-3 px-3 md:px-5">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-info-wash text-info"><Brain size={18} /></span>
+          <div>
+            <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Paměť</p>
+            <p className="text-[12px] text-fg-muted">Co si {agent.name} pamatuje</p>
+          </div>
+          <span className="flex-1" />
+          <button onClick={onOpenSoul} className="pressable rounded-full border border-border bg-bg-raised px-4 py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover">
+            Otevřít SOUL.md
+          </button>
+        </header>
+      )}
 
-      <div className="shrink-0 px-3 md:px-5">
+      <div className={`shrink-0 ${bare ? "" : "px-3 md:px-5"}`}>
         <div className="mx-auto grid w-full max-w-[760px] grid-cols-3 gap-1 rounded-full border border-border bg-bg-raised p-1">
           <MemoryTab active={tab === "persona"} onClick={() => setTab("persona")}>Osobnost</MemoryTab>
           <MemoryTab active={tab === "scenarios"} onClick={() => setTab("scenarios")}>Scénáře ({data?.scenarios.length ?? 0})</MemoryTab>
@@ -41,8 +43,8 @@ export function MemoryView({ agent, onOpenSoul }: { agent: Agent; onOpenSoul: ()
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5">
-        <div className="mx-auto w-full max-w-[760px]">
+      <div className={`min-h-0 flex-1 ${bare ? "" : "overflow-y-auto px-3 py-4 md:px-5"}`}>
+        <div className={`mx-auto w-full max-w-[760px] ${bare ? "pt-3" : ""}`}>
           {isLoading && <p className="py-8 text-center text-[13px] text-fg-subtle">Načítám paměť…</p>}
           {data && tab === "persona" && (
             <div className="rounded-[20px] border border-border bg-bg-raised p-5">

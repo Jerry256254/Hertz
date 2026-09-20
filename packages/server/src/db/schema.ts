@@ -222,6 +222,8 @@ export const sessions = sqliteTable("sessions", {
   metadata: text("metadata"),
   /** Set when this session was branched from another (M2). */
   parentSessionId: text("parent_session_id"),
+  /** The one permanent user↔agent thread (main chat). Channel sessions and side chats are never flagged. */
+  isMainChat: integer("is_main_chat", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
@@ -523,6 +525,12 @@ export const channelConfigs = sqliteTable("channel_configs", {
    * every chat that can see the bot may talk to it — prefer setting ids.
    */
   allowedChatsJson: text("allowed_chats_json"),
+  /**
+   * Optional allowlist of sender ids/usernames (JSON array of strings).
+   * Empty = anyone in an allowed chat may talk; set to restrict to e.g.
+   * ["123456789", "@boss"]. Matched against the platform sender id and label.
+   */
+  allowedSendersJson: text("allowed_senders_json"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });

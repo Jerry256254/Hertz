@@ -76,21 +76,32 @@ export function createGoogleAdapter(creds: ProviderCredentials): ProviderAdapter
   const key = creds.apiKey;
 
   async function listModels(): Promise<ModelInfo[]> {
-    const res = await fetch(`${API_BASE}/models?key=${key}&pageSize=200`);
-    if (!res.ok) {
-      throw new ProviderError("google", `listModels failed: ${await res.text()}`, res.status);
+    // Paginated via nextPageToken — one page silently drops models.
+    const out: ModelInfo[] = [];
+    let pageToken = "";
+    for (let page = 0; page < 10; page++) {
+      const res = await fetch(`${API_BASE}/models?key=${key}&pageSize=200${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`);
+      if (!res.ok) {
+        throw new ProviderError("google", `listModels failed: ${await res.text()}`, res.status);
+      }
+      const body = (await res.json()) as {
+        models: Array<{ name: string; displayName?: string; inputTokenLimit?: number; outputTokenLimit?: number }>;
+        nextPageToken?: string;
+      };
+      for (const m of body.models.filter((x) => x.name.includes("gemini"))) {
+        out.push({
+          id: m.name.replace(/^models\//, ""),
+          displayName: m.displayName ?? m.name,
+          contextWindow: m.inputTokenLimit,
+          maxOutputTokens: m.outputTokenLimit,
+          supportsTools: true,
+          supportsVision: true,
+        });
+      }
+      if (!body.nextPageToken) break;
+      pageToken = body.nextPageToken;
     }
-    const body = (await res.json()) as { models: Array<{ name: string; displayName?: string; inputTokenLimit?: number; outputTokenLimit?: number }> };
-    return body.models
-      .filter((m) => m.name.includes("gemini"))
-      .map((m) => ({
-        id: m.name.replace(/^models\//, ""),
-        displayName: m.displayName ?? m.name,
-        contextWindow: m.inputTokenLimit,
-        maxOutputTokens: m.outputTokenLimit,
-        supportsTools: true,
-        supportsVision: true,
-      }));
+    return out;
   }
 
   async function chat(req: ChatRequest): Promise<ChatResponse> {

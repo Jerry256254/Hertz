@@ -101,6 +101,29 @@ function isAbortError(err: unknown): boolean {
   return !!err && typeof err === "object" && (err as Error).name === "AbortError";
 }
 
+/** Stable signature for the spin guard: same tool + same input = same string regardless of key order. */
+export function toolCallSignature(name: string, input: unknown): string {
+  const stable = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(stable);
+    if (v && typeof v === "object") {
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) out[k] = stable((v as Record<string, unknown>)[k]);
+      return out;
+    }
+    return v;
+  };
+  return `${name}(${JSON.stringify(stable(input))})`;
+}
+
+/** How many of the most recent signatures are identical to the last one (consecutive repetition count). */
+export function consecutiveRepeatCount(sigs: string[]): number {
+  if (sigs.length === 0) return 0;
+  const last = sigs[sigs.length - 1]!;
+  let n = 0;
+  for (let i = sigs.length - 1; i >= 0 && sigs[i] === last; i--) n++;
+  return n;
+}
+
 function isTransientProviderError(err: unknown): boolean {
   if (isAbortError(err)) return false;
   if (err instanceof ProviderError) {
@@ -488,6 +511,9 @@ export class AgentLoopManager {
     const maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
     let turnsRemaining = maxTurns;
     let continuationsUsed = 0;
+    // Spin guard: signatures of recently executed tool calls (this run only).
+    const recentToolSigs: string[] = [];
+    const nudgedSigs = new Set<string>();
 
     while (true) {
       // Pause takes effect between turns: the current model call / tool finishes first.
@@ -643,6 +669,8 @@ export class AgentLoopManager {
       }
 
       const resultBlocks: ContentBlock[] = [];
+      let spinNudge: string | undefined;
+      let spinHalt: string | undefined;
       for (const t of toolUses) {
         const input = safeJsonParse(t.inputRaw);
 
@@ -712,6 +740,19 @@ export class AgentLoopManager {
           content: result.summary,
           isError: result.isError,
         });
+
+        // Spin guard: the same call over and over means the approach is dead.
+        // 3rd repeat → steer once; 5th → stop the run instead of burning turns.
+        const sig = toolCallSignature(t.name, input);
+        recentToolSigs.push(sig);
+        if (recentToolSigs.length > 12) recentToolSigs.shift();
+        const repeats = consecutiveRepeatCount(recentToolSigs);
+        if (repeats >= 5 && !spinHalt) {
+          spinHalt = sig;
+        } else if (repeats >= 3 && !nudgedSigs.has(sig)) {
+          nudgedSigs.add(sig);
+          spinNudge = `You just called ${t.name} with identical input ${repeats} times in a row and got the same outcome. Stop repeating it: try a genuinely different approach, use a different tool, or — if you're stuck — say what's blocking you instead of calling it again.`;
+        }
         if (result.attachments && result.attachments.length > 0) {
           visionAttachments.push(...result.attachments.map((a) => ({ tool: t.name, ...a })));
         }
@@ -735,6 +776,30 @@ export class AgentLoopManager {
           sessionId: config.sessionId,
           role: "user",
           content: resultBlocks,
+          senderAgentId: null,
+          tokensIn: 0,
+          tokensOut: 0,
+          cachedTokensIn: 0,
+          cost: 0,
+          purpose: "agent_turn",
+        });
+      }
+
+      // Spin guard outcomes land after the tool results, so the history stays
+      // provider-valid (every tool_use already has its tool_result).
+      if (spinHalt) {
+        await persistence.updateSessionStatus(config.sessionId, "completed");
+        this.emit(config.sessionId, {
+          type: "notice",
+          message: "Stopped: the same tool call repeated 5 times with no progress. Send a follow-up to steer the agent.",
+        });
+        return;
+      }
+      if (spinNudge) {
+        await persistence.appendMessage({
+          sessionId: config.sessionId,
+          role: "user",
+          content: [{ type: "text", text: `[System nudge — not from the user] ${spinNudge}` }],
           senderAgentId: null,
           tokensIn: 0,
           tokensOut: 0,

@@ -10,6 +10,7 @@ import { createHostAccessTools } from "./host-access-tools.js";
 import { createSkillTools } from "./skill-tools.js";
 import { createBrowserTools } from "./browser-tools.js";
 import { createDesktopTools } from "./desktop-tools.js";
+import { createContextTools } from "./context-tools.js";
 import { recordToolStep } from "../memory/short-term.js";
 import { resolveAgentProjectId } from "../memory/recall.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
@@ -68,8 +69,9 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const skillTools = createSkillTools(deps.db, deps.paths);
   const browserTools = createBrowserTools();
   const desktopTools = createDesktopTools(deps.db, deps.masterKey, deps.desktop);
+  const contextTools = createContextTools(deps.db);
   const allByName = new Map(
-    [...memoryTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...skillTools, ...browserTools, ...desktopTools, ASK_USER_DEF].map((t) => [t.name, t]),
+    [...memoryTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...skillTools, ...browserTools, ...desktopTools, ...contextTools, ASK_USER_DEF].map((t) => [t.name, t]),
   );
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
@@ -78,12 +80,13 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const approvalDefs = [...toDefs(approvalTools), ...toDefs(hostAccessTools)];
   const skillDefs = toDefs(skillTools);
   const computerDefs = [...toDefs(browserTools), ...toDefs(desktopTools)];
+  const contextDefs = toDefs(contextTools);
   const askUserDefs = toDefs([ASK_USER_DEF]);
 
   return {
     async listDefinitions(agentId) {
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      return [...baseDefs, ...memoryDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...computerDefs, ...mcpDefs, ...askUserDefs];
+      return [...baseDefs, ...memoryDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...computerDefs, ...contextDefs, ...mcpDefs, ...askUserDefs];
     },
     async run(name, input, ctx) {
       const tool = allByName.get(name);

@@ -69,8 +69,8 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
       <header className="flex h-[60px] shrink-0 items-center gap-2.5 px-3 md:px-5">
         <AgentAvatar seed={agent.id} size={30} />
         <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
-          <button onClick={() => setTab("soul")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "soul" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>📄 SOUL.md</button>
-          <button onClick={() => setTab("skills")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "skills" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>⚡ Skills</button>
+          <button onClick={() => setTab("soul")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "soul" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>SOUL.md</button>
+          <button onClick={() => setTab("skills")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "skills" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>Skills</button>
         </div>
         <span className="flex-1" />
         {tab === "soul" && (

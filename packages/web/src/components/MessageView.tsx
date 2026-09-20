@@ -1,9 +1,10 @@
 import { Minimize2 } from "lucide-react";
 import type { PersistedMessage } from "../lib/types";
 import { AgentAvatar } from "./AgentAvatar";
-import { Badge } from "./ui";
 import { Markdown } from "./Markdown";
 import { ToolStepChecklist, type ToolStep } from "./ToolStepChecklist";
+
+const NUDGE_PREFIX = "[System nudge — not from the user]";
 
 export function MessageView({
   message,
@@ -21,9 +22,9 @@ export function MessageView({
     return (
       <div className="mx-auto w-full max-w-[760px] px-4 py-2">
         <details className="group rounded-[16px] border border-border bg-bg-raised px-4 py-2.5">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-[600] tracking-[0.04em] text-fg-muted marker:hidden">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-[12px] font-[600] text-fg-muted marker:hidden">
             <Minimize2 size={12} className="shrink-0" />
-            ZHUSTĚNO <span className="font-normal tracking-normal text-fg-subtle">— agent shrnul kontext, nic důležitého se neztratilo</span>
+            Zhustěno <span className="font-normal text-fg-subtle">— agent shrnul kontext, nic důležitého se neztratilo</span>
           </summary>
           <div className="mono mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-fg-muted">{text}</div>
         </details>
@@ -36,6 +37,17 @@ export function MessageView({
     const imageBlocks = message.content.filter((b) => b.type === "image");
     const toolResults = message.content.filter((b) => b.type === "tool_result");
     if (textBlocks.length === 0 && imageBlocks.length === 0 && toolResults.length > 0) return null;
+    // Spin-guard nudges are system notices, not user bubbles.
+    const onlyText = textBlocks.length === 1 && imageBlocks.length === 0 && toolResults.length === 0 ? textBlocks[0] : undefined;
+    if (onlyText?.type === "text" && onlyText.text.startsWith(NUDGE_PREFIX)) {
+      return (
+        <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
+          <p className="rounded-[14px] border border-dashed border-border px-4 py-2.5 text-center text-[12.5px] italic leading-relaxed text-fg-muted">
+            {onlyText.text.slice(NUDGE_PREFIX.length).trim()}
+          </p>
+        </div>
+      );
+    }
 
     return (
       <div className="mx-auto flex w-full max-w-[760px] justify-end px-4 py-1.5 animate-fade-in">
@@ -73,7 +85,6 @@ export function MessageView({
         ) : (
           <ToolStepChecklist steps={steps} />
         ))}
-        {message.cost > 0 && <Badge tone="neutral" className="mono">${message.cost.toFixed(4)}</Badge>}
       </div>
     </div>
   );

@@ -14,12 +14,14 @@ export function ChannelView({
   onOpenPreview,
   previewActive,
   onToggleSidebar,
+  onOpenAgent,
 }: {
   agent: Agent;
   binding: ChannelBinding;
   onOpenPreview: () => void;
   previewActive: boolean;
   onToggleSidebar: () => void;
+  onOpenAgent?: () => void;
 }) {
   const { data: channelsData } = useQuery({
     queryKey: ["channels"],
@@ -48,6 +50,7 @@ export function ChannelView({
           onOpenPreview={onOpenPreview}
           previewActive={previewActive}
           onToggleSidebar={onToggleSidebar}
+          onOpenAgent={onOpenAgent}
         />
       </div>
     </div>

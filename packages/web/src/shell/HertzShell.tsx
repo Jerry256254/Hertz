@@ -8,11 +8,8 @@ import { ChatView } from "../chat/ChatView";
 import { AgentPanel, type AgentTab } from "../panels/AgentPanel";
 import { BrowserPanel } from "../panels/BrowserPanel";
 import { useApprovals } from "../panels/Approvals";
-import { MemoryView } from "../views/MemoryView";
-import { FeedView } from "../views/FeedView";
 import { SoulEditor } from "../views/SoulEditor";
 import { ChannelView } from "../views/ChannelView";
-import { ComputerView } from "../views/ComputerView";
 import { ApprovalsView } from "../views/ApprovalsView";
 import { SearchOverlay } from "../overlays/SearchOverlay";
 import { SettingsModal } from "../settings/SettingsModal";
@@ -22,7 +19,7 @@ export function HertzShell() {
   const queryClient = useQueryClient();
   const [module, setModule] = useState<Module>("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [rightPanel, setRightPanel] = useState<"agent" | "browser" | null>("agent");
+  const [rightPanel, setRightPanel] = useState<"agent" | "browser" | null>(null);
   const [agentTab, setAgentTab] = useState<AgentTab>("activity");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeBinding, setActiveBinding] = useState<ChannelBinding | null>(null);
@@ -56,20 +53,10 @@ export function HertzShell() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["agent"] }),
   });
 
-  const discuss = useMutation({
-    mutationFn: async (text: string) => {
-      if (!mainChatId) throw new Error("Hlavní chat zatím není připravený");
-      await api.post(`/sessions/${mainChatId}/messages`, { text });
-    },
-    onSuccess: () => {
-      if (mainChatId) {
-        setActiveSessionId(mainChatId);
-        setActiveBinding(null);
-        setModule("chat");
-        void queryClient.invalidateQueries({ queryKey: ["session", mainChatId] });
-      }
-    },
-  });
+  function openAgentPanel(tab: AgentTab = "activity") {
+    setAgentTab(tab);
+    setRightPanel("agent");
+  }
 
   if (agentQuery.isLoading) {
     return <div className="flex h-full items-center justify-center text-sm text-fg-muted">Načítám…</div>;
@@ -109,7 +96,6 @@ export function HertzShell() {
     <div className="flex h-full min-h-0 bg-bg">
       <IconRail
         module={module}
-        agent={agent}
         pendingApprovals={pendingCount}
         onModule={(m) => {
           setModule(m);
@@ -117,10 +103,6 @@ export function HertzShell() {
         }}
         onSearch={() => setSearchOpen(true)}
         onSettings={() => setSettingsOpen(true)}
-        onIdentity={() => {
-          setRightPanel("agent");
-          setAgentTab("identity");
-        }}
       />
 
       {showSidebar && (
@@ -134,6 +116,7 @@ export function HertzShell() {
             onSelectChat={selectChat}
             onSelectChannel={selectChannel}
             onOpenSearch={() => setSearchOpen(true)}
+            onClose={() => setSidebarOpen(false)}
           />
         </aside>
       )}
@@ -143,10 +126,11 @@ export function HertzShell() {
           <ChatView
             sessionId={activeSessionId}
             agent={agent}
-            onOpenPreview={() => setRightPanel(browserOpen ? "agent" : "browser")}
+            onOpenPreview={() => setRightPanel(browserOpen ? null : "browser")}
             previewActive={browserOpen}
             onDesktopActivity={() => setRightPanel("browser")}
             onToggleSidebar={() => setSidebarOpen((v) => !v)}
+            onOpenAgent={() => openAgentPanel("identity")}
           />
         )}
         {module === "chat" && !activeSessionId && (
@@ -156,25 +140,14 @@ export function HertzShell() {
           <ChannelView
             agent={agent}
             binding={activeBinding}
-            onOpenPreview={() => setRightPanel(browserOpen ? "agent" : "browser")}
+            onOpenPreview={() => setRightPanel(browserOpen ? null : "browser")}
             previewActive={browserOpen}
             onToggleSidebar={() => setSidebarOpen((v) => !v)}
+            onOpenAgent={() => openAgentPanel("identity")}
           />
         )}
-        {module === "feed" && (
-          <FeedView
-            agent={agent}
-            mainChatId={mainChatId}
-            onDiscuss={(text) => discuss.mutate(text)}
-          />
-        )}
-        {module === "memory" && <MemoryView agent={agent} onOpenSoul={() => setModule("soul")} />}
-        {module === "soul" && <SoulEditor agent={agent} onClose={() => setModule("memory")} />}
+        {module === "soul" && <SoulEditor agent={agent} onClose={() => setModule("chat")} />}
         {module === "approvals" && <ApprovalsView />}
-        {module === "computer" && <ComputerView agent={agent} projectId={projectId} />}
-        {discuss.isError && (
-          <p className="shrink-0 px-5 pb-2 text-[12.5px] text-danger">{(discuss.error as Error).message}</p>
-        )}
       </main>
 
       {rightPanel && (
@@ -185,12 +158,13 @@ export function HertzShell() {
               projectId={projectId}
               tab={agentTab}
               onTabChange={setAgentTab}
+              onClose={() => setRightPanel(null)}
               onOpenSoul={() => setModule("soul")}
-              onOpenMemory={() => setModule("memory")}
+              onOpenMemory={() => openAgentPanel("memory")}
               onRename={(n) => rename.mutate(n)}
             />
           ) : (
-            <BrowserPanel agent={agent} onClose={() => setRightPanel("agent")} />
+            <BrowserPanel agent={agent} onClose={() => setRightPanel(null)} />
           )}
         </aside>
       )}

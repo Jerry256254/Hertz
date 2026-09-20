@@ -1,25 +1,19 @@
-import { Lightbulb, MessageCircle, Monitor, Newspaper, Search, Settings, ShieldCheck } from "lucide-react";
-import type { Agent } from "../lib/types";
-import { AgentAvatar } from "../components/AgentAvatar";
+import { MessageCircle, Search, Settings, ShieldCheck } from "lucide-react";
 
-export type Module = "chat" | "feed" | "memory" | "approvals" | "computer" | "soul" | "channel";
+export type Module = "chat" | "approvals" | "soul" | "channel";
 
 export function IconRail({
   module,
-  agent,
   pendingApprovals,
   onModule,
   onSearch,
   onSettings,
-  onIdentity,
 }: {
   module: Module;
-  agent: Agent;
   pendingApprovals: number;
   onModule: (m: Module) => void;
   onSearch: () => void;
   onSettings: () => void;
-  onIdentity: () => void;
 }) {
   return (
     <nav className="flex w-[64px] shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-bg-sidebar py-3">
@@ -29,24 +23,12 @@ export function IconRail({
       <RailButton active={false} onClick={onSearch} title="Hledat">
         <Search size={19} />
       </RailButton>
-      <RailButton active={module === "feed"} onClick={() => onModule("feed")} title="Kanál příspěvků">
-        <Newspaper size={19} />
-      </RailButton>
-      <RailButton active={module === "memory"} onClick={() => onModule("memory")} title="Paměť">
-        <Lightbulb size={19} />
-      </RailButton>
       <RailButton active={module === "approvals"} onClick={() => onModule("approvals")} title="Schválení" badge={pendingApprovals}>
         <ShieldCheck size={19} />
-      </RailButton>
-      <RailButton active={module === "computer"} onClick={() => onModule("computer")} title="Počítač">
-        <Monitor size={19} />
       </RailButton>
 
       <span className="flex-1" />
 
-      <button onClick={onIdentity} title={agent.name} className="pressable mb-1 rounded-[12px] border-2 border-transparent hover:border-accent">
-        <AgentAvatar seed={agent.id} size={34} />
-      </button>
       <RailButton active={false} onClick={onSettings} title="Nastavení">
         <Settings size={19} />
       </RailButton>

@@ -1,19 +1,24 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Check, Clock, Fingerprint, Heart, ListTodo, Plus, ShieldCheck, X } from "lucide-react";
-import { api } from "../lib/api";
-import type { Agent, AgentLayeredMemory, Routine, SessionListItem } from "../lib/types";
+import { Activity, Brain, Check, Clock, Cpu, Fingerprint, ListTodo, Monitor, Pencil, Plus, ShieldCheck, X, Zap } from "lucide-react";
+import { api, ApiError } from "../lib/api";
+import type { Agent, AgentLayeredMemory, ProviderConfig, Routine, SessionListItem } from "../lib/types";
 import { fmtDate, relTime } from "../lib/format";
 import { AgentAvatar } from "../components/AgentAvatar";
+import { ModelPicker } from "../components/ModelPicker";
 import { ApprovalCard, ApprovalHistoryRow, useApprovals } from "./Approvals";
+import { MemoryView } from "../views/MemoryView";
+import { ComputerView } from "../views/ComputerView";
+import { SkillsEditor } from "../views/SkillsEditor";
 
-export type AgentTab = "activity" | "approvals" | "routines" | "identity";
+export type AgentTab = "activity" | "approvals" | "routines" | "identity" | "skills" | "memory" | "computer";
 
 export function AgentPanel({
   agent,
   projectId,
   tab,
   onTabChange,
+  onClose,
   onOpenSoul,
   onOpenMemory,
   onRename,
@@ -22,6 +27,7 @@ export function AgentPanel({
   projectId: string;
   tab: AgentTab;
   onTabChange: (t: AgentTab) => void;
+  onClose: () => void;
   onOpenSoul: () => void;
   onOpenMemory: () => void;
   onRename: (name: string) => void;
@@ -32,13 +38,17 @@ export function AgentPanel({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* profile header */}
-      <div className="flex shrink-0 flex-col items-center px-4 pb-3 pt-5">
+      <div className="relative flex shrink-0 flex-col items-center px-4 pb-3 pt-5">
+        <button onClick={onClose} title="Zavřít panel" className="pressable absolute right-2 top-2 rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg">
+          <X size={15} />
+        </button>
         <AgentAvatar seed={agent.id} size={72} />
         <p className="mt-2 text-[17px] font-[700] tracking-[-0.02em] text-fg">{agent.name}</p>
         <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-fg-muted">
           <span className="h-2 w-2 rounded-full bg-live" /> Připojeno
         </p>
-        <div className="mt-3 grid w-full grid-cols-4 gap-1 rounded-full border border-border bg-bg-raised p-1">
+        <ModelRow agent={agent} />
+        <div className="mt-3 grid w-full grid-cols-7 gap-1 rounded-full border border-border bg-bg-raised p-1">
           <PanelTabButton active={tab === "activity"} onClick={() => onTabChange("activity")} title="Aktivita">
             <ListTodo size={16} />
           </PanelTabButton>
@@ -51,6 +61,15 @@ export function AgentPanel({
           <PanelTabButton active={tab === "identity"} onClick={() => onTabChange("identity")} title="Identita">
             <Fingerprint size={16} />
           </PanelTabButton>
+          <PanelTabButton active={tab === "skills"} onClick={() => onTabChange("skills")} title="Skills">
+            <Zap size={16} />
+          </PanelTabButton>
+          <PanelTabButton active={tab === "memory"} onClick={() => onTabChange("memory")} title="Paměť">
+            <Brain size={16} />
+          </PanelTabButton>
+          <PanelTabButton active={tab === "computer"} onClick={() => onTabChange("computer")} title="Počítač">
+            <Monitor size={16} />
+          </PanelTabButton>
         </div>
       </div>
 
@@ -59,6 +78,88 @@ export function AgentPanel({
         {tab === "approvals" && <ApprovalsTab />}
         {tab === "routines" && <RoutinesTab agent={agent} projectId={projectId} />}
         {tab === "identity" && <IdentityTab agent={agent} onOpenSoul={onOpenSoul} onOpenMemory={onOpenMemory} onRename={onRename} />}
+        {tab === "skills" && <SkillsEditor agent={agent} />}
+        {tab === "memory" && <MemoryView agent={agent} onOpenSoul={onOpenSoul} bare />}
+        {tab === "computer" && <ComputerView agent={agent} projectId={projectId} bare />}
+      </div>
+    </div>
+  );
+}
+
+/** Current model + provider, with an inline editor (no trip to Settings needed). */
+function ModelRow({ agent }: { agent: Agent }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [providerId, setProviderId] = useState(agent.providerConfigId);
+  const [model, setModel] = useState(agent.model);
+  const [err, setErr] = useState<string | null>(null);
+
+  const { data: providersData } = useQuery({
+    queryKey: ["providers"],
+    queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
+    enabled: open,
+  });
+  const providers = providersData?.providers ?? [];
+  const currentProvider = providers.find((p) => p.id === agent.providerConfigId);
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/agents/${agent.id}`, { providerConfigId: providerId, model: model.trim() }),
+    onSuccess: () => {
+      setOpen(false);
+      setErr(null);
+      void queryClient.invalidateQueries({ queryKey: ["agent"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
+  });
+
+  function startEdit() {
+    setProviderId(agent.providerConfigId);
+    setModel(agent.model);
+    setErr(null);
+    setOpen(true);
+  }
+
+  if (!open) {
+    return (
+      <button onClick={startEdit} title="Změnit model" className="pressable mt-2.5 flex w-full items-center gap-2 rounded-[14px] border border-border bg-bg-raised px-3.5 py-2 text-left hover:bg-bg-hover">
+        <Cpu size={14} className="shrink-0 text-fg-muted" />
+        <span className="mono min-w-0 flex-1 truncate text-[12.5px] text-fg">{agent.model}</span>
+        <Pencil size={12} className="shrink-0 text-fg-subtle" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2.5 w-full rounded-[16px] border border-border bg-bg-raised p-3">
+      <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">POSKYTOVATEL</p>
+      <select
+        value={providerId}
+        onChange={(e) => {
+          setProviderId(e.target.value);
+          const p = providers.find((x) => x.id === e.target.value);
+          if (p?.defaultModel) setModel(p.defaultModel);
+        }}
+        className="h-10 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[13px] text-fg outline-none focus:border-accent"
+      >
+        {providers.map((p) => (
+          <option key={p.id} value={p.id}>{p.label} ({p.provider})</option>
+        ))}
+      </select>
+      <p className="mb-1.5 mt-3 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">MODEL</p>
+      <ModelPicker providerConfigId={providerId} value={model} onChange={setModel} />
+      <input
+        value={model}
+        onChange={(e) => setModel(e.target.value)}
+        placeholder="…nebo napiš ID modelu ručně"
+        className="mono mt-2 h-10 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[12.5px] text-fg outline-none focus:border-accent"
+      />
+      {currentProvider && <p className="mt-1.5 text-[11.5px] text-fg-subtle">Nyní: {currentProvider.label} · {agent.model}</p>}
+      {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
+      <div className="mt-2.5 flex gap-2">
+        <button onClick={() => save.mutate()} disabled={save.isPending || !model.trim()} className="pressable flex-1 rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+          {save.isPending ? "Ukládám…" : "Uložit"}
+        </button>
+        <button onClick={() => setOpen(false)} className="pressable rounded-full border border-border bg-bg-sunken px-4 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
       </div>
     </div>
   );
@@ -93,14 +194,14 @@ function ActivityTab({ agentId }: { agentId: string }) {
 
   return (
     <div>
-      <p className="px-2 pb-1 pt-1 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">DNEŠEK</p>
+      <p className="px-2 pb-1 pt-1 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Dnešek</p>
       {today.length === 0 && <p className="px-2 py-3 text-[13px] text-fg-subtle">Zatím žádná aktivita. Napiš agentovi v hlavním chatu.</p>}
       {today.map((s) => (
         <ActivityRow key={s.id} title={s.title} desc={s.projectName} time={relTime(s.updatedAt)} />
       ))}
       {older.length > 0 && (
         <>
-          <p className="px-2 pb-1 pt-3 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">DŘÍVE</p>
+          <p className="px-2 pb-1 pt-3 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Dříve</p>
           {older.map((s) => (
             <ActivityRow key={s.id} title={s.title} desc={s.projectName} time={relTime(s.updatedAt)} />
           ))}
@@ -134,12 +235,12 @@ function ApprovalsTab() {
     <div className="space-y-3">
       {pending.length > 0 && (
         <div className="space-y-2.5">
-          <p className="px-2 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">ČEKÁ NA ROZHODNUTÍ</p>
+          <p className="px-2 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Čeká na rozhodnutí</p>
           {pending.map((a) => <ApprovalCard key={a.id} approval={a} />)}
         </div>
       )}
       <div>
-        <p className="px-2 pb-1 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">HISTORIE SCHVÁLENÍ</p>
+        <p className="px-2 pb-1 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Historie schválení</p>
         {history.length === 0 && <p className="px-2 py-2 text-[13px] text-fg-subtle">Zatím žádná historie.</p>}
         {history.map((a) => <ApprovalHistoryRow key={a.id} approval={a} />)}
       </div>
@@ -183,7 +284,7 @@ function RoutinesTab({ agent, projectId }: { agent: Agent; projectId: string }) 
   return (
     <div>
       <div className="mb-2 flex items-center justify-between px-2">
-        <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">DENNĚ</p>
+        <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Denně</p>
         <button onClick={() => setShowForm((v) => !v)} className="pressable flex h-7 w-7 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted hover:text-fg">
           {showForm ? <X size={14} /> : <Plus size={14} />}
         </button>
@@ -274,20 +375,20 @@ function IdentityTab({ agent, onOpenSoul, onOpenMemory, onRename }: { agent: Age
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5">
-        <button onClick={onOpenSoul} className="pressable relative overflow-hidden rounded-[20px] p-4 text-left" style={{ background: "linear-gradient(150deg, var(--color-soul-from), var(--color-soul-to))" }}>
-          <Heart size={18} className="text-white/90" />
-          <p className="mt-6 text-[17px] font-[800] tracking-[-0.02em] text-white">SOUL</p>
-          <p className="text-[10px] font-[700] tracking-[0.08em] text-white/70">PŘISTUPOVAT OPATRNĚ</p>
-          <p className="mono mt-1 text-[11px] text-white/70">{fmtDate(agent.createdAt)}</p>
+      <div className="space-y-2">
+        <button onClick={onOpenSoul} className="pressable flex w-full items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-left hover:bg-bg-hover">
+          <Fingerprint size={16} className="shrink-0 text-fg-muted" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px] font-[600] text-fg">SOUL.md a skills</span>
+            <span className="block text-[12px] text-fg-muted">Povaha agenta · od {fmtDate(agent.createdAt)}</span>
+          </span>
         </button>
-        <button onClick={onOpenMemory} className="pressable relative overflow-hidden rounded-[20px] p-4 text-left" style={{ background: "linear-gradient(150deg, var(--color-memory-from), var(--color-memory-to))" }}>
-          <Fingerprint size={18} className="text-white/90" />
-          <p className="mt-6 text-[17px] font-[800] tracking-[-0.02em] text-white">PAMĚŤ</p>
-          <p className="text-[10px] font-[700] tracking-[0.08em] text-white/70">VRSTVENÁ PAMĚŤ</p>
-          <p className="mono mt-1 text-[11px] text-white/70">
-            {(memory?.atoms.length ?? 0) + (memory?.notes.length ?? 0)} záznamů
-          </p>
+        <button onClick={onOpenMemory} className="pressable flex w-full items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-left hover:bg-bg-hover">
+          <Brain size={16} className="shrink-0 text-fg-muted" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px] font-[600] text-fg">Paměť</span>
+            <span className="block text-[12px] text-fg-muted">{(memory?.atoms.length ?? 0) + (memory?.notes.length ?? 0)} záznamů</span>
+          </span>
         </button>
       </div>
 

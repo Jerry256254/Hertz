@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { chunkText, isNewChatCommand, parseDecisionCommand } from "../dist/channels/types.js";
+import { chunkText, isClearCommand, isNewChatCommand, parseDecisionCommand } from "../dist/channels/types.js";
 import { encryptSecret, decryptSecret, maskKey } from "../dist/secrets/key-encryption.js";
 import { monthStartUtc } from "../dist/usage/quota.js";
 import crypto from "node:crypto";
@@ -37,6 +37,13 @@ describe("channel commands", () => {
     assert.ok(isNewChatCommand("!reset"));
     assert.ok(!isNewChatCommand("/new idea for lunch"));
     assert.ok(!isNewChatCommand("hello"));
+  });
+
+  it("detects clear commands", () => {
+    assert.ok(isClearCommand("/clear"));
+    assert.ok(isClearCommand("!clear"));
+    assert.ok(!isClearCommand("/clear everything now"));
+    assert.ok(!isClearCommand("please clear"));
   });
 });
 

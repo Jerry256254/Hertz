@@ -85,17 +85,27 @@ export function createAnthropicAdapter(creds: ProviderCredentials): ProviderAdap
   };
 
   async function listModels(): Promise<ModelInfo[]> {
-    const res = await fetch(`${API_BASE}/models?limit=1000`, { headers });
-    if (!res.ok) {
-      throw new ProviderError("anthropic", `listModels failed: ${await res.text()}`, res.status);
+    // Paginated (has_more + after_id) — a single page silently drops models.
+    const out: ModelInfo[] = [];
+    let afterId: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const url = `${API_BASE}/models?limit=1000${afterId ? `&after_id=${encodeURIComponent(afterId)}` : ""}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        throw new ProviderError("anthropic", `listModels failed: ${await res.text()}`, res.status);
+      }
+      const body = (await res.json()) as {
+        data: Array<{ id: string; display_name?: string }>;
+        has_more?: boolean;
+        last_id?: string;
+      };
+      for (const m of body.data) {
+        out.push({ id: m.id, displayName: m.display_name ?? m.id, supportsTools: true, supportsVision: true });
+      }
+      if (!body.has_more || !body.last_id) break;
+      afterId = body.last_id;
     }
-    const body = (await res.json()) as { data: Array<{ id: string; display_name?: string }> };
-    return body.data.map((m) => ({
-      id: m.id,
-      displayName: m.display_name ?? m.id,
-      supportsTools: true,
-      supportsVision: true,
-    }));
+    return out;
   }
 
   async function chat(req: ChatRequest): Promise<ChatResponse> {

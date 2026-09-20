@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Check, Search } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, RefreshCw, Search } from "lucide-react";
 import { api } from "../lib/api";
 import type { ModelInfo } from "../lib/types";
 import { Input } from "./ui";
@@ -16,19 +16,24 @@ export function ModelPicker({
 }) {
   const [query, setQuery] = useState("");
 
+  const queryClient = useQueryClient();
   const modelsQuery = useQuery({
     queryKey: ["provider-models", providerConfigId],
     queryFn: () => api.post<{ models: ModelInfo[] }>(`/providers/${providerConfigId}/scan`),
     enabled: !!providerConfigId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60_000,
     retry: false,
   });
 
   const filtered = useMemo(() => {
-    const models = modelsQuery.data?.models ?? [];
+    const models = (modelsQuery.data?.models ?? []).slice().sort((a, b) => a.id.localeCompare(b.id));
+    // The current value never disappears — even when the scan lags behind it.
+    if (value && !models.some((m) => m.id === value)) {
+      models.unshift({ id: value, displayName: `${value} (aktuální)` });
+    }
     const q = query.trim().toLowerCase();
     return q ? models.filter((m) => m.id.toLowerCase().includes(q)) : models;
-  }, [modelsQuery.data, query]);
+  }, [modelsQuery.data, query, value]);
 
   if (!providerConfigId) {
     return <p className="text-xs text-fg-subtle">Select a provider first.</p>;
@@ -45,8 +50,8 @@ export function ModelPicker({
 
   return (
     <div>
-      {(modelsQuery.data?.models.length ?? 0) > 8 && (
-        <div className="relative mb-2">
+      <div className="mb-2 flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
           <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle" />
           <Input
             placeholder="Filter models…"
@@ -55,7 +60,16 @@ export function ModelPicker({
             className="h-8 pl-7 text-xs"
           />
         </div>
-      )}
+        <button
+          type="button"
+          title="Znovu načíst modely od providera"
+          disabled={modelsQuery.isFetching}
+          onClick={() => void queryClient.invalidateQueries({ queryKey: ["provider-models", providerConfigId] })}
+          className="pressable shrink-0 rounded-full border border-border bg-bg-sunken p-2 text-fg-muted hover:text-fg disabled:opacity-40"
+        >
+          <RefreshCw size={13} className={modelsQuery.isFetching ? "animate-spin" : ""} />
+        </button>
+      </div>
       <div className="max-h-56 overflow-y-auto rounded-md border border-border">
         {filtered.map((m) => (
           <button

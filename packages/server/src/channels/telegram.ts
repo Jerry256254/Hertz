@@ -122,6 +122,7 @@ export class TelegramDriver implements ChannelDriver {
     await cb.onMessage({
       externalChatId: `telegram:${msg.chat.id}`,
       senderLabel: senderLabel(msg.from),
+      senderId: msg.from ? String(msg.from.id) : "",
       text: text.trim(),
     });
   }
@@ -153,14 +154,14 @@ export class TelegramDriver implements ChannelDriver {
   }
 
   async sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void> {
-    const lines = [`🔐 Approval needed`, ``, summary];
+    const lines = [`Approval needed`, ``, summary];
     if (detail?.trim()) lines.push(``, detail.trim().slice(0, 3000));
     await this.sendFormatted(externalChatId, lines.join("\n"), {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "✅ Approve", callback_data: `approve:${approvalId}` },
-            { text: "❌ Reject", callback_data: `reject:${approvalId}` },
+            { text: "Approve", callback_data: `approve:${approvalId}` },
+            { text: "Reject", callback_data: `reject:${approvalId}` },
           ],
         ],
       },

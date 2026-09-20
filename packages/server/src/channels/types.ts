@@ -6,6 +6,8 @@ export interface InboundMessage {
   /** "telegram:<chatId>" / "discord:<channelId>" — matches channel_bindings.external_chat_id. */
   externalChatId: string;
   senderLabel: string;
+  /** Platform sender id (telegram user id / discord author id) for the sender allowlist. */
+  senderId: string;
   text: string;
 }
 
@@ -53,4 +55,9 @@ export function parseDecisionCommand(text: string): { approvalId: string; decisi
 
 export function isNewChatCommand(text: string): boolean {
   return /^\s*[!/](new|reset|newchat)\s*$/.test(text);
+}
+
+/** /clear wipes the current chat's messages (memory, skills and notes survive). */
+export function isClearCommand(text: string): boolean {
+  return /^\s*[!/]clear\s*$/.test(text);
 }

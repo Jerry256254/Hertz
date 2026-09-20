@@ -8,7 +8,7 @@ import { ShellsPanel } from "../components/ShellsPanel";
 import { BrowserPanel } from "../panels/BrowserPanel";
 
 /** Počítač — files, shells and live desktop in one module. */
-export function ComputerView({ agent, projectId }: { agent: Agent; projectId: string }) {
+export function ComputerView({ agent, projectId, bare = false }: { agent: Agent; projectId: string; bare?: boolean }) {
   const [tab, setTab] = useState<"files" | "shells" | "desktop">("files");
   const { data: computer } = useQuery({
     queryKey: ["computer", agent.id],
@@ -18,24 +18,38 @@ export function ComputerView({ agent, projectId }: { agent: Agent; projectId: st
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-[60px] shrink-0 items-center gap-3 px-3 md:px-5">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-wash text-success"><Monitor size={18} /></span>
-        <div>
-          <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Počítač</p>
-          <p className="text-[12px] text-fg-muted">
+      {!bare ? (
+        <header className="flex h-[60px] shrink-0 items-center gap-3 px-3 md:px-5">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-wash text-success"><Monitor size={18} /></span>
+          <div>
+            <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Počítač</p>
+            <p className="text-[12px] text-fg-muted">
+              {computer ? `${computer.backend} · ${computer.status}` : "Načítám stav…"}
+              {computer?.error && ` · ${computer.error}`}
+            </p>
+          </div>
+          <span className="flex-1" />
+          <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
+            <ComputerTab active={tab === "files"} onClick={() => setTab("files")} icon={<FolderOpen size={14} />} label="Soubory" />
+            <ComputerTab active={tab === "shells"} onClick={() => setTab("shells")} icon={<Terminal size={14} />} label="Terminály" />
+            <ComputerTab active={tab === "desktop"} onClick={() => setTab("desktop")} icon={<Monitor size={14} />} label="Obrazovka" />
+          </div>
+        </header>
+      ) : (
+        <div className="shrink-0 pb-2">
+          <p className="px-1 pb-1.5 text-[12px] text-fg-muted">
             {computer ? `${computer.backend} · ${computer.status}` : "Načítám stav…"}
             {computer?.error && ` · ${computer.error}`}
           </p>
+          <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
+            <ComputerTab active={tab === "files"} onClick={() => setTab("files")} icon={<FolderOpen size={14} />} label="Soubory" />
+            <ComputerTab active={tab === "shells"} onClick={() => setTab("shells")} icon={<Terminal size={14} />} label="Terminály" />
+            <ComputerTab active={tab === "desktop"} onClick={() => setTab("desktop")} icon={<Monitor size={14} />} label="Obrazovka" />
+          </div>
         </div>
-        <span className="flex-1" />
-        <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
-          <ComputerTab active={tab === "files"} onClick={() => setTab("files")} icon={<FolderOpen size={14} />} label="Soubory" />
-          <ComputerTab active={tab === "shells"} onClick={() => setTab("shells")} icon={<Terminal size={14} />} label="Terminály" />
-          <ComputerTab active={tab === "desktop"} onClick={() => setTab("desktop")} icon={<Monitor size={14} />} label="Obrazovka" />
-        </div>
-      </header>
-      <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 md:px-5">
-        <div className="h-full overflow-hidden rounded-[20px] border border-border bg-bg-raised">
+      )}
+      <div className={`min-h-0 flex-1 overflow-hidden ${bare ? "" : "px-3 pb-3 md:px-5"}`}>
+        <div className={`overflow-hidden border border-border bg-bg-raised ${bare ? "h-[420px] rounded-[16px]" : "h-full rounded-[20px]"}`}>
           {tab === "files" && <FileExplorer projectId={projectId} />}
           {tab === "shells" && (
             <div className="h-full overflow-y-auto p-3">
