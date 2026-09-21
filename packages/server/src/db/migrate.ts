@@ -348,6 +348,19 @@ CREATE TABLE IF NOT EXISTS shared_chats (
   created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS vault_credentials (
+  id TEXT PRIMARY KEY,
+  service TEXT NOT NULL,
+  label TEXT NOT NULL,
+  username TEXT NOT NULL,
+  encrypted_secret TEXT NOT NULL,
+  note TEXT,
+  created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vault_credentials_service ON vault_credentials(service);
 `;
 
 /**

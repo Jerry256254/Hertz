@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ToolContext, ToolResult } from "@kuclab-hertz/tools";
 import type { AgentToolDef } from "./tool-def.js";
+import { consumeVaultGrantForFill } from "./vault-tools.js";
 
 /**
  * Browser automation for agents running in their own container — the
@@ -65,11 +66,61 @@ export function createBrowserTools(): AgentToolDef[] {
 
   const typeText: AgentToolDef = {
     name: "browser_type",
-    description: "Type text into an input field (clears it first), e.g. login forms. Pair with browser_press('Enter') or browser_click on the submit button.",
-    inputSchema: z.object({ selector: z.string(), text: z.string().max(10_000) }),
+    description:
+      "Type text into an input field (clears it first), e.g. login forms. Pair with browser_press('Enter') or browser_click on the submit button. To type a VAULT-APPROVED password without ever seeing it, pass vaultFill:true instead of text (needs a prior approved vault_use — the grant is single-use and expires after 5 minutes); the server substitutes the secret at execution time and it never appears in logs, history, or tool results.",
+    inputSchema: z
+      .object({
+        selector: z.string(),
+        text: z.string().max(10_000).optional(),
+        vaultFill: z
+          .boolean()
+          .optional()
+          .describe("Type the approved vault secret instead of text — single-use grant from vault_use"),
+      })
+      .refine((d) => (d.vaultFill ? d.text === undefined : typeof d.text === "string"), {
+        message: "Pass either text or vaultFill:true, not both",
+      }),
     async execute(rawInput, ctx) {
-      const input = z.object({ selector: z.string(), text: z.string().max(10_000) }).parse(rawInput);
-      return run(ctx, "type", input);
+      const input = z
+        .object({
+          selector: z.string(),
+          text: z.string().max(10_000).optional(),
+          vaultFill: z.boolean().optional(),
+        })
+        .parse(rawInput);
+      if (input.vaultFill) {
+        if (input.text !== undefined) {
+          return { summary: "Pass either text or vaultFill:true, not both.", isError: true };
+        }
+        if (!ctx.browser) {
+          return {
+            summary:
+              "Browser tools need your own computer: ask the user to switch your computer backend to 'docker' and build the kuclab-hertz-computer image.",
+            isError: true,
+          };
+        }
+        const filled = consumeVaultGrantForFill(ctx.actor.sessionId);
+        if ("error" in filled) return { summary: filled.error, isError: true };
+        // Substitute server-side and bypass the generic summarizer: the
+        // daemon must never echo the secret back into a tool result.
+        const res = await ctx.browser.act("type", { selector: input.selector, text: filled.secret });
+        if (!res.ok) return { summary: `browser_type (vault) failed: ${res.error ?? "unknown error"}`, isError: true };
+        await ctx.audit.record({
+          actorId: ctx.actor.actorId,
+          actorType: "agent",
+          sessionId: ctx.actor.sessionId ?? undefined,
+          projectId: ctx.actor.projectId ?? undefined,
+          action: "vault.fill",
+          targetType: "vault_credential",
+          result: "allowed",
+          detail: { tool: "browser_type", label: filled.label },
+        });
+        return { summary: `Údaj z trezoru „${filled.label}" vyplněn do pole (hodnota skrytá).` };
+      }
+      if (typeof input.text !== "string") {
+        return { summary: "Pass either text or vaultFill:true.", isError: true };
+      }
+      return run(ctx, "type", { selector: input.selector, text: input.text });
     },
   };
 

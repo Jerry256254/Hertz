@@ -10,6 +10,7 @@ import { createOnboardingTools } from "./onboarding-tools.js";
 import { createShellTools } from "./shell-tools.js";
 import { createApprovalTools } from "./approval-tools.js";
 import { createHostAccessTools } from "./host-access-tools.js";
+import { createVaultTools } from "./vault-tools.js";
 import { createSkillTools } from "./skill-tools.js";
 import { createBrowserTools } from "./browser-tools.js";
 import { createDesktopTools } from "./desktop-tools.js";
@@ -70,12 +71,13 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const shellTools = createShellTools(deps.db, deps.shellManager);
   const approvalTools = createApprovalTools(deps.db);
   const hostAccessTools = createHostAccessTools(deps.db);
+  const vaultTools = createVaultTools(deps.db, deps.masterKey);
   const skillTools = createSkillTools(deps.db, deps.paths);
   const browserTools = createBrowserTools();
   const desktopTools = createDesktopTools(deps.db, deps.masterKey, deps.desktop);
   const contextTools = createContextTools(deps.db);
   const allByName = new Map(
-    [...memoryTools, ...onboardingTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...skillTools, ...browserTools, ...desktopTools, ...contextTools, ASK_USER_DEF].map((t) => [t.name, t]),
+    [...memoryTools, ...onboardingTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...vaultTools, ...skillTools, ...browserTools, ...desktopTools, ...contextTools, ASK_USER_DEF].map((t) => [t.name, t]),
   );
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
@@ -83,6 +85,7 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const onboardingDefs = toDefs(onboardingTools);
   const shellDefs = toDefs(shellTools);
   const approvalDefs = [...toDefs(approvalTools), ...toDefs(hostAccessTools)];
+  const vaultDefs = toDefs(vaultTools);
   const skillDefs = toDefs(skillTools);
   const computerDefs = [...toDefs(browserTools), ...toDefs(desktopTools)];
   const contextDefs = toDefs(contextTools);
@@ -91,7 +94,7 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   return {
     async listDefinitions(agentId) {
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      let defs = [...baseDefs, ...memoryDefs, ...onboardingDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...computerDefs, ...contextDefs, ...mcpDefs, ...askUserDefs];
+      let defs = [...baseDefs, ...memoryDefs, ...onboardingDefs, ...shellDefs, ...approvalDefs, ...vaultDefs, ...skillDefs, ...computerDefs, ...contextDefs, ...mcpDefs, ...askUserDefs];
       // complete_onboarding is single-use: hide it once the agent is onboarded
       // so it never wastes context or gets called twice.
       const rows = await deps.db

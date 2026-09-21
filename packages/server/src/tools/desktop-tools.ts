@@ -7,6 +7,7 @@ import type { Database } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { sessions } from "../db/schema.js";
 import { signScreenToken } from "../secrets/screen-token.js";
+import { consumeVaultGrantForFill } from "./vault-tools.js";
 import { takeoverMessageText } from "../routes/screen.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
 
@@ -64,10 +65,53 @@ export function createDesktopTools(db: Database, masterKey: Buffer, desktop: Des
 
   const typeText: AgentToolDef = {
     name: "desktop_type",
-    description: "Type text into the currently focused window on YOUR desktop (click the field first with desktop_click).",
-    inputSchema: z.object({ text: z.string().min(1).max(5_000) }),
+    description:
+      "Type text into the currently focused window on YOUR desktop (click the field first with desktop_click). To type a VAULT-APPROVED password without ever seeing it, pass vaultFill:true instead of text (needs a prior approved vault_use — the grant is single-use and expires after 5 minutes); the server substitutes the secret at execution time and it never appears in logs, history, or tool results.",
+    inputSchema: z
+      .object({
+        text: z.string().min(1).max(5_000).optional(),
+        vaultFill: z
+          .boolean()
+          .optional()
+          .describe("Type the approved vault secret instead of text — single-use grant from vault_use"),
+      })
+      .refine((d) => (d.vaultFill ? d.text === undefined : typeof d.text === "string"), {
+        message: "Pass either text or vaultFill:true, not both",
+      }),
     async execute(rawInput, ctx) {
-      const input = z.object({ text: z.string() }).parse(rawInput);
+      const input = z.object({ text: z.string().optional(), vaultFill: z.boolean().optional() }).parse(rawInput);
+      if (input.vaultFill) {
+        if (input.text !== undefined) {
+          return { summary: "Pass either text or vaultFill:true, not both.", isError: true };
+        }
+        const computer = requireComputer(ctx);
+        if ("summary" in computer) return computer;
+        const filled = consumeVaultGrantForFill(ctx.actor.sessionId);
+        if ("error" in filled) return { summary: filled.error, isError: true };
+        // Substitute server-side; never let the secret near a summary, log, or audit row.
+        const res = await computer.exec({
+          command: "bash",
+          args: ["-lc", `export DISPLAY=:99; xdotool type --delay 25 -- ${shellQuote(filled.secret)}`],
+          cwd: "/",
+        });
+        if (res.exitCode !== 0) {
+          return { summary: "desktop_type (vault) failed.", isError: true };
+        }
+        await ctx.audit.record({
+          actorId: ctx.actor.actorId,
+          actorType: "agent",
+          sessionId: ctx.actor.sessionId ?? undefined,
+          projectId: ctx.actor.projectId ?? undefined,
+          action: "vault.fill",
+          targetType: "vault_credential",
+          result: "allowed",
+          detail: { tool: "desktop_type", label: filled.label },
+        });
+        return { summary: `Údaj z trezoru „${filled.label}" napsán (hodnota skrytá).` };
+      }
+      if (typeof input.text !== "string" || !input.text) {
+        return { summary: "Pass either text or vaultFill:true.", isError: true };
+      }
       return xdotool(ctx, `type --delay 25 -- ${shellQuote(input.text)}`);
     },
   };

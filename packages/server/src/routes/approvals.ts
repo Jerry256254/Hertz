@@ -5,6 +5,7 @@ import type { AppContext } from "../context.js";
 import { agents, approvals, projectMembers, projects, sessions, users } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
 import { decideApproval } from "../tools/approval-tools.js";
+import { resolveVaultUseApproval } from "../tools/vault-tools.js";
 import { hasProjectAccess } from "../auth/project-access.js";
 import {
   executeHostAccessOp,
@@ -125,6 +126,19 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: AppContext): v
           });
           inboundText = formatHostAccessExecutedInbound(payload, opResult);
         }
+      } else if (result.kind === "vault_use") {
+        // Vault-use approvals are machine-readable too: on approve the server
+        // decrypts the secret into a single-use in-memory grant (never into
+        // the DB, logs, or the agent's chat history); on reject nothing is
+        // issued and the secret stays sealed.
+        inboundText = await resolveVaultUseApproval(ctx.db, ctx.masterKey, {
+          approvalId: id,
+          sessionId: result.sessionId,
+          summary: result.summary,
+          payload: result.payload,
+          decision: parsed.data.decision,
+          decidedByUserId: request.user!.id,
+        });
       } else {
         inboundText =
           parsed.data.decision === "approved"

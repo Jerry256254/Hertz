@@ -502,9 +502,12 @@ export const approvals = sqliteTable("approvals", {
   /**
    * 'generic' = plain human-in-the-loop gate (agent describes, user decides);
    * 'host_access' = machine-readable one-shot host-filesystem op filed via
-   * request_host_access (payload = HostAccessPayload JSON, result = HostAccessResult JSON).
+   * request_host_access (payload = HostAccessPayload JSON, result = HostAccessResult JSON);
+   * 'vault_use' = machine-readable one-shot credential use filed via vault_use
+   * (payload = VaultUsePayload JSON, result = metadata-only JSON — the secret
+   * itself is never stored here).
    */
-  kind: text("kind", { enum: ["generic", "host_access"] }).notNull().default("generic"),
+  kind: text("kind", { enum: ["generic", "host_access", "vault_use"] }).notNull().default("generic"),
   /** JSON-encoded HostAccessPayload for kind='host_access'; null otherwise. */
   payload: text("payload"),
   /** JSON-encoded HostAccessResult once a host_access op has been executed; null until then. */
@@ -580,4 +583,30 @@ export const oauthTokens = sqliteTable("oauth_tokens", {
   service: text("service", { enum: ["mistral"] }).notNull(),
   encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Credential vault (Trezor): login credentials the user stores for the agent
+ * to use. The agent NEVER sees plaintext — vault_list returns metadata only,
+ * and vault_use files an approval; on approval the server decrypts the secret
+ * into a single-use, time-limited in-memory grant consumed by browser_type /
+ * desktop_type's vaultFill flag. The DB holds only the AES-256-GCM ciphertext
+ * (same scheme as provider_configs.encrypted_key); plaintext never touches
+ * any table, log, or audit row.
+ */
+export const vaultCredentials = sqliteTable("vault_credentials", {
+  id: text("id").primaryKey(),
+  /** e.g. "github.com", "moje banka" — shown to the agent and the user. */
+  service: text("service").notNull(),
+  /** Human label distinguishing several accounts on one service, e.g. "osobní". */
+  label: text("label").notNull(),
+  /** Login / username — metadata, visible to the agent. */
+  username: text("username").notNull(),
+  /** JSON-serialized {iv, authTag, ciphertext} of the password/secret. Never selected by list queries. */
+  encryptedSecret: text("encrypted_secret").notNull(),
+  /** Optional user note — must not contain the secret itself. */
+  note: text("note"),
+  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

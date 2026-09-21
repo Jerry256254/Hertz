@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Blocks, Database, FolderOpen, LifeBuoy, LogOut,
+  Blocks, Database, FolderOpen, KeyRound, LifeBuoy, LogOut,
   Pencil, Plus, Scale, Send, Server, SlidersHorizontal, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
@@ -11,10 +11,9 @@ import { DirectoryPicker } from "../components/DirectoryPicker";
 import { ModelFields } from "../components/ModelFields";
 import { ProviderCreateForm } from "../components/ProviderCreateForm";
 import { AgentAvatar } from "../components/AgentAvatar";
+import { VaultSection } from "./VaultSection";
 
-type Section = "general" | "folders" | "providers" | "channels" | "connectors" | "data" | "help" | "legal";
-// NOTE: sekci "vault" (Trezor) sem přidá vault agent —
-// do typu Section, do NAV níže a do přepínače sekcí v SettingsModal.
+type Section = "general" | "folders" | "providers" | "channels" | "connectors" | "vault" | "data" | "help" | "legal";
 
 const NAV: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: "general", label: "Obecné", icon: <SlidersHorizontal size={14} /> },
@@ -22,7 +21,7 @@ const NAV: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: "providers", label: "Poskytovatelé", icon: <Server size={14} /> },
   { id: "channels", label: "Kanály zpráv", icon: <Send size={14} /> },
   { id: "connectors", label: "Konektory", icon: <Blocks size={14} /> },
-  // ── TREZOR: sem patří sekce "vault" (přidá vault agent) ──
+  { id: "vault", label: "Trezor", icon: <KeyRound size={14} /> },
   { id: "data", label: "Nastavení dat", icon: <Database size={14} /> },
   { id: "help", label: "Nápověda", icon: <LifeBuoy size={14} /> },
   { id: "legal", label: "Právní údaje", icon: <Scale size={14} /> },
@@ -70,7 +69,7 @@ export function SettingsModal({ agent, projectId, initialSection = "general", on
           {section === "providers" && <ProvidersSection agent={agent} />}
           {section === "channels" && <ChannelsSection agent={agent} />}
           {section === "connectors" && <ConnectorsSection agent={agent} />}
-          {/* ── TREZOR: {section === "vault" && <VaultSection />} sem přidá vault agent ── */}
+          {section === "vault" && <VaultSection />}
           {section === "data" && <DataSection agent={agent} projectId={projectId} />}
           {section === "help" && <HelpSection />}
           {section === "legal" && <LegalSection />}

@@ -172,6 +172,15 @@ export interface UsageRecord {
   at: string;
 }
 
+export interface SubagentInfo {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "done" | "failed" | "interrupted";
+  progress?: string;
+  startedAt?: number;
+  finishedAt?: number;
+}
+
 export type AgentLoopEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_call"; id: string; name: string; input: unknown }
@@ -179,6 +188,7 @@ export type AgentLoopEvent =
   | { type: "message_saved"; message: PersistedMessage }
   | { type: "status"; status: "running" | "idle" | "error" | "paused" }
   | { type: "awaiting_input"; question: string }
+  | { type: "subagents"; subagents: SubagentInfo[] }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -308,4 +318,15 @@ export interface ChannelBinding {
   projectId: string | null;
   sessionTitle: string | null;
   createdAt: string;
+}
+
+/** Credential vault (Trezor) — metadata only; the secret is never sent to the client. */
+export interface VaultCredential {
+  id: string;
+  service: string;
+  label: string;
+  username: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
