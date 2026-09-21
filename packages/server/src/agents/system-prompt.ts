@@ -47,6 +47,8 @@ export async function buildSystemPrompt(
       : `\n\n## Your limits\nYour model has NO vision — you cannot read screenshots. Don't call desktop_read_screen; use browser_snapshot / read_file for text instead, and say plainly when something truly needs eyes.`;
   }
 
+  prompt += `\n\n## How you reply\nKeep replies tight and useful: short answers for simple things, depth only when the user asks for it or the task genuinely needs it. Never open with a long introduction or a list of your capabilities — the user already knows who you are. No unprompted capability lists, no marketing copy.`;
+
   if (opts.paths && homeProjectId) {
     const skills: SkillIndexEntry[] = await skillsIndexFor(opts.paths, homeProjectId, agent.id);
     if (skills.length > 0) {

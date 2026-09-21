@@ -66,21 +66,21 @@ export function MessageView({
   const toolUses = message.content.filter((b): b is Extract<typeof b, { type: "tool_use" }> => b.type === "tool_use");
   const steps: ToolStep[] = toolUses.map((block) => ({ id: block.id, name: block.name, input: block.input, result: toolResultsById?.get(block.id) }));
   return (
-    <div className="mx-auto flex w-full max-w-[760px] gap-2.5 px-4 py-2 animate-fade-in">
+    <div className="mx-auto flex w-full max-w-[760px] gap-2 px-4 py-1.5 animate-fade-in">
       <div className="mt-0.5 shrink-0">
-        <AgentAvatar seed={message.senderAgentId ?? agentId} size={30} />
+        <AgentAvatar seed={message.senderAgentId ?? agentId} size={24} />
       </div>
-      <div className="min-w-0 flex-1 space-y-2">
-        <div className="rounded-[20px] rounded-tl-[8px] border border-border bg-bg-raised px-4 py-3">
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="rounded-[16px] rounded-tl-[6px] border border-border bg-bg-raised px-3.5 py-2.5">
           {textBlocks.map((block, i) => <Markdown key={i}>{block.text}</Markdown>)}
           {toolUses.length === 0 && textBlocks.length === 0 && <p className="text-[12px] italic text-fg-subtle">(bez výstupu)</p>}
         </div>
         {steps.length > 0 && (collapsibleTools ? (
-          <details className="group rounded-[14px] border border-border bg-bg-raised/60 px-3 py-2">
-            <summary className="cursor-pointer list-none text-[12px] font-[600] text-fg-muted marker:hidden">
+          <details className="group px-0.5 py-1">
+            <summary className="cursor-pointer list-none text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
               {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"} ▸
             </summary>
-            <div className="mt-2"><ToolStepChecklist steps={steps} /></div>
+            <div className="mt-1"><ToolStepChecklist steps={steps} /></div>
           </details>
         ) : (
           <ToolStepChecklist steps={steps} />

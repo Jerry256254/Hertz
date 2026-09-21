@@ -38,37 +38,37 @@ export function AgentPanel({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* profile header */}
-      <div className="relative flex shrink-0 flex-col items-center px-4 pb-3 pt-5">
-        <button onClick={onClose} title="Zavřít panel" className="pressable absolute right-2 top-2 rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg">
-          <X size={15} />
+      <div className="relative flex shrink-0 flex-col items-center px-4 pb-2.5 pt-4">
+        <button onClick={onClose} title="Zavřít panel" className="pressable absolute right-2 top-2 rounded-full p-1.5 text-fg-muted hover:bg-bg-sunken hover:text-fg">
+          <X size={14} />
         </button>
-        <AgentAvatar seed={agent.id} size={72} />
-        <p className="mt-2 text-[17px] font-[700] tracking-[-0.02em] text-fg">{agent.name}</p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-fg-muted">
-          <span className="h-2 w-2 rounded-full bg-live" /> Připojeno
+        <AgentAvatar seed={agent.id} size={48} />
+        <p className="mt-1.5 text-[15px] font-[700] tracking-[-0.02em] text-fg">{agent.name}</p>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-fg-muted">
+          <span className="h-1.5 w-1.5 rounded-full bg-live" /> Připojeno
         </p>
         <ModelRow agent={agent} />
-        <div className="mt-3 grid w-full grid-cols-7 gap-1 rounded-full border border-border bg-bg-raised p-1">
+        <div className="mt-2.5 grid w-full grid-cols-7 gap-1 rounded-full border border-border bg-bg-raised p-0.5">
           <PanelTabButton active={tab === "activity"} onClick={() => onTabChange("activity")} title="Aktivita">
-            <ListTodo size={16} />
+            <ListTodo size={14} />
           </PanelTabButton>
           <PanelTabButton active={tab === "approvals"} onClick={() => onTabChange("approvals")} title="Schválení" badge={pendingCount}>
-            <ShieldCheck size={16} />
+            <ShieldCheck size={14} />
           </PanelTabButton>
           <PanelTabButton active={tab === "routines"} onClick={() => onTabChange("routines")} title="Rutiny">
-            <Clock size={16} />
+            <Clock size={14} />
           </PanelTabButton>
           <PanelTabButton active={tab === "identity"} onClick={() => onTabChange("identity")} title="Identita">
-            <Fingerprint size={16} />
+            <Fingerprint size={14} />
           </PanelTabButton>
           <PanelTabButton active={tab === "skills"} onClick={() => onTabChange("skills")} title="Skills">
-            <Zap size={16} />
+            <Zap size={14} />
           </PanelTabButton>
           <PanelTabButton active={tab === "memory"} onClick={() => onTabChange("memory")} title="Paměť">
-            <Brain size={16} />
+            <Brain size={14} />
           </PanelTabButton>
           <PanelTabButton active={tab === "computer"} onClick={() => onTabChange("computer")} title="Počítač">
-            <Monitor size={16} />
+            <Monitor size={14} />
           </PanelTabButton>
         </div>
       </div>
@@ -170,7 +170,7 @@ function PanelTabButton({ active, onClick, title, children, badge }: { active: b
     <button
       onClick={onClick}
       title={title}
-      className={`pressable relative flex items-center justify-center rounded-full py-2 ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}
+      className={`pressable relative flex items-center justify-center rounded-full py-1.5 ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}
     >
       {children}
       {!!badge && badge > 0 && (
@@ -393,8 +393,7 @@ function IdentityTab({ agent, onOpenSoul, onOpenMemory, onRename }: { agent: Age
       </div>
 
       <div className="rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-[12.5px] leading-relaxed text-fg-muted">
-        <p className="flex items-center gap-1.5"><Check size={13} className="text-live" /> Model: <span className="mono text-fg">{agent.model}</span></p>
-        <p className="mt-1 flex items-center gap-1.5"><Check size={13} className="text-live" /> Počítač: {agent.isolated ? "izolovaný kontejner" : "místní běh"}</p>
+        <p className="flex items-center gap-1.5"><Check size={13} className="text-live" /> Počítač: {agent.isolated ? "izolovaný kontejner" : "místní běh"}</p>
       </div>
     </div>
   );

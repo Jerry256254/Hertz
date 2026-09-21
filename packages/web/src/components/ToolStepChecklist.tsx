@@ -49,36 +49,30 @@ function argHintFor(input: unknown): string | undefined {
 export function ToolStepChecklist({ steps }: { steps: ToolStep[] }) {
   if (steps.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-bg-sunken">
-      <div className="flex items-center gap-1.5 border-b border-border bg-bg-raised px-2.5 py-1.5">
-        <span className="h-1.5 w-1.5 rounded-full bg-live pulse-live" />
-        <span className="mono text-[10px] font-[700] tracking-[0.08em] text-fg-subtle">NÁSTROJE · {steps.length}</span>
-      </div>
-      <ul className="divide-y divide-border">
-        {steps.map((step) => {
-          const Icon = iconFor(step.name);
-          const argHint = argHintFor(step.input);
-          const isPending = !step.result;
-          const isError = step.result?.isError;
-          return (
-            <li key={step.id}>
-              <details className="group px-2.5 py-1.5 open:pb-2">
-                <summary className="flex cursor-pointer list-none items-center gap-2 marker:hidden">
-                  {isPending ? <Loader2 size={12} className="shrink-0 animate-spin text-fg-subtle" /> : isError ? <TriangleAlert size={12} className="shrink-0 text-danger" /> : <Check size={12} className="shrink-0 text-live" />}
-                  <Icon size={12} className="shrink-0 text-fg-subtle" />
-                  <span className="mono text-[11px] font-[600] tracking-[-0.01em] text-fg">{labelFor(step.name)}</span>
-                  {argHint && <span className="mono min-w-0 flex-1 truncate text-[11px] text-fg-subtle">{argHint}</span>}
-                </summary>
-                {step.result && (
-                  <pre className="mono mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg-raised p-2 text-[11px] leading-relaxed text-fg-muted">
-                    {step.result.content}
-                  </pre>
-                )}
-              </details>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <ul className="divide-y divide-border/50">
+      {steps.map((step) => {
+        const Icon = iconFor(step.name);
+        const argHint = argHintFor(step.input);
+        const isPending = !step.result;
+        const isError = step.result?.isError;
+        return (
+          <li key={step.id}>
+            <details className="group py-1 open:pb-1.5">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 marker:hidden">
+                {isPending ? <Loader2 size={11} className="shrink-0 animate-spin text-fg-subtle" /> : isError ? <TriangleAlert size={11} className="shrink-0 text-danger" /> : <Check size={11} className="shrink-0 text-live" />}
+                <Icon size={11} className="shrink-0 text-fg-subtle" />
+                <span className="mono text-[11px] font-[600] tracking-[-0.01em] text-fg-muted">{labelFor(step.name)}</span>
+                {argHint && <span className="mono min-w-0 flex-1 truncate text-[11px] text-fg-subtle/70">{argHint}</span>}
+              </summary>
+              {step.result && (
+                <pre className="mono mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg-sunken p-2 text-[11px] leading-relaxed text-fg-muted">
+                  {step.result.content}
+                </pre>
+              )}
+            </details>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

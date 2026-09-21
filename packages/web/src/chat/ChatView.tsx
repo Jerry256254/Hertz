@@ -403,12 +403,28 @@ export function ChatView({
           </div>
         )}
         {isRunning && !streamingText && (
-          <div className="mx-auto flex w-full max-w-[760px] items-center gap-2.5 px-4 py-2">
-            <AgentAvatar seed={agent.id} mood="working" size={30} />
-            <span className="flex items-center gap-2 rounded-full border border-border bg-bg-raised px-4 py-2">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-live" />
-              <span className="text-[12.5px] text-fg-muted">{isPaused ? "pozastaveno — bude pokračovat" : "pracuje…"}</span>
+          <div className="mx-auto flex w-full max-w-[760px] items-center gap-2 px-4 py-1.5">
+            <AgentAvatar seed={agent.id} mood="working" size={24} />
+            <span className="flex items-center gap-1.5 text-[12px] text-fg-muted">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-live" />
+              {isPaused ? "pozastaveno — bude pokračovat" : "pracuje…"}
             </span>
+            {!readOnly && (
+              <span className="flex items-center gap-1">
+                {isPaused ? (
+                  <button onClick={() => pauseResume.mutate("resume")} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg">
+                    <Play size={11} /> Pokračovat
+                  </button>
+                ) : (
+                  <button onClick={() => pauseResume.mutate("pause")} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg">
+                    <Pause size={11} /> Pozastavit
+                  </button>
+                )}
+                <button onClick={() => void api.post(`/sessions/${sessionId}/stop`).catch(() => {})} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-danger">
+                  <Square size={10} /> Zastavit
+                </button>
+              </span>
+            )}
           </div>
         )}
         {runError && (
@@ -425,26 +441,6 @@ export function ChatView({
       {/* run controls + pending states */}
       <div className="shrink-0 px-3 pb-3 md:px-5">
         <div className="mx-auto w-full max-w-[760px]">
-          {(isRunning || isPaused) && !readOnly && (
-            <div className="mb-2 flex items-center gap-2">
-              {isRunning && !isPaused && (
-                <button onClick={() => pauseResume.mutate("pause")} className="pressable flex items-center gap-1.5 rounded-full border border-border bg-bg-raised px-3.5 py-1.5 text-[12.5px] font-[600] text-fg-muted hover:text-fg">
-                  <Pause size={13} /> Pozastavit
-                </button>
-              )}
-              {isPaused && (
-                <button onClick={() => pauseResume.mutate("resume")} className="pressable flex items-center gap-1.5 rounded-full border border-border bg-bg-raised px-3.5 py-1.5 text-[12.5px] font-[600] text-fg-muted hover:text-fg">
-                  <Play size={13} /> Pokračovat
-                </button>
-              )}
-              {isRunning && (
-                <button onClick={() => void api.post(`/sessions/${sessionId}/stop`).catch(() => {})} className="pressable flex items-center gap-1.5 rounded-full border border-border bg-bg-raised px-3.5 py-1.5 text-[12.5px] font-[600] text-fg-muted hover:text-danger">
-                  <Square size={12} /> Zastavit
-                </button>
-              )}
-            </div>
-          )}
-
           {data?.pendingTakeover && (
             <div className="mb-2 rounded-[16px] border border-warning/30 bg-warning-wash p-3.5">
               <p className="text-[13px] font-[600] text-fg">Agent potřebuje převzít obrazovku</p>
@@ -482,7 +478,7 @@ export function ChatView({
                 </button>
               )}
               {messageCount > 0 && (
-                <button type="button" onClick={jumpToBottom} title="Počet zpráv — skočit dolů" className="absolute -top-11 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-[12px] font-[600] text-white" style={{ backgroundColor: "var(--color-user-bubble)" }}>
+                <button type="button" onClick={jumpToBottom} title="Počet zpráv — skočit dolů" className="absolute -top-8 left-1/2 -translate-x-1/2 rounded-full bg-bg-sunken/90 px-2.5 py-0.5 text-[11px] font-[600] text-fg-muted hover:text-fg">
                   {messageCount} {messageCount === 1 ? "zpráva" : messageCount < 5 ? "zprávy" : "zpráv"} ⌄
                 </button>
               )}
@@ -531,17 +527,12 @@ export function ChatView({
 
 export function BrowserCard({ title, onOpen }: { title: string; onOpen: () => void }) {
   return (
-    <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
-      <div className="ml-[42px] rounded-[16px] border border-border bg-bg-raised p-3.5">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-bg-sunken text-fg-muted"><Globe size={16} /></span>
-          <div className="min-w-0">
-            <p className="text-[13.5px] font-[600] text-fg">Prohlížeč</p>
-            <p className="truncate text-[12px] text-fg-muted">Dokončeno · {title}</p>
-          </div>
-        </div>
-        <button onClick={onOpen} className="pressable mt-3 w-full rounded-full border border-border bg-bg-sunken py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover">
-          Otevřít náhled
+    <div className="mx-auto w-full max-w-[760px] px-4 py-1">
+      <div className="ml-[34px] flex items-center gap-2">
+        <Globe size={13} className="shrink-0 text-fg-subtle" />
+        <span className="min-w-0 flex-1 truncate text-[12px] text-fg-muted">Prohlížeč · {title}</span>
+        <button onClick={onOpen} className="pressable shrink-0 text-[12px] font-[600] text-accent hover:underline">
+          Náhled
         </button>
       </div>
     </div>
@@ -571,16 +562,16 @@ export function GroupedSteps({
   const showBrowser = messages.some(hasBrowserTools);
   const images = messages.flatMap(messageImages);
   return (
-    <div className="mx-auto flex w-full max-w-[760px] gap-2.5 px-4 py-2">
+    <div className="mx-auto flex w-full max-w-[760px] gap-2 px-4 py-1.5">
       <div className="mt-0.5 shrink-0">
-        <AgentAvatar seed={agentId} size={30} />
+        <AgentAvatar seed={agentId} size={24} />
       </div>
       <div className="min-w-0 flex-1">
-        <details className="group rounded-[14px] border border-border bg-bg-raised/60 px-3 py-2">
-          <summary className="cursor-pointer list-none text-[12px] font-[600] text-fg-muted marker:hidden">
+        <details className="group px-0.5 py-1">
+          <summary className="cursor-pointer list-none text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
             {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"} ▸
           </summary>
-          <div className="mt-2"><ToolStepChecklist steps={steps} /></div>
+          <div className="mt-1"><ToolStepChecklist steps={steps} /></div>
         </details>
         {showBrowser && <BrowserCard title={truncate(sessionTitle, 48)} onOpen={onOpenPreview} />}
         {images.map((img, i) => (
@@ -594,7 +585,7 @@ export function GroupedSteps({
 export function ArtifactCard({ image, title }: { image: { mimeType: string; data: string }; title: string }) {
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
-      <div className="ml-[42px] overflow-hidden rounded-[16px] border border-border bg-bg-raised">
+      <div className="ml-[34px] overflow-hidden rounded-[16px] border border-border bg-bg-raised">
         <img src={`data:${image.mimeType};base64,${image.data}`} alt={title} className="max-h-64 w-full object-cover" />
         <div className="flex items-center gap-2.5 p-3.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-bg-sunken text-fg-muted"><ImageIcon size={16} /></span>
