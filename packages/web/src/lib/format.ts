@@ -34,6 +34,24 @@ export function fmtDate(iso: string | null | undefined): string {
   }
 }
 
+/** Compact message timestamp: "14:32" today, "včera 14:32", else "21. 9. 14:32". */
+export function fmtMsgTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) return time;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    d.getFullYear() === yesterday.getFullYear() && d.getMonth() === yesterday.getMonth() && d.getDate() === yesterday.getDate();
+  if (isYesterday) return `včera ${time}`;
+  return `${d.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })} ${time}`;
+}
+
 export function truncate(s: string, max = 60): string {
   const one = s.replace(/\s+/g, " ").trim();
   return one.length > max ? `${one.slice(0, max)}…` : one;

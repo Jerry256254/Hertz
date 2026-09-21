@@ -184,6 +184,23 @@ button, a, input, select, textarea {
   transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* ── chat bubbles — premium assistant typography ── */
+.assistant-bubble .markdown-body {
+  font-size: 14.5px;
+  line-height: 1.7;
+  letter-spacing: -0.006em;
+  color: var(--color-fg);
+}
+.assistant-bubble .markdown-body p,
+.assistant-bubble .markdown-body ul,
+.assistant-bubble .markdown-body ol,
+.assistant-bubble .markdown-body pre,
+.assistant-bubble .markdown-body blockquote { margin-bottom: 12px; }
+.assistant-bubble .markdown-body li + li { margin-top: 4px; }
+.assistant-bubble .markdown-body h1,
+.assistant-bubble .markdown-body h2,
+.assistant-bubble .markdown-body h3 { margin-top: 18px; }
+
 /* instant press feedback (apple-design: feedback on pointer-down) */
 .pressable:active { transform: scale(0.97); }
 

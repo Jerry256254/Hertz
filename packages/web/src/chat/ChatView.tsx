@@ -392,7 +392,16 @@ export function ChatView({
         blocks.push({ key: m.id, messages: [m], grouped: false });
       }
     }
-    return blocks;
+    // Same-role neighbours stack: tighter spacing, squared touching corners,
+    // caption (name/time) only once per run — a calm, iMessage-like rhythm.
+    return blocks.map((block, i) => {
+      const role = block.messages[0]?.role;
+      const prevBlock = i > 0 ? blocks[i - 1] : undefined;
+      const nextBlock = i < blocks.length - 1 ? blocks[i + 1] : undefined;
+      const prevRole = prevBlock?.messages[0]?.role;
+      const nextRole = nextBlock?.messages[0]?.role;
+      return { ...block, firstInRun: role !== prevRole, lastInRun: role !== nextRole };
+    });
   }, [data?.messages]);
 
   /** Key of the last block that used browser/desktop tools — the "Prohlížeč" row renders only there, not after every message. */
@@ -468,7 +477,7 @@ export function ChatView({
             />
           ) : (
             <div key={block.key}>
-              <MessageView message={block.messages[0]!} toolResultsById={toolResultsById} agentId={agent.id} projectId={data?.session.projectId ?? ""} stepsSettled={!isRunning && !isPaused} />
+              <MessageView message={block.messages[0]!} toolResultsById={toolResultsById} agentId={agent.id} agentName={agent.name} projectId={data?.session.projectId ?? ""} stepsSettled={!isRunning && !isPaused} firstInRun={block.firstInRun} lastInRun={block.lastInRun} />
               {block.messages[0]!.role === "assistant" && hasBrowserTools(block.messages[0]!) && block.key === lastBrowserBlockKey && (
                 <BrowserCard title={truncate(firstText(block.messages[0]!.content) || data?.session.title || "", 48)} onOpen={onOpenPreview} />
               )}
@@ -479,9 +488,17 @@ export function ChatView({
           ),
         )}
         {streamingText && (
-          <div className="mx-auto w-full max-w-[760px] px-4 py-2 animate-fade-in">
-            <div className="rounded-[16px] border border-border bg-bg-raised px-4 py-3">
-              <Markdown>{streamingText}</Markdown>
+          <div className="mx-auto w-full max-w-[760px] animate-fade-in px-4 pb-2.5 pt-2.5">
+            <div className="max-w-[88%]">
+              <div className="mb-1.5 flex select-none items-baseline gap-1.5 pl-[18px]">
+                <span className="text-[11.5px] font-[700] uppercase tracking-[0.04em] text-fg-subtle">{agent.name}</span>
+              </div>
+              <div
+                className="assistant-bubble rounded-[22px] rounded-bl-[7px] border border-border-faint shadow-md"
+                style={{ background: "linear-gradient(180deg, #202026 0%, #1b1b1f 100%)", padding: "15px 20px" }}
+              >
+                <Markdown>{streamingText}</Markdown>
+              </div>
             </div>
           </div>
         )}
@@ -491,21 +508,10 @@ export function ChatView({
               <span className={`h-1.5 w-1.5 rounded-full ${isPaused ? "bg-warning" : "bg-live animate-pulse"}`} />
               {isPaused ? "pozastaveno" : "pracuje…"}
             </span>
-            {!readOnly && (
-              <span className="flex items-center gap-1">
-                {isPaused ? (
-                  <button onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} className="pressable flex min-h-[44px] items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
-                    <Play size={11} /> {pauseResume.isPending ? "Pokračuji…" : "Pokračovat"}
-                  </button>
-                ) : (
-                  <button onClick={() => pauseResume.mutate("pause")} disabled={pauseResume.isPending} className="pressable flex min-h-[44px] items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
-                    <Pause size={11} /> Pozastavit
-                  </button>
-                )}
-                <button onClick={() => stopRun.mutate()} disabled={stopRun.isPending} className="pressable flex min-h-[44px] items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] font-[600] text-fg-muted hover:text-danger disabled:opacity-40">
-                  <Square size={10} /> {stopRun.isPending ? "Zastavuji…" : "Zastavit"}
-                </button>
-              </span>
+            {!readOnly && isPaused && (
+              <button onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} className="pressable flex min-h-[44px] items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
+                <Play size={11} /> {pauseResume.isPending ? "Pokračuji…" : "Pokračovat"}
+              </button>
             )}
           </div>
         )}
@@ -590,7 +596,7 @@ export function ChatView({
                   ))}
                 </div>
               )}
-              {/* Jedna řádka, vše vertikálně vycentrované: příloha vlevo, text uprostřed, nápověda + odeslat vpravo. */}
+              {/* Jedna řádka, vše vertikálně vycentrované: příloha vlevo, text uprostřed, odeslat (nebo pauza/stop během generování) vpravo. */}
               <div className="flex items-center gap-1.5 p-2">
                 <input type="file" accept="image/*,.txt,.md,.markdown,.csv,.json,.log,.ts,.js,.py" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id={`file-input-${sessionId}`} />
                 <IconButton type="button" title="Přiložit soubor" aria-label="Přiložit soubor" className="h-10 w-10 shrink-0" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
@@ -604,8 +610,18 @@ export function ChatView({
                   rows={1}
                   className="max-h-[160px] min-h-[40px] w-full min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-[14px] leading-[22px] text-fg placeholder:text-fg-subtle outline-none"
                 />
-                <span className="hidden shrink-0 select-none whitespace-nowrap text-[11px] text-fg-faint sm:block">Enter odešle · Shift+Enter nový řádek</span>
-                <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" aria-label="Odeslat zprávu" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={17} strokeWidth={2.2} /></button>
+                {(isRunning || isPaused) ? (
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {isPaused ? (
+                      <button type="button" onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} title="Pokračovat v běhu" aria-label="Pokračovat v běhu" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:text-fg disabled:opacity-40"><Play size={15} /></button>
+                    ) : (
+                      <button type="button" onClick={() => pauseResume.mutate("pause")} disabled={pauseResume.isPending} title="Pozastavit běh" aria-label="Pozastavit běh" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:text-fg disabled:opacity-40"><Pause size={15} /></button>
+                    )}
+                    <button type="button" onClick={() => stopRun.mutate()} disabled={stopRun.isPending} title="Zastavit běh" aria-label="Zastavit běh" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:border-danger/50 hover:text-danger disabled:opacity-40"><Square size={14} /></button>
+                  </span>
+                ) : (
+                  <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" aria-label="Odeslat zprávu" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={17} strokeWidth={2.2} /></button>
+                )}
               </div>
             </form>
           )}
