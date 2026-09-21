@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Blocks, Database, FolderOpen, KeyRound, LifeBuoy, LogOut,
-  Pencil, Plus, Scale, Send, Server, SlidersHorizontal, Trash2, X,
+  Blocks, Bot, Cpu, Database, FolderOpen, Info, KeyRound, LogOut,
+  Pencil, Plus, Send, Server, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -13,23 +13,23 @@ import { ProviderCreateForm } from "../components/ProviderCreateForm";
 import { AgentAvatar } from "../components/AgentAvatar";
 import { VaultSection } from "./VaultSection";
 
-type Section = "general" | "folders" | "providers" | "channels" | "connectors" | "vault" | "data" | "help" | "legal";
+export type Section = "agent" | "model" | "folders" | "providers" | "channels" | "connectors" | "vault" | "data" | "about";
 
 const NAV: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
-  { id: "general", label: "Obecné", icon: <SlidersHorizontal size={14} /> },
-  { id: "folders", label: "Složky", icon: <FolderOpen size={14} /> },
-  { id: "providers", label: "Poskytovatelé", icon: <Server size={14} /> },
-  { id: "channels", label: "Kanály zpráv", icon: <Send size={14} /> },
-  { id: "connectors", label: "Konektory", icon: <Blocks size={14} /> },
-  { id: "vault", label: "Trezor", icon: <KeyRound size={14} /> },
-  { id: "data", label: "Nastavení dat", icon: <Database size={14} /> },
-  { id: "help", label: "Nápověda", icon: <LifeBuoy size={14} /> },
-  { id: "legal", label: "Právní údaje", icon: <Scale size={14} /> },
+  { id: "agent", label: "Agent", icon: <Bot size={15} /> },
+  { id: "model", label: "Model", icon: <Cpu size={15} /> },
+  { id: "folders", label: "Složky", icon: <FolderOpen size={15} /> },
+  { id: "providers", label: "Poskytovatelé", icon: <Server size={15} /> },
+  { id: "channels", label: "Kanály", icon: <Send size={15} /> },
+  { id: "connectors", label: "Integrace", icon: <Blocks size={15} /> },
+  { id: "vault", label: "Trezor", icon: <KeyRound size={15} /> },
+  { id: "data", label: "Data", icon: <Database size={15} /> },
+  { id: "about", label: "O aplikaci", icon: <Info size={15} /> },
 ];
 
-export function SettingsModal({ agent, projectId, initialSection = "general", onClose }: { agent: Agent; projectId: string; initialSection?: Section; onClose: () => void }) {
+export function SettingsModal({ agent, projectId, initialSection = "agent", onClose }: { agent: Agent; projectId: string; initialSection?: Section; onClose: () => void }) {
   const [section, setSection] = useState<Section>(initialSection);
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -41,38 +41,61 @@ export function SettingsModal({ agent, projectId, initialSection = "general", on
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" style={{ backdropFilter: "blur(6px)" }} onClick={onClose}>
-      <div className="flex max-h-[92dvh] w-full max-w-[600px] animate-fade-in flex-col overflow-hidden rounded-[24px] border border-border bg-bg shadow-popover" onClick={(e) => e.stopPropagation()}>
-        <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-1 pt-4">
-          <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Nastavení</p>
-          <div className="flex items-center gap-1">
-            <button onClick={() => void logout()} title="Odhlásit se" aria-label="Odhlásit se" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-danger"><LogOut size={17} /></button>
-            <button onClick={onClose} title="Zavřít" aria-label="Zavřít" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={17} /></button>
+      <div className="flex max-h-[92dvh] w-full max-w-[600px] animate-fade-in overflow-hidden rounded-[24px] border border-border bg-bg shadow-popover" onClick={(e) => e.stopPropagation()}>
+        {/* Levý sloupec s navigací (na mobilu skrytý — tam jsou záložky pod hlavičkou) */}
+        <nav aria-label="Sekce nastavení" className="flex w-[188px] shrink-0 flex-col border-r border-border bg-bg-sidebar p-2.5 max-sm:hidden">
+          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+            {NAV.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => setSection(n.id)}
+                aria-current={section === n.id ? "true" : undefined}
+                className={`pressable flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[13.5px] ${section === n.id ? "bg-bg-sunken font-[600] text-fg" : "text-fg-muted hover:bg-bg-sunken/50 hover:text-fg"}`}
+              >
+                <span className="shrink-0">{n.icon}</span>
+                {n.label}
+              </button>
+            ))}
           </div>
-        </div>
-        <div className="flex shrink-0 gap-1.5 overflow-x-auto px-5 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Sekce nastavení">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              role="tab"
-              aria-selected={section === n.id}
-              onClick={() => setSection(n.id)}
-              className={`pressable flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-4 text-[12.5px] font-[600] ${section === n.id ? "bg-accent text-white" : "text-fg-muted hover:bg-bg-sunken hover:text-fg"}`}
-            >
-              {n.icon}
-              {n.label}
-            </button>
-          ))}
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-5 pb-6 pt-4">
-          {section === "general" && <GeneralSection agent={agent} />}
-          {section === "folders" && <FoldersSection projectId={projectId} />}
-          {section === "providers" && <ProvidersSection agent={agent} />}
-          {section === "channels" && <ChannelsSection agent={agent} />}
-          {section === "connectors" && <ConnectorsSection agent={agent} />}
-          {section === "vault" && <VaultSection />}
-          {section === "data" && <DataSection agent={agent} projectId={projectId} />}
-          {section === "help" && <HelpSection />}
-          {section === "legal" && <LegalSection />}
+          <button onClick={() => void logout()} className="pressable mt-2 flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[13.5px] text-fg-muted hover:bg-bg-sunken/50 hover:text-danger">
+            <LogOut size={15} /> Odhlásit se
+          </button>
+          {user?.email && <p className="truncate px-3 pb-1 pt-1.5 text-[11px] text-fg-subtle">{user.email}</p>}
+        </nav>
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-1 pt-4">
+            <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">{NAV.find((n) => n.id === section)?.label}</p>
+            <div className="flex items-center gap-1">
+              <button onClick={() => void logout()} title="Odhlásit se" aria-label="Odhlásit se" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-danger sm:hidden"><LogOut size={17} /></button>
+              <button onClick={onClose} title="Zavřít" aria-label="Zavřít" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={17} /></button>
+            </div>
+          </div>
+          {/* Záložky pro mobil */}
+          <div className="flex shrink-0 gap-1.5 overflow-x-auto px-5 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:hidden" role="tablist" aria-label="Sekce nastavení">
+            {NAV.map((n) => (
+              <button
+                key={n.id}
+                role="tab"
+                aria-selected={section === n.id}
+                onClick={() => setSection(n.id)}
+                className={`pressable flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-4 text-[12.5px] font-[600] ${section === n.id ? "bg-accent text-white" : "text-fg-muted hover:bg-bg-sunken hover:text-fg"}`}
+              >
+                {n.label}
+              </button>
+            ))}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-5 pb-6 pt-4">
+            {section === "agent" && <AgentSection agent={agent} />}
+            {section === "model" && <ModelSection agent={agent} />}
+            {section === "folders" && <FoldersSection projectId={projectId} />}
+            {section === "providers" && <ProvidersSection agent={agent} />}
+            {section === "channels" && <ChannelsSection agent={agent} />}
+            {section === "connectors" && <ConnectorsSection agent={agent} />}
+            {section === "vault" && <VaultSection />}
+            {section === "data" && <DataSection agent={agent} projectId={projectId} />}
+            {section === "about" && <AboutSection />}
+          </div>
         </div>
       </div>
     </div>
@@ -89,53 +112,47 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
+/** Nadpis + úvodní popisek každé sekce — ať je hned jasné, k čemu sekce je. */
+function SectionHead({ children }: { children: React.ReactNode }) {
+  return <p className="mb-4 max-w-[520px] text-[13px] leading-relaxed text-fg-muted">{children}</p>;
+}
+
 const inputCls = "h-11 w-full rounded-full border border-border bg-bg-raised px-4 text-[13.5px] text-fg outline-none focus:border-accent disabled:opacity-50";
 
-/* ── Obecné ─────────────────────────────────────────────────────────── */
+/* ── Agent ──────────────────────────────────────────────────────────── */
 
-function GeneralSection({ agent }: { agent: Agent }) {
+function AgentSection({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(agent.name);
-  const [model, setModel] = useState(agent.model);
-  const [providerId, setProviderId] = useState(agent.providerConfigId);
   const [heartbeat, setHeartbeat] = useState(String(agent.heartbeatMinutes));
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Per-field dirty tracking: a background refresh must never clobber a
   // field the user is currently editing.
-  const [touched, setTouched] = useState({ name: false, providerId: false, model: false, heartbeat: false });
+  const [touched, setTouched] = useState({ name: false, heartbeat: false });
   function touch(field: keyof typeof touched) {
     setTouched((t) => (t[field] ? t : { ...t, [field]: true }));
   }
 
   useEffect(() => {
-    setTouched({ name: false, providerId: false, model: false, heartbeat: false });
+    setTouched({ name: false, heartbeat: false });
   }, [agent.id]);
 
-  // The server can correct the stored model mid-run (stale id → scanned
-  // fallback); keep the form in sync, but only for fields the user hasn't
-  // touched yet.
   useEffect(() => {
     if (!touched.name) setName(agent.name);
-    if (!touched.providerId) setProviderId(agent.providerConfigId);
-    if (!touched.model) setModel(agent.model);
     if (!touched.heartbeat) setHeartbeat(String(agent.heartbeatMinutes));
-  }, [agent.id, agent.name, agent.model, agent.providerConfigId, agent.heartbeatMinutes, touched]);
+  }, [agent.id, agent.name, agent.heartbeatMinutes, touched]);
 
   const save = useMutation({
-    mutationFn: () => {
-      if (!model.trim()) throw new Error("Nejdřív vyber model — bez něj chat neběží.");
-      return api.patch(`/agents/${agent.id}`, {
+    mutationFn: () =>
+      api.patch(`/agents/${agent.id}`, {
         name: name.trim() || agent.name,
-        model: model.trim(),
-        providerConfigId: providerId,
         heartbeatMinutes: Math.max(0, Math.min(10080, Number.parseInt(heartbeat, 10) || 0)),
-      });
-    },
+      }),
     onSuccess: () => {
       setMsg("Uloženo");
       setErr(null);
-      setTouched({ name: false, providerId: false, model: false, heartbeat: false });
+      setTouched({ name: false, heartbeat: false });
       setTimeout(() => setMsg(null), 2000);
       void queryClient.invalidateQueries({ queryKey: ["agent"] });
     },
@@ -144,6 +161,7 @@ function GeneralSection({ agent }: { agent: Agent }) {
 
   return (
     <div className="max-w-[520px]">
+      <SectionHead>Základní údaje o tvém agentovi — jak se jmenuje a jak často se sám probouzí.</SectionHead>
       <div className="mb-4 flex items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3">
         <AgentAvatar seed={agent.id} size={48} />
         <div className="min-w-0">
@@ -151,10 +169,69 @@ function GeneralSection({ agent }: { agent: Agent }) {
           <p className="mono truncate text-[12px] text-fg-muted">{agent.model}</p>
         </div>
       </div>
-      <Field label="Jméno agenta">
+      <Field label="Jméno agenta" hint="Jak ti bude říkat a jak se bude představovat.">
         <input value={name} onChange={(e) => { touch("name"); setName(e.target.value); }} className={inputCls} />
       </Field>
-      <Field label="Poskytovatel a model" hint="Kde se platí za modely. Nového poskytovatele přidáš v záložce Poskytovatelé.">
+      <Field label="Heartbeat (minut)" hint="Jak často se agent sám probudí a zkontroluje rozdělanou práci. 0 = vypnuto.">
+        <input value={heartbeat} onChange={(e) => { touch("heartbeat"); setHeartbeat(e.target.value); }} inputMode="numeric" className={inputCls} />
+      </Field>
+      {err && <p className="mb-3 text-[13px] text-danger">{err}</p>}
+      <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
+        {save.isPending ? "Ukládám…" : msg ?? "Uložit změny"}
+      </button>
+    </div>
+  );
+}
+
+/* ── Model ──────────────────────────────────────────────────────────── */
+
+function ModelSection({ agent }: { agent: Agent }) {
+  const queryClient = useQueryClient();
+  const [model, setModel] = useState(agent.model);
+  const [providerId, setProviderId] = useState(agent.providerConfigId);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  // Per-field dirty tracking: a background refresh must never clobber a
+  // field the user is currently editing.
+  const [touched, setTouched] = useState({ providerId: false, model: false });
+  function touch(field: keyof typeof touched) {
+    setTouched((t) => (t[field] ? t : { ...t, [field]: true }));
+  }
+
+  useEffect(() => {
+    setTouched({ providerId: false, model: false });
+  }, [agent.id]);
+
+  // The server can correct the stored model mid-run (stale id → scanned
+  // fallback); keep the form in sync, but only for fields the user hasn't
+  // touched yet.
+  useEffect(() => {
+    if (!touched.providerId) setProviderId(agent.providerConfigId);
+    if (!touched.model) setModel(agent.model);
+  }, [agent.id, agent.model, agent.providerConfigId, touched]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      if (!model.trim()) throw new Error("Nejdřív vyber model — bez něj chat neběží.");
+      return api.patch(`/agents/${agent.id}`, {
+        model: model.trim(),
+        providerConfigId: providerId,
+      });
+    },
+    onSuccess: () => {
+      setMsg("Uloženo");
+      setErr(null);
+      setTouched({ providerId: false, model: false });
+      setTimeout(() => setMsg(null), 2000);
+      void queryClient.invalidateQueries({ queryKey: ["agent"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
+  });
+
+  return (
+    <div className="max-w-[520px]">
+      <SectionHead>Kterým modelem agent přemýšlí a odpovídá. Platí se u poskytovatele, kterého sis nastavil.</SectionHead>
+      <Field label="Poskytovatel a model" hint="Nového poskytovatele (a jeho API klíč) přidáš v sekci Poskytovatelé.">
         <div className="rounded-[16px] border border-border bg-bg-raised p-3">
           <ModelFields
             providerId={providerId}
@@ -164,9 +241,6 @@ function GeneralSection({ agent }: { agent: Agent }) {
             idPrefix="settings"
           />
         </div>
-      </Field>
-      <Field label="Heartbeat (minut)" hint="Jak často se agent sám probudí a zkontroluje práci. 0 = vypnuto.">
-        <input value={heartbeat} onChange={(e) => { touch("heartbeat"); setHeartbeat(e.target.value); }} inputMode="numeric" className={inputCls} />
       </Field>
       {err && <p className="mb-3 text-[13px] text-danger">{err}</p>}
       <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
@@ -229,9 +303,9 @@ function FoldersSection({ projectId }: { projectId: string }) {
 
   return (
     <div className="max-w-[560px]">
-      <p className="mb-4 text-[13px] leading-relaxed text-fg-muted">
+      <SectionHead>
         Trvalé složky z tvého počítače, které agent vidí ve svém. Změny se projeví po restartu jeho kontejneru.
-      </p>
+      </SectionHead>
       {isLoading && <p className="text-[13px] text-fg-subtle">Načítám…</p>}
       {err && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{err}</p>}
 
@@ -333,7 +407,7 @@ function ProvidersSection({ agent }: { agent: Agent }) {
     onSuccess: (_d, p) => {
       void queryClient.invalidateQueries({ queryKey: ["agent"] });
       setErr(null);
-      setInfo(p.defaultModel ? null : "Poskytovatel přepnut. Vyber mu model v záložce Obecné — bez modelu chat neběží.");
+      setInfo(p.defaultModel ? null : "Poskytovatel přepnut. Vyber mu model v sekci Model — bez modelu chat neběží.");
     },
     onError: (e) => {
       setInfo(null);
@@ -343,9 +417,9 @@ function ProvidersSection({ agent }: { agent: Agent }) {
 
   return (
     <div className="max-w-[560px]">
-      <p className="mb-4 text-[13px] leading-relaxed text-fg-muted">
-        Kde agent bere modely. Agent právě používá model <span className="mono text-fg">{agent.model}</span>.
-      </p>
+      <SectionHead>
+        Odkud agent bere modely a komu za ně platíš. Agent právě používá model <span className="mono text-fg">{agent.model}</span>.
+      </SectionHead>
       {err && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{err}</p>}
       {info && <p className="mb-3 rounded-[14px] border border-warning/25 bg-warning-wash px-4 py-2.5 text-[13px] text-fg">{info}</p>}
       {providers.map((p) => (
@@ -386,7 +460,7 @@ function ProvidersSection({ agent }: { agent: Agent }) {
   );
 }
 
-/* ── Kanály zpráv ───────────────────────────────────────────────────── */
+/* ── Kanály ───────────────────────────────────────────────────────── */
 
 function ChannelsSection({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
@@ -435,14 +509,14 @@ function ChannelsSection({ agent }: { agent: Agent }) {
   });
 
   if (isError) {
-    return <p className="max-w-[520px] text-[13px] leading-relaxed text-fg-muted">Kanály zpráv může spravovat jen administrátor.</p>;
+    return <p className="max-w-[520px] text-[13px] leading-relaxed text-fg-muted">Kanály může spravovat jen administrátor.</p>;
   }
 
   return (
     <div className="max-w-[560px]">
-      <p className="mb-4 text-[13px] leading-relaxed text-fg-muted">
-        Chatujte s agentem v jiných aplikacích pro zprávy.
-      </p>
+      <SectionHead>
+        Piš agentovi i mimo web — připoj ho k Telegramu nebo Discordu a bude ti odpovídat tam.
+      </SectionHead>
       {err && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{err}</p>}
 
       <p className="mb-2 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Připojeno</p>
@@ -548,7 +622,7 @@ function ChannelCard({
   );
 }
 
-/* ── Konektory (MCP) ────────────────────────────────────────────────── */
+/* ── Integrace a MCP ────────────────────────────────────────────────── */
 
 function ConnectorsSection({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
@@ -578,6 +652,10 @@ function ConnectorsSection({ agent }: { agent: Agent }) {
 
   return (
     <div className="max-w-[560px]">
+      <SectionHead>
+        Služby a nástroje, které agent umí používat. Připoj službu jedním kliknutím, nebo přidej vlastní MCP server.
+        U každého konektoru nastavíš, co agent smí dělat — výchozí je jen čtení.
+      </SectionHead>
       {notice && (
         <p className={`mb-3 rounded-[14px] border px-4 py-2.5 text-[13px] ${notice.kind === "ok" ? "border-live/25 bg-live/10 text-fg" : "border-danger/25 bg-danger-wash text-danger"}`}>
           {notice.text}
@@ -671,7 +749,7 @@ function OneClickConnectors() {
     <div className="mb-6">
       <p className="mb-1 text-[14px] font-[700] text-fg">Jedním kliknutím</p>
       <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">
-        Připojte službu a agent ji hned umí používat — žádné ruční nastavování. Přihlášení probíhá bezpečně přes OAuth u poskytovatele nebo vložením API klíče, údaje se ukládají šifrovaně.
+        Připoj službu a agent ji hned umí používat — žádné ruční nastavování. Přihlášení probíhá bezpečně přes OAuth u poskytovatele nebo vložením API klíče, údaje se ukládají šifrovaně.
       </p>
       {isLoading && <p className="text-[13px] text-fg-muted">Načítám…</p>}
       {isError && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">Stav připojení se nepodařilo načíst.</p>}
@@ -758,7 +836,7 @@ function OneClickConnectors() {
             {c.connected && <ConnectorPolicy c={c} />}
             {c.credentialKind === "oauth" && (setupFor === c.id || (!c.appConfigured && !c.connected)) ? (
               <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
-                <p className="text-[13px] font-[600] text-fg">Nejprve přidejte OAuth aplikaci</p>
+                <p className="text-[13px] font-[600] text-fg">Nejprve přidej OAuth aplikaci</p>
                 <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
                 {c.setupUrl && (
                   <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
@@ -769,7 +847,7 @@ function OneClickConnectors() {
                 <Field label="Client ID">
                   <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="např. 123….apps.googleusercontent.com" className={`${inputCls} mono`} />
                 </Field>
-                <Field label="Client secret" hint={c.secretHint ? `Uloženo (…${c.secretHint}) — vyplňte jen pro změnu.` : undefined}>
+                <Field label="Client secret" hint={c.secretHint ? `Uloženo (…${c.secretHint}) — vyplň jen pro změnu.` : undefined}>
                   <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} type="password" placeholder="••••••••" className={`${inputCls} mono`} autoComplete="new-password" />
                 </Field>
                 <div className="flex gap-2">
@@ -796,7 +874,7 @@ function OneClickConnectors() {
             )}
             {c.credentialKind === "apiKey" && !c.connected && keyFor === c.id && (
               <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
-                <p className="text-[13px] font-[600] text-fg">Vložte API klíč</p>
+                <p className="text-[13px] font-[600] text-fg">Vlož API klíč</p>
                 <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
                 {c.setupUrl && (
                   <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
@@ -965,7 +1043,7 @@ function ManualMcpServers({ agent }: { agent: Agent }) {
 
   return (
     <div>
-      <p className="mb-1 text-[14px] font-[700] text-fg">Ruční MCP servery</p>
+      <p className="mb-1 text-[14px] font-[700] text-fg">Vlastní MCP servery</p>
       <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">
         Pro pokročilé: vlastní MCP server z příkazu nebo URL. Agent jeho nástroje umí hned použít.
       </p>
@@ -1011,9 +1089,7 @@ function ManualMcpServers({ agent }: { agent: Agent }) {
   );
 }
 
-/* ── Zařízení (počítač) ─────────────────────────────────────────────── */
-
-/* ── Nastavení dat ──────────────────────────────────────────────────── */
+/* ── Data ─────────────────────────────────────────────────────────── */
 
 function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) {
   const queryClient = useQueryClient();
@@ -1044,6 +1120,9 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
 
   return (
     <div className="max-w-[520px]">
+      <SectionHead>
+        Co se děje s tvými daty. Všechno běží jen na tvém serveru — žádný cloud. Zálohu si udělej zkopírováním datové složky, návod najdeš v sekci O aplikaci.
+      </SectionHead>
       <div className="mb-4 rounded-[16px] border border-border bg-bg-raised p-4">
         <p className="text-[13.5px] font-[600] text-fg">Vymazat historii chatu</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">
@@ -1061,7 +1140,7 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
         <div className="mb-4 rounded-[16px] border border-danger/40 bg-danger-wash/40 p-4">
           <p className="text-[13.5px] font-[600] text-danger">Tovární nastavení</p>
           <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">
-            Smaže ÚPLNĚ všechno — chaty, paměť, dovednosti, klíče, projekty — a restartuje server do stavu jako po první instalaci. Nevratné.
+            Smaže ÚPLNĚ všechno — chaty, paměť, dovednosti, klíče — a restartuje server do stavu jako po první instalaci. Nevratné.
           </p>
           {!resetArmed ? (
             <button
@@ -1090,33 +1169,23 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
         </div>
       )}
       {msg && <p className="text-[13px] text-fg-muted">{msg}</p>}
-      <p className="mt-2 text-[12.5px] leading-relaxed text-fg-subtle">
-        Všechna data běží jen na tvém serveru — žádný cloud. Zálohuj si složku s daty podle návodu v Nápovědě.
-      </p>
     </div>
   );
 }
 
-/* ── Nápověda / Právní ──────────────────────────────────────────────── */
+/* ── O aplikaci ─────────────────────────────────────────────────────── */
 
-function HelpSection() {
+function AboutSection() {
   return (
     <div className="max-w-[560px] text-[13.5px] leading-relaxed text-fg-muted">
       <p className="mb-3 font-[600] text-fg">Jak to funguje</p>
-      <ul className="list-disc space-y-2 pl-5">
+      <ul className="mb-6 list-disc space-y-2 pl-5">
         <li>Piš agentovi v hlavním chatu — pracuje ve svém vlastním počítači (kontejneru).</li>
         <li>Když potřebuje sáhnout mimo svůj počítač nebo udělat něco citlivého, přijde ti žádost o schválení.</li>
         <li>Živé dění sleduj v náhledu (tlačítko „Otevřít náhled") — a když se agent zasekne na přihlášení, obrazovku mu převezmi.</li>
-        <li>Trvalé složky přidáš v záložce Složky, opakované úkoly v panelu agenta › Rutiny.</li>
+        <li>Trvalé složky přidáš v sekci Složky, opakované úkoly v panelu agenta › Rutiny.</li>
         <li>Příkazy v chatu: <span className="mono text-fg">/compact</span> zhustí konverzaci, <span className="mono text-fg">/clear</span> vyčistí chat (paměť zůstane), <span className="mono text-fg">/export</span> stáhne přepis jako Markdown.</li>
       </ul>
-    </div>
-  );
-}
-
-function LegalSection() {
-  return (
-    <div className="max-w-[560px] text-[13.5px] leading-relaxed text-fg-muted">
       <p className="mb-3 font-[600] text-fg">Hertz</p>
       <p>Osobní AI agent běžící na tvém vlastním serveru. Tvoje konverzace a soubory nikam neodcházejí — kromě volání modelu u poskytovatele, kterého sis sám nastavil.</p>
       <p className="mt-3">Agent jedná tvým jménem jen v mezích schválení, která mu dáš. Citlivé kroky (e-maily, platby, změny mimo jeho počítač) vždy čekají na tvoje rozhodnutí.</p>
