@@ -53,6 +53,8 @@ export function markdownToTelegramHtml(src: string): string {
   let text = src.replace(/```[^\n]*\n?([\s\S]*?)(?:```|$)/g, (_m, code: string) =>
     `\n${stash(`<pre><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`)}\n`,
   );
+  // Markdown tables → aligned monospace <pre> (Telegram has no table tags).
+  text = extractTables(text, stash);
   // Inline code → <code>.
   text = text.replace(/`([^`\n]+)`/g, (_m, code: string) => stash(`<code>${escapeHtml(code)}</code>`));
 
@@ -102,8 +104,59 @@ export function markdownToTelegramHtml(src: string): string {
   return html;
 }
 
-/** Strip all tags back to readable plain text (last-resort fallback). */
-export function stripTelegramHtml(html: string): string {
+function splitTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\||\|$/g, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isTableSeparator(line: string): boolean {
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
+}
+
+/**
+ * Pull Markdown table blocks out of the text and stash them as aligned
+ * monospace <pre> blocks. Runs before inline-code extraction so pipes inside
+ * code spans are never mistaken for tables.
+ */
+function extractTables(text: string, stash: (html: string) => string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const header = lines[i]!;
+    const separator = lines[i + 1];
+    if (header.includes("|") && separator !== undefined && isTableSeparator(separator)) {
+      const rows: string[][] = [splitTableRow(header)];
+      i += 2;
+      while (i < lines.length && lines[i]!.includes("|") && lines[i]!.trim() !== "") {
+        rows.push(splitTableRow(lines[i]!));
+        i++;
+      }
+      const cols = Math.max(...rows.map((r) => r.length));
+      const widths: number[] = [];
+      for (let c = 0; c < cols; c++) {
+        widths.push(Math.min(40, Math.max(...rows.map((r) => (r[c] ?? "").length), 3)));
+      }
+      const renderRow = (row: string[]): string =>
+        row
+          .map((cell, c) => (cell ?? "").padEnd(widths[c]!))
+          .join("  ")
+          .trimEnd();
+      const body = [renderRow(rows[0]!), widths.map((w) => "-".repeat(w)).join("  "), ...rows.slice(1).map(renderRow)].join("\n");
+      out.push(`\n${stash(`<pre>${escapeHtml(body)}</pre>`)}\n`);
+      continue;
+    }
+    out.push(header);
+    i++;
+  }
+  return out.join("\n");
+}
+
+/** Strip all tags back to readable plain text (last-resort fallback). */export function stripTelegramHtml(html: string): string {
   return html
     .replace(/<a\s+href="([^"]*)">([\s\S]*?)<\/a>/g, "$2 ($1)")
     .replace(/<\/?(?:b|i|u|s|code|pre|blockquote|strong|em|ins|strike|del|span|tg-spoiler)[^>]*>/g, "")

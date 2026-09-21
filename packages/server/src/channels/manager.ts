@@ -5,10 +5,13 @@ import type { AuditSink } from "@kuclab-hertz/sandbox";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { agents, approvals, channelBindings, channelConfigs, messages, sessions } from "../db/schema.js";
+import type { HertzPaths } from "../paths.js";
+import type { DesktopManager } from "../computer/desktop-manager.js";
 import { decryptSecret } from "../secrets/key-encryption.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import type { JobQueue } from "../queue/job-queue.js";
 import { decideApproval } from "../tools/approval-tools.js";
+import { resolveVaultUseApproval } from "../tools/vault-tools.js";
 import {
   executeHostAccessOp,
   formatHostAccessExecutedInbound,
@@ -17,8 +20,9 @@ import {
 } from "../tools/host-access-tools.js";
 import { TelegramDriver } from "./telegram.js";
 import { DiscordDriver } from "./discord.js";
-import type { ChannelDriver, InboundMessage } from "./types.js";
+import type { ChannelDriver, InboundMessage, OutboundStream } from "./types.js";
 import { isClearCommand, isNewChatCommand, parseDecisionCommand } from "./types.js";
+import { handleTelegramCallback, handleTelegramCommand, type TelegramCommandEnv } from "./telegram-commands.js";
 
 export interface ChannelManagerDeps {
   db: Database;
@@ -27,6 +31,8 @@ export interface ChannelManagerDeps {
   persistence: PersistencePort;
   queue: JobQueue;
   audit: AuditSink;
+  paths: HertzPaths;
+  desktop: Pick<DesktopManager, "start">;
   fallbackUserId: () => Promise<string>;
 }
 
@@ -42,6 +48,15 @@ interface SessionTap {
   buffer: string;
   workingNotified: boolean;
   targets: Map<string, ChannelDriver>;
+  /** Live streams per external chat — finished (not re-sent) when the turn ends. */
+  streams: Map<string, OutboundStream>;
+  /**
+   * Serializes agent-loop events per session. Without this, a tool_call
+   * immediately followed by text_delta would open two stream placeholders
+   * (the second beginStream aborts the first), because updateStreams hadn't
+   * cached the first stream yet.
+   */
+  chain: Promise<void>;
 }
 
 function parseAllowlist(raw: string | null): string[] {
@@ -63,6 +78,11 @@ function chatPart(externalChatId: string): string {
  * Each external chat maps to a regular Hertz session via channel_bindings, so
  * everything said on the phone shows up in the WebUI like any other chat —
  * and the agent's replies, questions, and approval requests flow back out.
+ *
+ * Telegram is a full client: the agent's reply streams into the chat with
+ * throttled live edits plus a typing indicator (no "silence then wall of
+ * text"), and /commands manage the agent, chats, projects, memory, skills,
+ * approvals and the channel itself — in Czech, without emoji.
  */
 export class ChannelManager {
   private running = new Map<string, RunningChannel>();
@@ -111,6 +131,12 @@ export class ChannelManager {
         await driver.start({
           onMessage: (msg) => this.handleMessage(config.id, driver, msg),
           onDecision: (externalChatId, approvalId, decision) => this.handleDecision(driver, externalChatId, approvalId, decision),
+          ...(driver instanceof TelegramDriver
+            ? {
+                onCommandCallback: (externalChatId: string, action: string, payload: string, senderLabel: string) =>
+                  this.handleCommandCallback(config.id, driver, externalChatId, action, payload, senderLabel),
+              }
+            : {}),
         });
         this.running.set(config.id, { configId: config.id, kind: config.kind, driver, botLabel });
         console.log(`[hertz] channel up: ${config.kind} "${config.label}" (${botLabel})`);
@@ -128,6 +154,24 @@ export class ChannelManager {
     return this.running.has(configId);
   }
 
+  /** Restart one channel's inbound stream (keeps the backlog); used by /restart. */
+  async restartChannel(configId: string): Promise<void> {
+    const channel = this.running.get(configId);
+    if (!channel) throw new Error("channel not running");
+    if (typeof channel.driver.restart === "function") {
+      await channel.driver.restart();
+    } else {
+      // Drivers without restart(): full stop/start cycle via reload.
+      await this.reload();
+    }
+  }
+
+  /** Enable/disable a channel config and apply immediately. */
+  async setChannelEnabled(configId: string, enabled: boolean): Promise<void> {
+    await this.deps.db.update(channelConfigs).set({ enabled }).where(eq(channelConfigs.id, configId));
+    await this.reload();
+  }
+
   private async handleMessage(configId: string, driver: ChannelDriver, msg: InboundMessage): Promise<void> {
     const configRows = await this.deps.db.select().from(channelConfigs).where(eq(channelConfigs.id, configId)).limit(1);
     const config = configRows[0];
@@ -135,7 +179,7 @@ export class ChannelManager {
 
     const allowlist = parseAllowlist(config.allowedChatsJson);
     if (allowlist.length > 0 && !allowlist.includes(chatPart(msg.externalChatId)) && !allowlist.includes(msg.externalChatId)) {
-      await driver.sendText(msg.externalChatId, "This chat isn't on this bot's allowlist.").catch(() => {});
+      await driver.sendText(msg.externalChatId, "Tento chat není na allowlistu tohoto bota.").catch(() => {});
       return;
     }
 
@@ -151,31 +195,36 @@ export class ChannelManager {
         wanted.has(`@${bareLabel}`) ||
         wanted.has(bareLabel);
       if (!ok) {
-        await driver.sendText(msg.externalChatId, "You're not on this bot's sender allowlist.").catch(() => {});
+        await driver.sendText(msg.externalChatId, "Nejsi na allowlistu odesílatelů tohoto bota.").catch(() => {});
         return;
       }
     }
 
-    const decision = parseDecisionCommand(msg.text);
-    if (decision) {
-      await this.handleDecision(driver, msg.externalChatId, decision.approvalId, decision.decision);
-      return;
-    }
+    if (driver instanceof TelegramDriver) {
+      // Full command surface (config, chats, memory, approvals, …) in Czech.
+      if (await handleTelegramCommand(this.commandEnv(configId, driver, config), msg)) return;
+    } else {
+      const decision = parseDecisionCommand(msg.text);
+      if (decision) {
+        await this.handleDecision(driver, msg.externalChatId, decision.approvalId, decision.decision);
+        return;
+      }
 
-    if (isNewChatCommand(msg.text)) {
-      await this.deps.db
-        .delete(channelBindings)
-        .where(and(eq(channelBindings.channelId, configId), eq(channelBindings.externalChatId, msg.externalChatId)));
-      await driver.sendText(msg.externalChatId, "New chat started — what should we work on?").catch(() => {});
-      return;
-    }
+      if (isNewChatCommand(msg.text)) {
+        await this.deps.db
+          .delete(channelBindings)
+          .where(and(eq(channelBindings.channelId, configId), eq(channelBindings.externalChatId, msg.externalChatId)));
+        await driver.sendText(msg.externalChatId, "Začínám nový chat — na čem budeme pracovat?").catch(() => {});
+        return;
+      }
 
-    if (isClearCommand(msg.text)) {
-      const cleared = await this.clearBoundChat(configId, msg.externalChatId);
-      await driver
-        .sendText(msg.externalChatId, cleared ? "Chat cleared. Memory, skills and notes are untouched." : "Nothing to clear — no active chat here yet.")
-        .catch(() => {});
-      return;
+      if (isClearCommand(msg.text)) {
+        const cleared = await this.clearBoundChat(configId, msg.externalChatId);
+        await driver
+          .sendText(msg.externalChatId, cleared ? "Chat vymazán. Paměť, skilly a poznámky zůstávají." : "Není co mazat — tady zatím žádný aktivní chat není.")
+          .catch(() => {});
+        return;
+      }
     }
 
     const content: ContentBlock[] = [{ type: "text", text: `${msg.senderLabel}: ${msg.text}` }];
@@ -192,6 +241,68 @@ export class ChannelManager {
     }
     tap.workingNotified = false;
     await enqueueAgentRun(this.deps, { sessionId, userId: await this.deps.fallbackUserId(), userMessage: content }, { maxAttempts: 2 });
+  }
+
+  /** Per-chat command environment for the Telegram command layer. */
+  private commandEnv(
+    configId: string,
+    driver: TelegramDriver,
+    config: typeof channelConfigs.$inferSelect,
+  ): TelegramCommandEnv {
+    return {
+      db: this.deps.db,
+      masterKey: this.deps.masterKey,
+      agentLoop: this.deps.agentLoop,
+      paths: this.deps.paths,
+      fallbackUserId: this.deps.fallbackUserId,
+      configId,
+      configLabel: config.label,
+      driver,
+      ensureSession: (externalChatId, senderLabel) => this.resolveSession(driver, config, externalChatId, senderLabel),
+      boundSessionId: (externalChatId) => this.boundSessionId(configId, externalChatId),
+      restartPolling: () => this.restartChannel(configId),
+      setEnabled: (enabled) => this.setChannelEnabled(configId, enabled),
+      clearChat: (externalChatId) => this.clearBoundChat(configId, externalChatId),
+      decide: (externalChatId, approvalId, decision) => this.applyDecision(driver, externalChatId, approvalId, decision),
+      pendingApprovals: (sessionId) => this.pendingApprovalsFor(sessionId),
+      startDesktop: async (agentId) => {
+        await this.deps.desktop.start(agentId);
+      },
+      botPolling: () => (typeof driver.isPolling === "function" ? driver.isPolling() : true),
+    };
+  }
+
+  private async handleCommandCallback(
+    configId: string,
+    driver: TelegramDriver,
+    externalChatId: string,
+    action: string,
+    payload: string,
+    senderLabel: string,
+  ): Promise<void> {
+    const configRows = await this.deps.db.select().from(channelConfigs).where(eq(channelConfigs.id, configId)).limit(1);
+    const config = configRows[0];
+    if (!config || !config.enabled) return;
+    await handleTelegramCallback(this.commandEnv(configId, driver, config), externalChatId, senderLabel, action, payload);
+  }
+
+  /** Bound session id without creating one. */
+  private async boundSessionId(configId: string, externalChatId: string): Promise<string | undefined> {
+    const bindings = await this.deps.db
+      .select()
+      .from(channelBindings)
+      .where(and(eq(channelBindings.channelId, configId), eq(channelBindings.externalChatId, externalChatId)))
+      .limit(1);
+    return bindings[0]?.sessionId;
+  }
+
+  private async pendingApprovalsFor(sessionId: string): Promise<Array<{ id: string; summary: string; detail: string | null }>> {
+    const rows = await this.deps.db
+      .select({ id: approvals.id, summary: approvals.summary, detail: approvals.detail })
+      .from(approvals)
+      .where(and(eq(approvals.sessionId, sessionId), eq(approvals.status, "pending")))
+      .orderBy(desc(approvals.createdAt));
+    return rows;
   }
 
   /** /clear from chat: wipe the bound session's messages (memory/skills/notes survive). */
@@ -234,13 +345,13 @@ export class ChannelManager {
     }
 
     if (!config.defaultAgentId) {
-      await driver.sendText(externalChatId, "No default agent is set for this bot — configure one on the Channels page first.").catch(() => {});
+      await driver.sendText(externalChatId, "Pro tohoto bota není nastavený výchozí agent — nejdřív ho vyber na stránce Kanály.").catch(() => {});
       return undefined;
     }
     const agentRows = await this.deps.db.select().from(agents).where(eq(agents.id, config.defaultAgentId)).limit(1);
     const agent = agentRows[0];
     if (!agent) {
-      await driver.sendText(externalChatId, "The default agent for this bot is unavailable — pick another one on the Channels page.").catch(() => {});
+      await driver.sendText(externalChatId, "Výchozí agent tohoto bota není dostupný — vyber jiného na stránce Kanály.").catch(() => {});
       return undefined;
     }
 
@@ -269,12 +380,16 @@ export class ChannelManager {
       buffer: "",
       workingNotified: false,
       targets: new Map(),
+      streams: new Map(),
+      chain: Promise.resolve(),
       unsubscribe: () => {},
     };
     tap.unsubscribe = this.deps.agentLoop.subscribe(sessionId, (event) => {
-      void this.handleLoopEvent(sessionId, tap, event).catch((err) =>
-        console.warn(`[hertz] channel tap failed: ${(err as Error).message}`),
-      );
+      // Queue behind the previous event — never process two events for the
+      // same session concurrently (see SessionTap.chain).
+      tap.chain = tap.chain
+        .then(() => this.handleLoopEvent(sessionId, tap, event))
+        .catch((err) => console.warn(`[hertz] channel tap failed: ${(err as Error).message}`));
     });
     this.taps.set(sessionId, tap);
     return tap;
@@ -283,17 +398,34 @@ export class ChannelManager {
   private async handleLoopEvent(sessionId: string, tap: SessionTap, event: AgentLoopEvent): Promise<void> {
     if (event.type === "text_delta" && event.text) {
       tap.buffer += event.text;
+      await this.updateStreams(tap);
       return;
     }
     if (event.type === "tool_call") {
-      if (!tap.workingNotified && !tap.buffer.trim()) {
-        tap.workingNotified = true;
-        await this.broadcast(tap, "Working on it…");
+      // Open the live stream eagerly so the user sees activity immediately,
+      // not after the first tool round finishes.
+      await this.updateStreams(tap);
+      for (const [chatId, driver] of tap.targets) {
+        if (typeof driver.beginStream === "function") {
+          await driver.typing?.(chatId).catch(() => {});
+        } else if (!tap.workingNotified && !tap.buffer.trim()) {
+          tap.workingNotified = true;
+          await driver.sendText(chatId, "Pracuji na tom…").catch(() => {});
+        }
+      }
+      return;
+    }
+    if (event.type === "tool_result") {
+      // Long tool runs: keep the typing bubble alive on streaming targets.
+      for (const [chatId, driver] of tap.targets) {
+        if (typeof driver.beginStream === "function") {
+          await driver.typing?.(chatId).catch(() => {});
+        }
       }
       return;
     }
     if (event.type === "awaiting_input") {
-      await this.flush(tap);
+      await this.finishStreams(tap);
       const pendingApprovalId = await this.pendingApprovalId(sessionId);
       if (pendingApprovalId) {
         const rows = await this.deps.db.select().from(approvals).where(eq(approvals.id, pendingApprovalId)).limit(1);
@@ -311,14 +443,14 @@ export class ChannelManager {
       return;
     }
     if (event.type === "error") {
-      await this.flush(tap);
-      await this.broadcast(tap, event.message ?? "Something went wrong.");
+      await this.finishStreams(tap);
+      await this.broadcast(tap, event.message ?? "Něco se pokazilo.");
       this.dropTap(sessionId);
       return;
     }
     if (event.type === "done") {
       const hadText = tap.buffer.trim().length > 0;
-      await this.flush(tap);
+      await this.finishStreams(tap);
       if (!hadText) {
         // Tool-only run with no closing words — deliver the last assistant text from history instead of silence.
         const fallback = await this.lastAssistantText(sessionId);
@@ -328,18 +460,53 @@ export class ChannelManager {
     }
   }
 
-  private dropTap(sessionId: string): void {
-    const tap = this.taps.get(sessionId);
-    if (tap) {
-      tap.unsubscribe();
-      this.taps.delete(sessionId);
+  /**
+   * Push the current draft into every streaming target (throttled by the
+   * driver). Targets without streaming keep accumulating into the buffer and
+   * get one final sendText — the old behavior.
+   */
+  private async updateStreams(tap: SessionTap): Promise<void> {
+    for (const [chatId, driver] of tap.targets) {
+      if (typeof driver.beginStream !== "function") continue;
+      let stream = tap.streams.get(chatId);
+      if (!stream) {
+        const opened = await driver.beginStream(chatId, tap.buffer).catch(() => undefined);
+        if (!opened) continue; // placeholder failed — legacy sendText fallback
+        tap.streams.set(chatId, opened);
+        stream = opened;
+      }
+      await stream.update(tap.buffer).catch(() => {});
     }
   }
 
-  private async flush(tap: SessionTap): Promise<void> {
+  /**
+   * Finalize every open stream in place (no duplicate message) and flush the
+   * buffer to legacy targets. Consumes the buffer.
+   */
+  private async finishStreams(tap: SessionTap): Promise<void> {
     const text = tap.buffer.trim();
     tap.buffer = "";
-    if (text) await this.broadcast(tap, text);
+    for (const [chatId, driver] of tap.targets) {
+      const stream = tap.streams.get(chatId);
+      tap.streams.delete(chatId);
+      if (stream) {
+        await stream.finish(text).catch(() => {});
+      } else if (text) {
+        await driver.sendText(chatId, text).catch((err) => console.warn(`[hertz] channel send failed: ${(err as Error).message}`));
+      }
+    }
+  }
+
+  private dropTap(sessionId: string): void {
+    const tap = this.taps.get(sessionId);
+    if (tap) {
+      for (const stream of tap.streams.values()) {
+        void stream.abort().catch(() => {});
+      }
+      tap.streams.clear();
+      tap.unsubscribe();
+      this.taps.delete(sessionId);
+    }
   }
 
   private async broadcast(tap: SessionTap, text: string): Promise<void> {
@@ -383,12 +550,28 @@ export class ChannelManager {
     approvalId: string,
     decision: "approved" | "rejected",
   ): Promise<void> {
+    const reply = await this.applyDecision(driver, externalChatId, approvalId, decision);
+    await driver
+      .sendText(externalChatId, reply ?? "Toto schválení už nečeká (bylo rozhodnuto nebo vypršelo).")
+      .catch(() => {});
+  }
+
+  /**
+   * Resolve an approval exactly like the WebUI inbox does and resume the
+   * session. Returns the user-facing reply text, or undefined when the
+   * approval is no longer pending. Kind-agnostic: works for generic,
+   * host_access, and any future approval kinds (e.g. vault_use) — the kind
+   * only decides whether the server executes an op after approval.
+   */
+  private async applyDecision(
+    driver: ChannelDriver,
+    externalChatId: string,
+    approvalId: string,
+    decision: "approved" | "rejected",
+  ): Promise<string | undefined> {
     const ownerId = await this.deps.fallbackUserId();
     const result = await decideApproval(this.deps.db, approvalId, decision, ownerId);
-    if (!result) {
-      await driver.sendText(externalChatId, "That approval is no longer pending (already decided or expired).").catch(() => {});
-      return;
-    }
+    if (!result) return undefined;
 
     // Host-access approvals decided from chat execute the op the same way as
     // the WebUI inbox does — the agent must never be told "approved" without
@@ -438,6 +621,18 @@ export class ChannelManager {
         });
         inboundText = formatHostAccessExecutedInbound(payload, opResult);
       }
+    } else if (result.kind === "vault_use") {
+      // Same as the WebUI inbox: approving mints a single-use, session-scoped,
+      // 5-minute in-memory grant — the secret never lands in the DB, logs,
+      // or chat history. Rejecting issues nothing.
+      inboundText = await resolveVaultUseApproval(this.deps.db, this.deps.masterKey, {
+        approvalId,
+        sessionId: result.sessionId,
+        summary: result.summary,
+        payload: result.payload,
+        decision,
+        decidedByUserId: ownerId,
+      });
     } else {
       inboundText =
         decision === "approved"
@@ -474,9 +669,7 @@ export class ChannelManager {
       // Session already running — the inbound decision above is picked up mid-run.
     }
 
-    await driver
-      .sendText(externalChatId, decision === "approved" ? `Approved: ${result.summary}` : `Rejected: ${result.summary}`)
-      .catch(() => {});
+    return decision === "approved" ? `Schváleno: ${result.summary}` : `Zamítnuto: ${result.summary}`;
   }
 
   /** Recent channel-linked chats for the Channels page. */

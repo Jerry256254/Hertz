@@ -14,16 +14,55 @@ export interface InboundMessage {
 export interface ChannelCallbacks {
   onMessage(msg: InboundMessage): Promise<void>;
   onDecision(externalChatId: string, approvalId: string, decision: "approved" | "rejected"): Promise<void>;
+  /**
+   * Platform UI callbacks that are not approvals: inline-picker selections from
+   * bot commands (model pickers, chat switchers, confirmations…). Only fired by
+   * drivers whose platform supports callback buttons (Telegram).
+   */
+  onCommandCallback?(externalChatId: string, action: string, payload: string, senderLabel: string): Promise<void>;
+}
+
+export interface ChannelStartOptions {
+  /**
+   * Drop updates queued while the bot was offline. True on cold boot (answering
+   * week-old messages is never right), false on an operator-initiated restart
+   * where the backlog was written minutes ago and is still relevant.
+   */
+  dropBacklog?: boolean;
+}
+
+/**
+ * A live-updated outbound message: the driver renders the agent's in-progress
+ * reply with throttled edits and re-arms the typing indicator while open.
+ * Drivers whose platform cannot edit messages return undefined from
+ * beginStream() and the caller falls back to plain sendText().
+ */
+export interface OutboundStream {
+  /** Render the current draft of the reply (throttled by the driver). */
+  update(text: string): Promise<void>;
+  /**
+   * Render the final reply in place. When `finalText` is empty the placeholder
+   * is removed instead, so a tool-only run leaves no litter behind.
+   */
+  finish(finalText: string): Promise<void>;
+  /** Give up: stop typing, drop the placeholder, send nothing. */
+  abort(): Promise<void>;
 }
 
 export interface ChannelDriver {
-  start(cb: ChannelCallbacks): Promise<void>;
+  start(cb: ChannelCallbacks, opts?: ChannelStartOptions): Promise<void>;
   stop(): void;
   /** Throws when the token is invalid; resolves with the bot's public label otherwise. */
   verify(): Promise<string>;
+  /** Restart the inbound stream without touching configuration. */
+  restart?(opts?: ChannelStartOptions): Promise<void>;
   sendText(externalChatId: string, text: string): Promise<void>;
   /** Approval request with one-tap decision buttons where the platform supports them. */
   sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void>;
+  /** Best-effort "is typing…" indicator; no-op where the platform lacks one. */
+  typing?(externalChatId: string): Promise<void>;
+  /** Open a live-updating message; undefined = platform cannot edit messages. */
+  beginStream?(externalChatId: string, initialText?: string): Promise<OutboundStream | undefined>;
 }
 
 /** Split long texts on paragraph boundaries so no chunk exceeds the platform limit. */
@@ -60,4 +99,80 @@ export function isNewChatCommand(text: string): boolean {
 /** /clear wipes the current chat's messages (memory, skills and notes survive). */
 export function isClearCommand(text: string): boolean {
   return /^\s*[!/]clear\s*$/.test(text);
+}
+
+export interface ParsedChannelCommand {
+  /** Canonical command name (Czech), e.g. "pomoc". */
+  name: string;
+  /** Raw argument text after the command word (may be empty). */
+  args: string;
+}
+
+/**
+ * Canonical Czech command names with the aliases users may type.
+ * Kept here (not in the Telegram module) so every channel shares one grammar.
+ */
+const COMMAND_ALIASES: Record<string, string> = {
+  start: "pomoc",
+  help: "pomoc",
+  pomoc: "pomoc",
+  stav: "stav",
+  status: "stav",
+  restart: "restart",
+  odpojit: "odpojit",
+  disconnect: "odpojit",
+  novy: "novy",
+  new: "novy",
+  newchat: "novy",
+  reset: "novy",
+  vycistit: "vycistit",
+  clear: "vycistit",
+  jmeno: "jmeno",
+  name: "jmeno",
+  model: "model",
+  rezim: "rezim",
+  mode: "rezim",
+  chaty: "chaty",
+  chats: "chaty",
+  projekty: "projekty",
+  projects: "projekty",
+  pamet: "pamet",
+  memory: "pamet",
+  zapamatuj: "zapamatuj",
+  remember: "zapamatuj",
+  zapomen: "zapomen",
+  forget: "zapomen",
+  hledej: "hledej",
+  search: "hledej",
+  skilly: "skilly",
+  skills: "skilly",
+  pauza: "pauza",
+  pause: "pauza",
+  pokracuj: "pokracuj",
+  resume: "pokracuj",
+  continue: "pokracuj",
+  schvaleni: "schvaleni",
+  approvals: "schvaleni",
+  schvalit: "schvalit",
+  approve: "schvalit",
+  zamitnout: "zamitnout",
+  reject: "zamitnout",
+  deny: "zamitnout",
+  obrazovka: "obrazovka",
+  screen: "obrazovka",
+  pocitac: "obrazovka",
+};
+
+/** Parse "/prikaz args" / "!prikaz args" into a canonical command, or undefined. */
+export function parseChannelCommand(text: string): ParsedChannelCommand | undefined {
+  const match = /^\s*[!/]([a-zA-Zá-žÁ-Ž]+)(?:\s+(.*?))?\s*$/.exec(text);
+  if (!match) return undefined;
+  const canonical = COMMAND_ALIASES[match[1]!.toLowerCase()];
+  if (!canonical) return undefined;
+  return { name: canonical, args: (match[2] ?? "").trim() };
+}
+
+/** True for any text that addresses the bot as a command (not a chat message). */
+export function isChannelCommand(text: string): boolean {
+  return parseChannelCommand(text) !== undefined;
 }
