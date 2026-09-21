@@ -86,6 +86,11 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!(await hasProjectAccess(ctx.db, request.user!, parsed.data.projectId))) {
         return reply.code(403).send({ error: "No access to this project" });
       }
+      if (parsed.data.providerConfigId) {
+        const { providerConfigs } = await import("../db/schema.js");
+        const pc = await ctx.db.select({ id: providerConfigs.id }).from(providerConfigs).where(eq(providerConfigs.id, parsed.data.providerConfigId)).limit(1);
+        if (!pc[0]) return reply.code(400).send({ error: "Zvolený provider neexistuje — vyberte jiný model v nastavení" });
+      }
       const id = await ensureAgent(ctx, parsed.data);
       // Newborn agents start with the default procedures (missing-only, idempotent).
       await ensureDefaultSkills(ctx.paths, parsed.data.projectId, id).catch(() => {});
