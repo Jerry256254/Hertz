@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ChevronRight, Globe, Image as ImageIcon, MonitorUp, Paperclip, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Globe, Image as ImageIcon, Paperclip, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Agent, Budget, HertzSession, PersistedMessage, SubagentInfo } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
@@ -416,15 +416,13 @@ export function ChatView({
           </span>
           Chaty
         </button>
-        <button onClick={onOpenPreview} className={`pressable hidden items-center gap-2 rounded-full border py-2 pl-3 pr-4 text-[13px] font-[600] sm:flex ${previewActive ? "border-accent bg-accent-wash text-accent" : "border-border bg-bg-raised text-fg-muted hover:bg-bg-hover hover:text-fg"}`}>
-          <MonitorUp size={14} />
-          Otevřít náhled
-        </button>
         <span className="flex-1" />
         <button onClick={onOpenAgent} title="Otevřít nastavení agenta" className="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 hover:bg-bg-hover">
           <AgentAvatar seed={agent.id} version={avatarVersion} mood={mood} size={30} />
           <span className="max-w-[32vw] truncate text-[14px] font-[600] text-fg">{agent.name}</span>
-          <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-live pulse-live" : "bg-live"}`} title={isRunning ? "Pracuje" : "Připojeno"} />
+          {isRunning && (
+            <span className="h-2 w-2 rounded-full bg-live pulse-live" title="Pracuje" />
+          )}
         </button>
       </header>
 
@@ -565,7 +563,7 @@ export function ChatView({
               onSubmit={onSubmit}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); void onFiles(e.dataTransfer.files); }}
-              className="relative rounded-[28px] border border-border bg-bg-raised shadow-[0_12px_40px_rgba(0,0,0,0.35)] transition-colors focus-within:border-accent/50"
+              className="relative rounded-[24px] border border-border bg-bg-raised shadow-[0_12px_40px_rgba(0,0,0,0.35)] transition-colors focus-within:border-accent focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.35),0_0_0_3px_var(--color-accent-wash)]"
             >
               {showJumpToBottom && (
                 <button type="button" onClick={jumpToBottom} title="Skočit dolů" className="absolute -top-14 right-2 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted shadow-lg hover:text-fg">
@@ -573,7 +571,7 @@ export function ChatView({
                 </button>
               )}
               {images.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-4 pt-3">
+                <div className="flex flex-wrap gap-2 px-3 pt-2.5">
                   {images.map((img, i) => (
                     <div key={i} className="group relative">
                       <img src={`data:${img.mimeType};base64,${img.data}`} className="h-14 w-14 rounded-[12px] border border-border object-cover" />
@@ -583,7 +581,7 @@ export function ChatView({
                 </div>
               )}
               {docFiles.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-4 pt-3">
+                <div className="flex flex-wrap gap-2 px-3 pt-2.5">
                   {docFiles.map((f, i) => (
                     <span key={i} className="mono flex items-center gap-1.5 rounded-full border border-border bg-bg-sunken px-3 py-1 text-[11px] text-fg-muted">
                       <Paperclip size={11} /> {f.name}
@@ -592,22 +590,22 @@ export function ChatView({
                   ))}
                 </div>
               )}
-              <textarea
-                ref={textareaRef}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={onKeyDown}
-                onPaste={(e) => void onFiles(e.clipboardData.files)}
-                placeholder={`Napiš ${agent.name}…`}
-                rows={1}
-                className="max-h-[160px] min-h-[48px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[14px] leading-6 text-fg placeholder:text-fg-subtle outline-none"
-              />
-              <div className="flex items-center gap-1 px-2.5 pb-2.5">
+              {/* Jedna řádka, vše vertikálně vycentrované: příloha vlevo, text uprostřed, nápověda + odeslat vpravo. */}
+              <div className="flex items-center gap-1.5 p-2">
                 <input type="file" accept="image/*,.txt,.md,.markdown,.csv,.json,.log,.ts,.js,.py" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id={`file-input-${sessionId}`} />
-                <IconButton type="button" title="Přiložit soubor" className="h-11 w-11" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
-                <span className="flex-1" />
-                <span className="hidden select-none text-[11px] text-fg-faint sm:block">Enter odešle · Shift+Enter nový řádek</span>
-                <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={17} strokeWidth={2.2} /></button>
+                <IconButton type="button" title="Přiložit soubor" aria-label="Přiložit soubor" className="h-10 w-10 shrink-0" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  onPaste={(e) => void onFiles(e.clipboardData.files)}
+                  placeholder={`Napiš ${agent.name}…`}
+                  rows={1}
+                  className="max-h-[160px] min-h-[40px] w-full min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-[14px] leading-[22px] text-fg placeholder:text-fg-subtle outline-none"
+                />
+                <span className="hidden shrink-0 select-none whitespace-nowrap text-[11px] text-fg-faint sm:block">Enter odešle · Shift+Enter nový řádek</span>
+                <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" aria-label="Odeslat zprávu" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={17} strokeWidth={2.2} /></button>
               </div>
             </form>
           )}

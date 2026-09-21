@@ -46,9 +46,6 @@ export function AgentPanel({
         </button>
         <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={48} />
         <p className="mt-1.5 text-[15px] font-[700] tracking-[-0.02em] text-fg">{agent.name}</p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-fg-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-live" /> Připojeno
-        </p>
         <ModelRow agent={agent} />
         <div className="mt-2.5 grid w-full grid-cols-7 gap-1 rounded-full border border-border bg-bg-raised p-0.5">
           <PanelTabButton active={tab === "activity"} onClick={() => onTabChange("activity")} title="Aktivita">

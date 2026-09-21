@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageSquare, MessageSquarePlus, Plus, Search, Send, Trash2, X } from "lucide-react";
+import { MessageSquare, MessageSquarePlus, Plus, Search, Send, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { Agent, ChannelBinding, ChannelConfig, SessionListItem } from "../lib/types";
@@ -16,7 +16,6 @@ export function SideBar({
   onSelectChat,
   onSelectChannel,
   onOpenSearch,
-  onClose,
 }: {
   agent: Agent;
   projectId: string;
@@ -26,7 +25,6 @@ export function SideBar({
   onSelectChat: (sessionId: string) => void;
   onSelectChannel: (binding: ChannelBinding) => void;
   onOpenSearch: () => void;
-  onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -83,19 +81,7 @@ export function SideBar({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-semibold tracking-[-0.01em] text-fg">{agent.name}</span>
-          <span className="mt-1 flex items-center gap-1.5 text-[12px] font-medium text-fg-muted">
-            <span className="pulse-live h-1.5 w-1.5 rounded-full bg-live" />
-            Připojeno
-          </span>
         </span>
-        <button
-          onClick={onClose}
-          title="Zavřít panel"
-          aria-label="Zavřít panel"
-          className="pressable flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-faint hover:bg-bg-sunken hover:text-fg-muted"
-        >
-          <X size={16} />
-        </button>
       </div>
 
       {/* actions */}

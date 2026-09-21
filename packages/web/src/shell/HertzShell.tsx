@@ -17,6 +17,7 @@ import { ApprovalsView } from "../views/ApprovalsView";
 import { SearchOverlay } from "../overlays/SearchOverlay";
 import { SettingsModal, type Section as SettingsSection } from "../settings/SettingsModal";
 import { ProviderCreateForm } from "../components/ProviderCreateForm";
+import { ModelFields } from "../components/ModelFields";
 
 export function HertzShell() {
   const queryClient = useQueryClient();
@@ -132,7 +133,6 @@ export function HertzShell() {
             onSelectChat={selectChat}
             onSelectChannel={selectChannel}
             onOpenSearch={() => setSearchOpen(true)}
-            onClose={() => setSidebarOpen(false)}
           />
           </aside>
         </>
@@ -311,8 +311,6 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
     }
   }
 
-  const selectCls =
-    "h-11 w-full appearance-none rounded-full border border-border bg-bg-sunken px-4 text-[14px] text-fg outline-none focus:border-accent disabled:opacity-50";
   const finalAgentName = agentName.trim() || "Orion";
   const finalUserName = userName.trim();
 
@@ -334,43 +332,25 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
               Běžím jen u tebe — nic neposílám do cloudu. Vyber poskytovatele a model,
               později ho můžeš kdykoliv změnit v nastavení.
             </p>
-            <div className="mt-9 space-y-6">
-              <div>
-                <Label>POSKYTOVATEL</Label>
-                {providers.length === 0 ? (
-                  <ProviderCreateForm
-                    onCreated={(id, defaultModel) => {
-                      setProviderId(id);
-                      if (defaultModel) setModel(defaultModel);
-                    }}
-                  />
-                ) : (
-                  <select
-                    value={providerId}
-                    onChange={(e) => {
-                      setProviderId(e.target.value);
-                      const p = providers.find((x) => x.id === e.target.value);
-                      setModel(p?.defaultModel ?? "");
-                    }}
-                    className={selectCls}
-                  >
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label} ({p.provider})</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div>
-                <Label>MODEL</Label>
-                <Input
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder="např. claude-sonnet-4-5"
-                  className="mono"
-                  spellCheck={false}
-                  autoComplete="off"
+            <div className="mt-9">
+              {providers.length === 0 ? (
+                <ProviderCreateForm
+                  onCreated={(id, defaultModel) => {
+                    setProviderId(id);
+                    if (defaultModel) setModel(defaultModel);
+                  }}
                 />
-              </div>
+              ) : (
+                // Stejný výběr poskytovatele a scan modelů jako v Nastavení › Model
+                // — onboarding nesmí nabízet osekaný výběr.
+                <ModelFields
+                  providerId={providerId}
+                  onProviderIdChange={setProviderId}
+                  model={model}
+                  onModelChange={setModel}
+                  idPrefix="onboarding"
+                />
+              )}
             </div>
           </>
         )}
@@ -446,7 +426,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
               variant="primary"
               size="lg"
               className="flex-1"
-              disabled={!providerId || busy}
+              disabled={!providerId || !model.trim() || busy}
               onClick={() => setStep(1)}
             >
               Pokračovat
