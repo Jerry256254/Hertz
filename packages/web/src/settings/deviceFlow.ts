@@ -155,3 +155,135 @@ export function deviceStatusText(status: DeviceStatus, serverMessage?: string): 
       return "Čekám, až kód potvrdíš na stránce Googlu…";
   }
 }
+
+/* ── Session: jeden běh flow pro jeden mount komponenty ─────────────── */
+
+/**
+ * Fáze device flow v UI. Komponenta ji zrcadlí do svého React stavu —
+ * `waiting` drží `user_code` i `verification_url` po celou dobu pollingu,
+ * stav se nikdy nemaže (žádné prázdné překreslení karty s kódem).
+ */
+export type DeviceFlowPhase =
+  | { kind: "starting" }
+  | { kind: "waiting"; start: DeviceStartResponse }
+  | { kind: "connected" }
+  | { kind: "startError"; error: DeviceStartErrorInfo }
+  | { kind: "failed"; status: Exclude<DeviceTerminalStatus, "connected">; message: string | null; code?: string; guideUrl?: string };
+
+export interface DeviceFlowSessionHooks {
+  /** Každá změna fáze (komponenta ji zrcadlí do useState). */
+  onPhase: (phase: DeviceFlowPhase) => void;
+  /** Úspěšné připojení — rodič obvykle obnoví seznam konektorů. */
+  onConnected: () => void;
+}
+
+export interface DeviceFlowSessionOptions {
+  /** Přepsání intervalu pollingu (testy); výchozí DEVICE_POLL_INTERVAL_MS. */
+  pollIntervalMs?: number;
+}
+
+/**
+ * ApiError z lib/api — bez importu hodnoty (node ESM v testech neumí
+ * bezpříponové relativní importy, zbytek kódu je používá). Pozná se podle
+ * typického tvaru: Error s číselným `status`; code/guideUrl/action už
+ * sanitizuje jeho konstruktor, takže je lze převzít tak, jak jsou.
+ */
+function isApiError(e: unknown): e is { message: string; code?: string; guideUrl?: string; action?: DeviceStartAction } {
+  return (
+    e instanceof Error &&
+    typeof (e as { status?: unknown }).status === "number" &&
+    typeof e.message === "string"
+  );
+}
+
+/**
+ * Jeden běh device flow pro jeden mount komponenty.
+ *
+ * Řeší restartovací smyčku: session se vytváří jednou na mount a `start()`
+ * volá jen mount effect. Re-rendery rodiče (refetch invalidovaných queries,
+ * window-focus refetch, …) na session nesahají, takže se flow nerestartuje
+ * a karta s kódem zůstává viditelná. Opakování je vždy explicitní —
+ * tlačítko „Zkusit znovu".
+ *
+ * Bez parameter properties — soubor se importuje i v node strip-only
+ * režimu (testy), který je nepodporuje.
+ */
+export class DeviceFlowSession {
+  private runId = 0;
+  private ctrl: AbortController | null = null;
+  private transport: DeviceFlowTransport;
+  private hooks: DeviceFlowSessionHooks;
+  private pollIntervalMs: number;
+
+  constructor(transport: DeviceFlowTransport, hooks: DeviceFlowSessionHooks, opts: DeviceFlowSessionOptions = {}) {
+    this.transport = transport;
+    this.hooks = hooks;
+    this.pollIntervalMs = opts.pollIntervalMs ?? DEVICE_POLL_INTERVAL_MS;
+  }
+
+  /** Spustí (nebo explicitně restartuje) flow; předchozí polling se přeruší. */
+  start(): void {
+    this.ctrl?.abort();
+    const ctrl = new AbortController();
+    this.ctrl = ctrl;
+    void this.begin(ctrl);
+  }
+
+  /** Cleanup při unmount: zruší probíhající polling, zneplatní doběhlé běhy. */
+  destroy(): void {
+    this.ctrl?.abort();
+    this.ctrl = null;
+    this.runId++;
+  }
+
+  private async begin(ctrl: AbortController): Promise<void> {
+    const id = ++this.runId;
+    this.hooks.onPhase({ kind: "starting" });
+    let start: DeviceStartResponse;
+    try {
+      start = await startDeviceFlow(this.transport);
+    } catch (e) {
+      if (this.runId !== id) return;
+      // Server vrací strukturovanou českou chybu (kód, text, případně odkaz
+      // na návod a doporučenou akci) — zobrazíme ji tak, jak je, bez
+      // technického erroru a bez generické hlášky tam, kde známe příčinu.
+      const error: DeviceStartErrorInfo =
+        isApiError(e)
+          ? { code: e.code, message: e.message, guideUrl: e.guideUrl, action: e.action }
+          : { message: "Nepodařilo se připravit kód. Zkus to prosím znovu." };
+      this.hooks.onPhase({ kind: "startError", error });
+      return;
+    }
+    if (this.runId !== id || ctrl.signal.aborted) return;
+    // Ztvrdit: kartu s kódem nikdy nerenderovat s prázdným user_code.
+    // Neúplná data ze serveru jsou chyba s českou hláškou, ne prázdný stav.
+    const userCode = typeof start?.user_code === "string" ? start.user_code.trim() : "";
+    const verificationUrl = typeof start?.verification_url === "string" ? start.verification_url.trim() : "";
+    if (!userCode || !verificationUrl) {
+      this.hooks.onPhase({
+        kind: "startError",
+        error: { message: "Server vrátil neúplná data — kód chybí. Zkus to prosím znovu." },
+      });
+      return;
+    }
+    this.hooks.onPhase({ kind: "waiting", start });
+    try {
+      const final = await pollDeviceStatus(this.transport, start.device_session_id, {
+        intervalMs: this.pollIntervalMs,
+        signal: ctrl.signal,
+      });
+      if (this.runId !== id) return;
+      if (final.status === "connected") {
+        this.hooks.onPhase({ kind: "connected" });
+        this.hooks.onConnected();
+      } else {
+        this.hooks.onPhase({ kind: "failed", status: final.status, message: final.message ?? null, code: final.code, guideUrl: final.guideUrl });
+      }
+    } catch (e) {
+      // Přerušeno odmountováním / restartem — ticho, nic nezobrazovat.
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (this.runId !== id) return;
+      this.hooks.onPhase({ kind: "startError", error: { message: "Spojení se serverem selhalo. Zkus to prosím znovu." } });
+    }
+  }
+}

@@ -36,7 +36,11 @@ export type DeviceFlowErrorCode =
   | "access_denied"
   | "expired_token"
   | "provider_error"
-  | "network_error";
+  | "network_error"
+  /** Nečitelné tělo požadavku (chyba parsování na API) — tvar odpovědi, nikdy výjimka. */
+  | "bad_request"
+  /** Relace device flow neexistuje — tvar odpovědi, nikdy výjimka. */
+  | "session_not_found";
 
 /**
  * Kódy chyb, které znamenají špatnou konfiguraci OAuth klienta — frontend

@@ -104,7 +104,7 @@ const SERVICE_CZ: Record<OAuthService, string> = {
  * Když neexistují ani jedny, běžný uživatel vidí jen lidskou výzvu, aby
  * poprosil správce — žádné technické detaily.
  */
-async function resolveAppCredentials(
+export async function resolveAppCredentials(
   ctx: AppContext,
   service: OAuthService,
 ): Promise<{ clientId: string; clientSecret: string } | null> {
@@ -230,7 +230,7 @@ async function provisionConnectedService(
   return { serverId, name: target.name };
 }
 
-interface DeviceSession {
+export interface DeviceSession {
   id: string;
   userId: string;
   agentId: string | null;
@@ -240,6 +240,10 @@ interface DeviceSession {
   clientSecret: string;
   /** Drží se jen v paměti serveru — nikdy se neposílá klientovi ani neloguje. */
   deviceCode: string;
+  /** Kód pro uživatele — vrací se ve start-response i ve statusu, dokud je session pending. */
+  userCode: string;
+  /** Adresa pro zadání kódu — vrací se ve start-response i ve statusu, dokud je session pending. */
+  verificationUrl: string;
   intervalSec: number;
   expiresInSec: number;
   status: DeviceSessionStatus;
@@ -253,11 +257,12 @@ interface DeviceSession {
 /**
  * In-memory mapa device-flow relací: session id → stav. Polling běží na
  * pozadí serveru; klient se na stav ptá přes GET /device/status.
+ * Exportovaná pro testy (pruneDeviceSessions).
  */
-const deviceSessions = new Map<string, DeviceSession>();
+export const deviceSessions = new Map<string, DeviceSession>();
 const DEVICE_SESSION_TTL_MS = 10 * 60 * 1000;
 
-function pruneDeviceSessions(): void {
+export function pruneDeviceSessions(): void {
   if (deviceSessions.size < 100) return;
   const cutoff = Date.now() - DEVICE_SESSION_TTL_MS;
   for (const [id, s] of deviceSessions) {
@@ -270,7 +275,7 @@ function pruneDeviceSessions(): void {
  * stejnou cestou jako web callback. Nikdy neloguje secret, device_code
  * ani tokeny; do session.message jde jen česká zpráva pro uživatele.
  */
-async function runDevicePolling(ctx: AppContext, session: DeviceSession, log?: DeviceFlowLogger): Promise<void> {
+export async function runDevicePolling(ctx: AppContext, session: DeviceSession, log?: DeviceFlowLogger): Promise<void> {
   try {
     const tokens = await pollDeviceToken({
       clientId: session.clientId,
@@ -316,6 +321,25 @@ async function runDevicePolling(ctx: AppContext, session: DeviceSession, log?: D
 export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
     instance.addHook("preHandler", requireAuth);
+
+    // Nečitelné tělo požadavku (poškozené JSON, špatný content-type, …) —
+    // Fastify defaultně vrací anglický chybový formát; pro device flow
+    // sjednocujeme na strukturovanou českou chybu { code, error }.
+    instance.setErrorHandler((error, request, reply) => {
+      const shaped = error as { code?: unknown; statusCode?: unknown };
+      const errCode = shaped.code;
+      if (typeof errCode === "string" && errCode.startsWith("FST_ERR_CTP_")) {
+        const status =
+          typeof shaped.statusCode === "number" && shaped.statusCode >= 400 && shaped.statusCode < 500
+            ? shaped.statusCode
+            : 400;
+        return reply.code(status).send({
+          code: "bad_request",
+          error: "Požadavek se nepodařilo přečíst (neplatné tělo požadavku) — zkuste to prosím znovu.",
+        });
+      }
+      return reply.send(error);
+    });
 
     instance.get("/api/oauth/apps", async () => {
       const rows = await ctx.db.select().from(oauthApps);
@@ -438,7 +462,17 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       const { catalogId, agentId } = (request.body ?? {}) as { catalogId?: string; agentId?: string };
       const cid = typeof catalogId === "string" && catalogId ? catalogId : "google";
 
-      const creds = await resolveAppCredentials(ctx, "google");
+      // Pád DB / dešifrování nesmí propadnout jako anglické 500 bez kódu —
+      // kontrakt device flow vyžaduje strukturovanou českou chybu.
+      let creds: { clientId: string; clientSecret: string } | null;
+      try {
+        creds = await resolveAppCredentials(ctx, "google");
+      } catch {
+        return reply.code(500).send({
+          code: "provider_error",
+          error: "Nastavení OAuth klienta se nepodařilo načíst — zkuste to prosím znovu.",
+        });
+      }
       if (!creds) {
         return reply.code(400).send({
           code: "missing_client_id",
@@ -474,6 +508,8 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         clientId: creds.clientId,
         clientSecret: creds.clientSecret,
         deviceCode: authz.deviceCode,
+        userCode: authz.userCode,
+        verificationUrl: authz.verificationUrlComplete ?? authz.verificationUrl,
         intervalSec: authz.interval,
         expiresInSec: authz.expiresIn,
         status: "pending",
@@ -496,10 +532,13 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!s || s.userId !== request.user!.id) {
         return reply
           .code(404)
-          .send({ error: "Relace pro párování neexistuje nebo vypršela — začněte připojení znovu." });
+          .send({ code: "session_not_found", error: "Relace pro párování neexistuje nebo vypršela — začněte připojení znovu." });
       }
       return {
         status: s.status,
+        // Dokud uživatel kód nepotvrdil, vracíme i samotný kód a adresu —
+        // kdyby se start-response po cestě ztratila, UI má kód stále odkud vzít.
+        ...(s.status === "pending" ? { user_code: s.userCode, verification_url: s.verificationUrl } : {}),
         ...(s.message ? { message: s.message } : {}),
         ...(s.code ? { code: s.code } : {}),
         ...(s.code && DEVICE_FLOW_GUIDED_ERRORS.includes(s.code) ? { guideUrl: GOOGLE_DEVICE_CLIENT_GUIDE_URL } : {}),

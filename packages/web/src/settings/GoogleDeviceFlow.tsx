@@ -1,29 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CopyButton } from "../components/CopyButton";
-import { api, ApiError } from "../lib/api";
+import { api } from "../lib/api";
 import {
-  DEVICE_POLL_INTERVAL_MS,
+  DeviceFlowSession,
   deviceStartAction,
   deviceStatusText,
-  pollDeviceStatus,
-  startDeviceFlow,
-  type DeviceStartErrorInfo,
-  type DeviceStartResponse,
-  type DeviceTerminalStatus,
+  type DeviceFlowPhase,
   type DeviceFlowTransport,
+  type DeviceStartErrorInfo,
 } from "./deviceFlow";
 
 const transport: DeviceFlowTransport = {
   postJson: (path) => api.post(path),
   getJson: (path) => api.get(path),
 };
-
-type Phase =
-  | { kind: "starting" }
-  | { kind: "waiting"; start: DeviceStartResponse }
-  | { kind: "connected" }
-  | { kind: "startError"; error: DeviceStartErrorInfo }
-  | { kind: "failed"; status: Exclude<DeviceTerminalStatus, "connected">; message: string | null; code?: string; guideUrl?: string };
 
 /** Z textu udělá klikací odkazy (server může v hlášce poslat URL návodu). */
 function linkify(text: string): React.ReactNode[] {
@@ -100,7 +90,9 @@ function StartErrorCard({
 
 /**
  * Primární cesta připojení Googlu: „Připojit kódem“ (OAuth 2.0 Device flow).
- * Kliknutí → start endpoint → karta s velkým kódem → polling statusu na pozadí.
+ * Mount → start endpoint → karta s velkým kódem → polling statusu na pozadí.
+ * Opakování jen explicitně tlačítkem „Zkusit znovu" (žádný restart při
+ * re-renderu rodiče).
  * Web/relay cesta zůstává jako sekundární odkaz pod kartou.
  */
 export function GoogleDeviceFlow({
@@ -117,77 +109,37 @@ export function GoogleDeviceFlow({
   /** Otevře formulář pro vložení údajů TV klienta (při chybě údajů). */
   onEnterCredentials: () => void;
 }) {
-  const [phase, setPhase] = useState<Phase>({ kind: "starting" });
-  const [starting, setStarting] = useState(false);
-  const runId = useRef(0);
-  const ctrlRef = useRef<AbortController | null>(null);
+  const [phase, setPhase] = useState<DeviceFlowPhase>({ kind: "starting" });
 
-  const begin = useCallback(
-    async (ctrl: AbortController) => {
-      const id = ++runId.current;
-      setStarting(true);
-      setPhase({ kind: "starting" });
-      let start: DeviceStartResponse;
-      try {
-        start = await startDeviceFlow(transport);
-      } catch (e) {
-        if (runId.current !== id) return;
-        // Server vrací strukturovanou českou chybu (kód, text, případně odkaz
-        // na návod a doporučenou akci) — zobrazíme ji tak, jak je, bez
-        // technického erroru a bez generické hlášky tam, kde známe příčinu.
-        const error: DeviceStartErrorInfo =
-          e instanceof ApiError
-            ? { code: e.code, message: e.message, guideUrl: e.guideUrl, action: e.action }
-            : { message: "Nepodařilo se připravit kód. Zkus to prosím znovu." };
-        setStarting(false);
-        setPhase({ kind: "startError", error });
-        return;
-      }
-      if (runId.current !== id || ctrl.signal.aborted) return;
-      setStarting(false);
-      setPhase({ kind: "waiting", start });
-      try {
-        const final = await pollDeviceStatus(transport, start.device_session_id, {
-          intervalMs: DEVICE_POLL_INTERVAL_MS,
-          signal: ctrl.signal,
-        });
-        if (runId.current !== id) return;
-        if (final.status === "connected") {
-          setPhase({ kind: "connected" });
-          onConnected();
-        } else {
-          setPhase({ kind: "failed", status: final.status, message: final.message ?? null, code: final.code, guideUrl: final.guideUrl });
-        }
-      } catch (e) {
-        // Přerušeno odmountováním / restartem — ticho, nic nezobrazovat.
-        if (e instanceof DOMException && e.name === "AbortError") return;
-        if (runId.current !== id) return;
-        setPhase({ kind: "startError", error: { message: "Spojení se serverem selhalo. Zkus to prosím znovu." } });
-      }
-    },
-    [onConnected],
+  // onConnected má při každém renderu rodiče novou identitu (obyčejná funkce
+  // v těle komponenty) — držet ho v refu, aby se session nemusela nikdy
+  // znovu vytvářet a flow se nerestartoval při každém re-renderu rodiče
+  // (refetch invalidovaných queries, window-focus refetch, …).
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
+
+  // Session žije po celou dobu mountu: vytvoří se jednou, effect níže ji
+  // jednou spustí. Restart je možný jen explicitně („Zkusit znovu").
+  const [session] = useState(
+    () =>
+      new DeviceFlowSession(transport, {
+        onPhase: (p) => setPhase(p),
+        onConnected: () => onConnectedRef.current(),
+      }),
   );
 
-  /** Spustí (nebo restartuje) flow; předchozí polling se přeruší. */
-  const runFlow = useCallback(() => {
-    ctrlRef.current?.abort();
-    const ctrl = new AbortController();
-    ctrlRef.current = ctrl;
-    void begin(ctrl);
-  }, [begin]);
-
   useEffect(() => {
-    runFlow();
+    session.start();
     return () => {
       // Cleanup při odmountování: zruší probíhající polling.
-      ctrlRef.current?.abort();
-      runId.current++;
+      session.destroy();
     };
-  }, [runFlow]);
+  }, [session]);
 
+  const starting = phase.kind === "starting";
   const retry = () => {
     if (starting) return;
-    runFlow();
+    session.start();
   };
 
   const expiresMinutes = Math.max(1, Math.round((phase.kind === "waiting" ? phase.start.expires_in : 0) / 60));

@@ -222,6 +222,32 @@ describe("requestDeviceCode", () => {
     assert.equal(err.code, "provider_error");
     assertNoSecretsLeaked("requestDeviceCode non-json");
   });
+
+  it("chybějící user_code v 200 odpovědi → provider_error", async () => {
+    const err = await catchError(
+      requestDeviceCode("mock-client-id", ["scope-a"], {
+        fetchImpl: mockFetch([jsonResponse(200, { device_code: DEVICE_CODE })]),
+      }),
+    );
+    assert.ok(err instanceof DeviceFlowError);
+    assert.equal(err.code, "provider_error");
+    assert.match(err.message, /neplatnou odpověď/);
+    assertNoSecretsLeaked("requestDeviceCode bez user_code");
+  });
+
+  it("200 s nečitelným (non-JSON) tělem → provider_error", async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new Error("no json");
+      },
+    });
+    const err = await catchError(requestDeviceCode("mock-client-id", ["scope-a"], { fetchImpl }));
+    assert.ok(err instanceof DeviceFlowError);
+    assert.equal(err.code, "provider_error");
+    assertNoSecretsLeaked("requestDeviceCode ok non-json");
+  });
 });
 
 describe("chybový kontrakt", () => {
