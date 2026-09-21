@@ -104,6 +104,22 @@ export class McpRegistry {
     if (pending) void pending.then((s) => s.connection?.close()).catch(() => {});
   }
 
+  /**
+   * "Otestovat připojení" for the Integrations UI: force a fresh connection
+   * attempt (bypasses the cache so a previously failed server is really
+   * retried) and report whether it works. A working connection stays cached.
+   */
+  async testConnection(serverId: string): Promise<{ ok: boolean; error?: string }> {
+    const row = await this.rowById(serverId);
+    if (!row) return { ok: false, error: "Server nenalezen." };
+    if (!row.enabled) return { ok: false, error: "Server je vypnutý." };
+    this.invalidate(serverId);
+    const fresh = await this.connect(row);
+    if (fresh.error) return { ok: false, error: fresh.error };
+    this.cache.set(serverId, Promise.resolve(fresh));
+    return { ok: true };
+  }
+
   /** Close every live MCP connection (stdio child processes, SSE streams). Call on app/test teardown. */
   async shutdown(): Promise<void> {
     const pending = [...this.cache.values()];

@@ -667,17 +667,22 @@ function ConnectorsSection({ agent }: { agent: Agent }) {
   );
 }
 
-/* ── One-click integrace (OAuth) ─────────────────────────────────────────── */
+/* ── One-click integrace ─────────────────────────────────────────── */
+
+const ctaCls = "pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40";
 
 function OneClickConnectors() {
   const queryClient = useQueryClient();
-  const [setupFor, setSetupFor] = useState<string | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  // Karta, u které je otevřený panel: OAuth krok pro správce, nebo vložení klíče.
+  const [panelFor, setPanelFor] = useState<string | null>(null);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [saveErr, setSaveErr] = useState<string | null>(null);
-  const [keyFor, setKeyFor] = useState<string | null>(null);
   const [keyValues, setKeyValues] = useState<Record<string, string>>({});
   const [keyErr, setKeyErr] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ id: string; ok: boolean; reason: string | null } | null>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["integrations"],
@@ -685,16 +690,21 @@ function OneClickConnectors() {
   });
   const connectors = data?.connectors ?? [];
 
+  function refresh() {
+    void queryClient.invalidateQueries({ queryKey: ["integrations"] });
+    void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+  }
+
   const saveApp = useMutation({
     mutationFn: (c: IntegrationConnector) =>
       api.post("/oauth/apps", { service: c.service, clientId: clientId.trim(), clientSecret: clientSecret.trim() }),
     onSuccess: (_res, c) => {
-      setSetupFor(null);
+      setPanelFor(null);
       setClientId("");
       setClientSecret("");
       setSaveErr(null);
-      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
-      // One-click UX: po uložení OAuth aplikace rovnou na souhlas poskytovatele.
+      refresh();
+      // Po uložení rovnou na souhlas poskytovatele — žádné další klikání.
       window.location.href = `/api/oauth/${c.service}/start?catalogId=${c.id}`;
     },
     onError: (e) => setSaveErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
@@ -703,17 +713,14 @@ function OneClickConnectors() {
   const disconnect = useMutation({
     mutationFn: (id: string) => api.post(`/integrations/${id}/disconnect`),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
-      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+      setTestResult(null);
+      refresh();
     },
   });
 
   const enable = useMutation({
     mutationFn: (id: string) => api.post(`/integrations/${id}/enable`),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
-      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
-    },
+    onSuccess: () => refresh(),
   });
 
   const saveKey = useMutation({
@@ -723,24 +730,29 @@ function OneClickConnectors() {
       return api.post(`/integrations/${c.id}/credentials`, { values });
     },
     onSuccess: () => {
-      setKeyFor(null);
+      setPanelFor(null);
       setKeyValues({});
       setKeyErr(null);
-      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
-      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+      refresh();
     },
     onError: (e) => setKeyErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
   });
 
-  function startSetup(c: IntegrationConnector) {
-    setSetupFor(c.id);
+  const test = useMutation({
+    mutationFn: (id: string) =>
+      api.post<{ ok: boolean; servers: Array<{ ok: boolean; reason: string | null }> }>(`/integrations/${id}/test`),
+    onSuccess: (res, id) => {
+      const failed = res.servers.find((s) => !s.ok);
+      setTestResult({ id, ok: res.ok, reason: failed?.reason ?? null });
+      refresh();
+    },
+  });
+
+  function openPanel(c: IntegrationConnector) {
+    setPanelFor(c.id);
     setClientId(c.clientId ?? "");
     setClientSecret("");
     setSaveErr(null);
-  }
-
-  function startKeySetup(c: IntegrationConnector) {
-    setKeyFor(c.id);
     setKeyValues({});
     setKeyErr(null);
   }
@@ -749,25 +761,26 @@ function OneClickConnectors() {
     <div className="mb-6">
       <p className="mb-1 text-[14px] font-[700] text-fg">Jedním kliknutím</p>
       <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">
-        Připoj službu a agent ji hned umí používat — žádné ruční nastavování. Přihlášení probíhá bezpečně přes OAuth u poskytovatele nebo vložením API klíče, údaje se ukládají šifrovaně.
+        Vyber službu a klikni na Připojit — přihlášení proběhne bezpečně u poskytovatele, klíče se ukládají šifrovaně. Agent nové nástroje umí použít hned.
       </p>
       {isLoading && <p className="text-[13px] text-fg-muted">Načítám…</p>}
       {isError && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">Stav připojení se nepodařilo načíst.</p>}
       {connectors.map((c) => {
         const failed = c.servers.find((s) => s.error);
+        const panelOpen = panelFor === c.id;
+        const requiredFields = (c.credentialFields ?? []).filter((f) => f.required !== false);
+        const optionalFields = (c.credentialFields ?? []).filter((f) => f.required === false);
         return (
           <div key={c.id} className="mb-2 rounded-[16px] border border-border bg-bg-raised px-4 py-3">
             <div className="flex items-center gap-3">
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-[13.5px] font-[600] text-fg">
                   {c.name}
-                  {c.connected && !failed && (
+                  {failed ? (
+                    <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-[700] text-danger">Nefunguje</span>
+                  ) : c.connected ? (
                     <span className="rounded-full bg-live/15 px-2 py-0.5 text-[11px] font-[700] text-live">Připojeno</span>
-                  )}
-                  {c.connected && failed && (
-                    <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-[700] text-danger">Chyba spojení</span>
-                  )}
-                  {!c.connected && (
+                  ) : (
                     <span className="rounded-full bg-bg-sunken px-2 py-0.5 text-[11px] font-[700] text-fg-muted">Nepřipojeno</span>
                   )}
                 </p>
@@ -782,33 +795,20 @@ function OneClickConnectors() {
                   {c.local ? "Vypnout" : "Odpojit"}
                 </button>
               ) : c.local ? (
-                <button
-                  onClick={() => enable.mutate(c.id)}
-                  disabled={enable.isPending}
-                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40"
-                >
-                  Zapnout
+                <button onClick={() => enable.mutate(c.id)} disabled={enable.isPending} className={ctaCls}>
+                  {enable.isPending ? "Připojuji…" : "Připojit"}
                 </button>
               ) : c.credentialKind === "apiKey" ? (
-                <button
-                  onClick={() => startKeySetup(c)}
-                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
-                >
-                  Připojit {c.name}
+                <button onClick={() => openPanel(c)} className={ctaCls}>
+                  Připojit
                 </button>
-              ) : c.appConfigured ? (
-                <a
-                  href={`/api/oauth/${c.service}/start?catalogId=${c.id}`}
-                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
-                >
-                  Připojit {c.name}
+              ) : c.oauthReady ? (
+                <a href={`/api/oauth/${c.service}/start?catalogId=${c.id}`} className={ctaCls}>
+                  Připojit
                 </a>
               ) : (
-                <button
-                  onClick={() => startSetup(c)}
-                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
-                >
-                  Připojit {c.name}
+                <button onClick={() => openPanel(c)} className={ctaCls}>
+                  Připojit
                 </button>
               )}
             </div>
@@ -816,12 +816,7 @@ function OneClickConnectors() {
             <p className="mt-1.5 text-[12px] leading-relaxed text-fg-subtle">{c.capabilities.join(" · ")}</p>
             {failed && (
               <p className="mt-2 rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">
-                Spojení nefunguje: {failed.error} Zkuste konektor odpojit a připojit znovu.
-              </p>
-            )}
-            {c.connected && c.servers.some((s) => s.tools.length > 0) && (
-              <p className="mono mt-2 text-[11.5px] leading-relaxed text-fg-subtle">
-                Nástroje: {c.servers.flatMap((s) => s.tools).join(", ")}
+                Nefunguje: {failed.errorHuman ?? failed.error}
               </p>
             )}
             {c.id === "google" && c.connected && (
@@ -833,78 +828,138 @@ function OneClickConnectors() {
                 pro rozšířená oprávnění (Google se znovu zeptá na souhlas).
               </p>
             )}
-            {c.connected && <ConnectorPolicy c={c} />}
-            {c.credentialKind === "oauth" && (setupFor === c.id || (!c.appConfigured && !c.connected)) ? (
-              <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
-                <p className="text-[13px] font-[600] text-fg">Nejprve přidej OAuth aplikaci</p>
-                <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
-                {c.setupUrl && (
-                  <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
-                    {c.setupUrlLabel}
-                  </a>
-                )}
-                {saveErr && <p className="rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{saveErr}</p>}
-                <Field label="Client ID">
-                  <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="např. 123….apps.googleusercontent.com" className={`${inputCls} mono`} />
-                </Field>
-                <Field label="Client secret" hint={c.secretHint ? `Uloženo (…${c.secretHint}) — vyplň jen pro změnu.` : undefined}>
-                  <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} type="password" placeholder="••••••••" className={`${inputCls} mono`} autoComplete="new-password" />
-                </Field>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => saveApp.mutate(c)}
-                    disabled={saveApp.isPending || !clientId.trim()}
-                    className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40"
-                  >
-                    Uložit a pokračovat
-                  </button>
-                  {c.appConfigured && (
-                    <button onClick={() => setSetupFor(null)} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg">
-                      Zrušit
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              !c.connected && (
-                <button onClick={() => startSetup(c)} className="mt-2 text-[12.5px] font-[600] text-accent underline">
-                  {c.appConfigured ? "Změnit Client ID / secret" : "Kde vezmu Client ID a secret?"}
+            {c.connected && (
+              <div className="mt-2">
+                <button
+                  onClick={() => test.mutate(c.id)}
+                  disabled={test.isPending}
+                  className="pressable inline-flex min-h-[40px] items-center rounded-full border border-border bg-bg-sunken px-4 text-[12.5px] font-[600] text-fg disabled:opacity-40"
+                >
+                  {test.isPending ? "Testuji…" : "Otestovat připojení"}
                 </button>
-              )
+              </div>
             )}
-            {c.credentialKind === "apiKey" && !c.connected && keyFor === c.id && (
+            {testResult && testResult.id === c.id && (
+              <p className={`mt-2 rounded-[12px] border px-3 py-2 text-[12.5px] ${testResult.ok ? "border-live/25 bg-live/10 text-fg" : "border-danger/25 bg-danger-wash text-danger"}`}>
+                {testResult.ok ? `Funguje — ${c.name} je v pořádku.` : `Nefunguje: ${testResult.reason ?? "neznámá chyba"}`}
+              </p>
+            )}
+            {c.connected && c.servers.some((s) => s.tools.length > 0) && (
+              <p className="mono mt-2 text-[11.5px] leading-relaxed text-fg-subtle">
+                Nástroje: {c.servers.flatMap((s) => s.tools).join(", ")}
+              </p>
+            )}
+            {c.connected && <ConnectorPolicy c={c} />}
+
+            {/* OAuth: přihlašování ještě není na serveru zapnuté → krok pro správce (ne pro běžného uživatele). */}
+            {panelOpen && c.credentialKind === "oauth" && (
+              <div className="mt-3 rounded-[12px] border border-border bg-bg px-4 py-3">
+                {!c.oauthReady ? (
+                  <>
+                    <p className="text-[13px] font-[600] text-fg">Ještě jeden krok — ten udělá správce serveru</p>
+                    <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">
+                      Abys mohl(a) používat {c.name}, musí správce tohoto serveru nejdřív zapnout přihlašování. Je to jednorázové a zabere pár minut.
+                    </p>
+                    {isAdmin ? (
+                      <details className="mt-2" open>
+                        <summary className="cursor-pointer text-[12.5px] font-[600] text-accent">Jsem správce — zapnout přihlašování</summary>
+                        <div className="mt-2">
+                          <AdminOAuthForm
+                            c={c}
+                            clientId={clientId}
+                            setClientId={setClientId}
+                            clientSecret={clientSecret}
+                            setClientSecret={setClientSecret}
+                            saveErr={saveErr}
+                            saving={saveApp.isPending}
+                            onSave={() => saveApp.mutate(c)}
+                          />
+                        </div>
+                      </details>
+                    ) : (
+                      <p className="mt-2 text-[12.5px] leading-relaxed text-fg-muted">
+                        Nejsi správcem? Popros ho, ať přihlašování přes {c.name} zapne — pak tu jen klikneš na Připojit.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <AdminOAuthForm
+                    c={c}
+                    clientId={clientId}
+                    setClientId={setClientId}
+                    clientSecret={clientSecret}
+                    setClientSecret={setClientSecret}
+                    saveErr={saveErr}
+                    saving={saveApp.isPending}
+                    onSave={() => saveApp.mutate(c)}
+                  />
+                )}
+                <button
+                  onClick={() => setPanelFor(null)}
+                  className="pressable mt-2 inline-flex min-h-[40px] items-center justify-center rounded-full border border-border bg-bg-sunken px-4 text-[12.5px] font-[600] text-fg"
+                >
+                  Zavřít
+                </button>
+              </div>
+            )}
+            {c.credentialKind === "oauth" && c.oauthReady && isAdmin && !c.connected && !panelOpen && (
+              <button onClick={() => openPanel(c)} className="mt-2 text-[12.5px] font-[600] text-accent underline">
+                Změnit údaje pro přihlašování
+              </button>
+            )}
+
+            {/* API klíč: jedno pole „Vlož klíč“ + odkaz, kde ho najít. */}
+            {panelOpen && c.credentialKind === "apiKey" && (
               <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
-                <p className="text-[13px] font-[600] text-fg">Vlož API klíč</p>
+                <p className="text-[13px] font-[600] text-fg">Připojit {c.name}</p>
                 <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
                 {c.setupUrl && (
                   <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
-                    {c.setupUrlLabel}
+                    {c.setupUrlLabel ?? "Kde klíč najdu?"}
                   </a>
                 )}
                 {keyErr && <p className="rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{keyErr}</p>}
-                {(c.credentialFields ?? []).map((f) => (
-                  <Field key={f.env} label={f.required === false ? `${f.label} (nepovinné)` : f.label} hint={f.hint}>
+                {requiredFields.map((f) => (
+                  <Field key={f.env} label={f.label} hint={f.hint}>
                     <input
                       type={f.secret ? "password" : "text"}
                       value={keyValues[f.env] ?? ""}
                       onChange={(e) => setKeyValues((v) => ({ ...v, [f.env]: e.target.value }))}
-                      placeholder={f.secret ? "••••••••" : ""}
+                      placeholder={f.secret ? "Vlož klíč…" : ""}
                       className={`${inputCls} mono`}
                       autoComplete="new-password"
                     />
                   </Field>
                 ))}
-                <p className="text-[12px] leading-relaxed text-fg-subtle">Klíč se uloží šifrovaně na tento server a nikdy se nikomu nezobrazí.</p>
+                {optionalFields.length > 0 && (
+                  <details>
+                    <summary className="cursor-pointer text-[12.5px] font-[600] text-fg-muted">Volitelné nastavení</summary>
+                    <div className="mt-2 space-y-2.5">
+                      {optionalFields.map((f) => (
+                        <Field key={f.env} label={f.label} hint={f.hint}>
+                          <input
+                            type={f.secret ? "password" : "text"}
+                            value={keyValues[f.env] ?? ""}
+                            onChange={(e) => setKeyValues((v) => ({ ...v, [f.env]: e.target.value }))}
+                            className={`${inputCls} mono`}
+                            autoComplete="new-password"
+                          />
+                        </Field>
+                      ))}
+                    </div>
+                  </details>
+                )}
+                <p className="text-[12px] leading-relaxed text-fg-subtle">Klíč se uloží šifrovaně na tento server a nikomu se nezobrazí.</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => saveKey.mutate(c)}
-                    disabled={saveKey.isPending || (c.credentialFields ?? []).some((f) => f.required !== false && !(keyValues[f.env] ?? "").trim())}
+                    disabled={saveKey.isPending || requiredFields.some((f) => !(keyValues[f.env] ?? "").trim())}
                     className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40"
                   >
                     Uložit a připojit
                   </button>
                   <button
-                    onClick={() => { setKeyFor(null); setKeyErr(null); }}
+                    onClick={() => setPanelFor(null)}
                     className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg"
                   >
                     Zrušit
@@ -915,6 +970,55 @@ function OneClickConnectors() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Formulář pro správce: zapnutí OAuth přihlašování (jednorázový krok). */
+function AdminOAuthForm({
+  c,
+  clientId,
+  setClientId,
+  clientSecret,
+  setClientSecret,
+  saveErr,
+  saving,
+  onSave,
+}: {
+  c: IntegrationConnector;
+  clientId: string;
+  setClientId: (v: string) => void;
+  clientSecret: string;
+  setClientSecret: (v: string) => void;
+  saveErr: string | null;
+  saving: boolean;
+  onSave: () => void;
+}) {
+  return (
+    <div className="space-y-2.5">
+      {c.adminSetupHelp && <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.adminSetupHelp}</p>}
+      {c.setupUrl && (
+        <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
+          {c.setupUrlLabel}
+        </a>
+      )}
+      {saveErr && <p className="rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{saveErr}</p>}
+      <Field label="Client ID">
+        <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="např. 123….apps.googleusercontent.com" className={`${inputCls} mono`} />
+      </Field>
+      <Field label="Client secret" hint={c.secretHint ? `Uloženo (…${c.secretHint}) — vyplň jen pro změnu.` : undefined}>
+        <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} type="password" placeholder="••••••••" className={`${inputCls} mono`} autoComplete="new-password" />
+      </Field>
+      <p className="text-[12px] leading-relaxed text-fg-subtle">
+        Tip: údaje můžeš místo toho nastavit přímo na serveru přes proměnné prostředí — pak je tu nemusíš vyplňovat vůbec.
+      </p>
+      <button
+        onClick={onSave}
+        disabled={saving || !clientId.trim()}
+        className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40"
+      >
+        Uložit a pokračovat
+      </button>
     </div>
   );
 }

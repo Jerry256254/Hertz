@@ -275,6 +275,8 @@ export interface IntegrationConnectorServer {
   enabled: boolean;
   tools: string[];
   error: string | null;
+  /** Lidský důvod nefunkčnosti (místo technického error). */
+  errorHuman: string | null;
   policy: {
     mode: "read-only" | "read-write";
     modeLabel: string;
@@ -306,7 +308,11 @@ export interface IntegrationConnector {
   setupUrl: string | null;
   setupUrlLabel: string | null;
   setupHelp: string | null;
+  /** Návod pro správce serveru (zapnutí OAuth přihlašování) — jen pro adminy. */
+  adminSetupHelp: string | null;
   appConfigured: boolean;
+  /** OAuth jde spustit rovnou (server má přihlašovací údaje) — jinak jen krok pro správce. */
+  oauthReady: boolean | null;
   clientId: string | null;
   secretHint: string | null;
   connected: boolean;

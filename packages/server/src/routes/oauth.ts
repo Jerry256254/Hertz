@@ -20,6 +20,7 @@ import {
   mistralAuthUrl,
   notionAuthUrl,
   refreshMistralToken,
+  serverOAuthApp,
   signState,
   slackAuthUrl,
   verifyState,
@@ -78,6 +79,24 @@ const SERVICE_CZ: Record<OAuthService, string> = {
   github: "GitHub",
 };
 
+/**
+ * Přihlašovací údaje OAuth aplikace pro službu: nejdřív ty uložené v DB
+ * (Nastavení → Konektory, krok pro správce), jinak ty nastavené správcem
+ * serveru přes proměnné prostředí HERTZ_OAUTH_<SERVICE>_CLIENT_ID/SECRET.
+ * Když neexistují ani jedny, běžný uživatel vidí jen lidskou výzvu, aby
+ * poprosil správce — žádné technické detaily.
+ */
+async function resolveAppCredentials(
+  ctx: AppContext,
+  service: OAuthService,
+): Promise<{ clientId: string; clientSecret: string } | null> {
+  const rows = await ctx.db.select().from(oauthApps).where(eq(oauthApps.service, service)).limit(1);
+  if (rows[0]) {
+    return { clientId: rows[0].clientId, clientSecret: decryptSecret(ctx.masterKey, rows[0].encryptedClientSecret) };
+  }
+  return serverOAuthApp(service);
+}
+
 export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
     instance.addHook("preHandler", requireAuth);
@@ -125,11 +144,10 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         return fail("Chybí identifikátor služby — zkuste to prosím znovu z Nastavení → Konektory.");
       }
 
-      const appRows = await ctx.db.select().from(oauthApps).where(eq(oauthApps.service, service)).limit(1);
-      const appRow = appRows[0];
-      if (!appRow) {
+      const creds = await resolveAppCredentials(ctx, service);
+      if (!creds) {
         return fail(
-          `Pro ${SERVICE_CZ[service] ?? service} zatím není vyplněné Client ID — nejprve ho v Nastavení → Konektory u karty „${SERVICE_CZ[service] ?? service}“ uložte (návod najdete u karty).`,
+          `Přihlášení přes ${SERVICE_CZ[service] ?? service} ještě není na tomto serveru zapnuté. Popros správce serveru, ať ho zapne — je to jednorázové nastavení.`,
         );
       }
 
@@ -148,15 +166,15 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       if (service === "mistral") {
         const pkce = generatePkcePair();
         state = signState(ctx.masterKey, { ...statePayload, codeVerifier: pkce.verifier });
-        url = mistralAuthUrl({ clientId: appRow.clientId, redirectUri, state, challenge: pkce.challenge });
+        url = mistralAuthUrl({ clientId: creds.clientId, redirectUri, state, challenge: pkce.challenge });
       } else if (service === "google") {
-        url = googleAuthUrl({ clientId: appRow.clientId, redirectUri, catalogId: catalogId ?? "", state });
+        url = googleAuthUrl({ clientId: creds.clientId, redirectUri, catalogId: catalogId ?? "", state });
       } else if (service === "notion") {
-        url = notionAuthUrl({ clientId: appRow.clientId, redirectUri, state });
+        url = notionAuthUrl({ clientId: creds.clientId, redirectUri, state });
       } else if (service === "github") {
-        url = githubAuthUrl({ clientId: appRow.clientId, redirectUri, state });
+        url = githubAuthUrl({ clientId: creds.clientId, redirectUri, state });
       } else {
-        url = slackAuthUrl({ clientId: appRow.clientId, redirectUri, state });
+        url = slackAuthUrl({ clientId: creds.clientId, redirectUri, state });
       }
       return reply.redirect(url);
     });
@@ -169,10 +187,11 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       if (!tokenRows[0]) return reply.code(404).send({ error: "No Mistral OAuth login on this account" });
       const refreshToken = decryptSecret(ctx.masterKey, tokenRows[0].encryptedRefreshToken);
       const appRows = await ctx.db.select().from(oauthApps).where(eq(oauthApps.service, "mistral")).limit(1);
-      if (!appRows[0]) return reply.code(400).send({ error: "Mistral OAuth app removed" });
+      const mistralCreds = appRows[0] ? { clientId: appRows[0].clientId } : serverOAuthApp("mistral");
+      if (!mistralCreds) return reply.code(400).send({ error: "Mistral OAuth app removed" });
 
       try {
-        const tokens = await refreshMistralToken({ clientId: appRows[0].clientId, refreshToken });
+        const tokens = await refreshMistralToken({ clientId: mistralCreds.clientId, refreshToken });
         const cfgRows = await ctx.db.select().from(pc).where(and(eq(pc.userId, userId), eq(pc.label, "Mistral (Le Pro — OAuth)")));
         if (cfgRows[0]) {
           await ctx.db.update(pc).set({ encryptedKey: encryptSecret(ctx.masterKey, tokens.accessToken) }).where(eq(pc.id, cfgRows[0].id));
@@ -207,17 +226,16 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         return back(`?oauthError=${encodeURIComponent("Neplatný stav připojení (state) — zkuste to prosím znovu z Nastavení → Konektory.")}`);
       }
 
-      const appRows = await ctx.db.select().from(oauthApps).where(eq(oauthApps.service, service)).limit(1);
-      const appRow = appRows[0];
-      if (!appRow) {
+      const creds = await resolveAppCredentials(ctx, service);
+      if (!creds) {
         return back(
-          `?oauthError=${encodeURIComponent(`Pro ${SERVICE_CZ[service] ?? service} není vyplněné Client ID — nejprve ho uložte v Nastavení → Konektory.`)}`,
+          `?oauthError=${encodeURIComponent(`Přihlášení přes ${SERVICE_CZ[service] ?? service} není na tomto serveru zapnuté — popros správce serveru, ať ho zapne.`)}`,
         );
       }
 
       if (service === "mistral") {
         const tokens = await exchangeMistralCode({
-          clientId: appRow.clientId,
+          clientId: creds.clientId,
           redirectUri: `${request.protocol}://${request.headers.host}/api/oauth/mistral/callback`,
           code,
           verifier: payload.codeVerifier ?? "",
@@ -248,28 +266,28 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
 
         return reply.redirect("/providers?mistralConnected=1");
       }
-      const clientSecret = decryptSecret(ctx.masterKey, appRow.encryptedClientSecret);
+      const clientSecret = creds.clientSecret;
       const redirectUri = `${request.protocol}://${request.headers.host}/api/oauth/${service}/callback`;
 
       let env: Record<string, string>;
       try {
         if (service === "google") {
-          const tokens = await exchangeGoogleCode({ clientId: appRow.clientId, clientSecret, redirectUri, code });
+          const tokens = await exchangeGoogleCode({ clientId: creds.clientId, clientSecret, redirectUri, code });
           env = {
-            GOOGLE_CLIENT_ID: appRow.clientId,
+            GOOGLE_CLIENT_ID: creds.clientId,
             GOOGLE_CLIENT_SECRET: clientSecret,
             GOOGLE_ACCESS_TOKEN: tokens.accessToken,
             GOOGLE_REFRESH_TOKEN: tokens.refreshToken,
             GOOGLE_ENABLED_APIS: googleEnabledApis(payload.catalogId),
           };
         } else if (service === "notion") {
-          const tokens = await exchangeNotionCode({ clientId: appRow.clientId, clientSecret, redirectUri, code });
+          const tokens = await exchangeNotionCode({ clientId: creds.clientId, clientSecret, redirectUri, code });
           env = { NOTION_API_KEY: tokens.accessToken };
         } else if (service === "github") {
-          const tokens = await exchangeGithubCode({ clientId: appRow.clientId, clientSecret, redirectUri, code });
+          const tokens = await exchangeGithubCode({ clientId: creds.clientId, clientSecret, redirectUri, code });
           env = { GITHUB_TOKEN: tokens.accessToken };
         } else {
-          const tokens = await exchangeSlackCode({ clientId: appRow.clientId, clientSecret, redirectUri, code });
+          const tokens = await exchangeSlackCode({ clientId: creds.clientId, clientSecret, redirectUri, code });
           env = { SLACK_BOT_TOKEN: tokens.botToken, SLACK_TEAM_ID: tokens.teamId };
         }
       } catch (err) {

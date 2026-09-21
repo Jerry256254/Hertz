@@ -70,6 +70,27 @@ export function googleScopesFor(catalogId: string): string[] {
   return GOOGLE_SCOPES[catalogId] ?? [];
 }
 
+const SERVICE_ENV_PREFIX: Record<OAuthService, string> = {
+  google: "GOOGLE",
+  slack: "SLACK",
+  mistral: "MISTRAL",
+  notion: "NOTION",
+  github: "GITHUB",
+};
+
+/**
+ * OAuth aplikace nastavená správcem serveru přes proměnné prostředí
+ * (HERTZ_OAUTH_<SERVICE>_CLIENT_ID / HERTZ_OAUTH_<SERVICE>_CLIENT_SECRET).
+ * Když existuje, běžný uživatel nemusí nic vyplňovat — stačí kliknout na
+ * „Připojit“ a potvrdit souhlas u poskytovatele.
+ */
+export function serverOAuthApp(service: OAuthService): { clientId: string; clientSecret: string } | null {
+  const prefix = SERVICE_ENV_PREFIX[service];
+  const clientId = process.env[`HERTZ_OAUTH_${prefix}_CLIENT_ID`]?.trim();
+  const clientSecret = process.env[`HERTZ_OAUTH_${prefix}_CLIENT_SECRET`]?.trim();
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export function googleAuthUrl(opts: { clientId: string; redirectUri: string; catalogId: string; state: string }): string {
   const params = new URLSearchParams({
     client_id: opts.clientId,

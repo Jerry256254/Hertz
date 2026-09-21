@@ -8,7 +8,9 @@ import { mcpServers, oauthApps } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { decryptSecret, encryptSecret, maskKey } from "../secrets/key-encryption.js";
-import { CONNECTOR_CATALOG, getConnector, type ConnectorId } from "../mcp/catalog.js";
+import { CONNECTOR_CATALOG, getConnector, humanizeConnectorError, type ConnectorId } from "../mcp/catalog.js";
+import { serverOAuthApp } from "../oauth/oauth-service.js";
+import type { OAuthService } from "../oauth/oauth-service.js";
 import { POLICY_MODE_CZ, TOOL_CLASS_CZ } from "../mcp/tool-policy.js";
 
 const require = createRequire(import.meta.url);
@@ -86,7 +88,13 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
             setupUrl: def.setupUrl ?? null,
             setupUrlLabel: def.setupUrlLabel ?? null,
             setupHelp: def.setupHelp ?? null,
+            // Návod pro správce serveru (zapnutí OAuth přihlašování) — vidí ho jen admin.
+            adminSetupHelp: def.adminSetupHelp ?? null,
             appConfigured: !!appRow,
+            // "Připojit" může vést rovnou na souhlas poskytovatele, když má
+            // server přihlašovací údaje (uložené v DB, nebo od správce přes
+            // HERTZ_OAUTH_* proměnné). Jinak UI nabídne jen krok pro správce.
+            oauthReady: def.credentialKind === "oauth" ? !!appRow || !!serverOAuthApp(def.service as OAuthService) : null,
             // The client ID is public by OAuth design (it travels in the
             // authorize URL); the secret is never exposed, only a masked hint.
             clientId: appRow?.clientId ?? null,
@@ -98,6 +106,8 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
               enabled: s.enabled,
               tools: s.tools,
               error: s.error ?? null,
+              // Lidský důvod nefunkčnosti pro UI ("Nefunguje: …") — nikdy technický detail.
+              errorHuman: s.error ? humanizeConnectorError(s.error) : null,
               policy: {
                 mode: s.policy.mode,
                 modeLabel: POLICY_MODE_CZ[s.policy.mode],
@@ -171,6 +181,30 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
       }
       ctx.mcpRegistry.invalidate(serverId);
       return { ok: true, serverId };
+    });
+
+    // "Otestovat připojení": vynutí čerstvý pokus o spojení se všemi servery
+    // konektoru a vrátí výsledek lidskou češtinou (připojeno / nefunguje + proč).
+    instance.post("/api/integrations/:id/test", async (request, reply) => {
+      const parsed = z.enum(CONNECTOR_IDS).safeParse((request.params as { id: string }).id);
+      if (!parsed.success) return reply.code(400).send({ error: "Neznámý konektor" });
+      const def = getConnector(parsed.data);
+      if (!def) return reply.code(400).send({ error: "Neznámý konektor" });
+
+      const rows = await rowsForConnector(ctx, parsed.data);
+      if (rows.length === 0) return reply.code(404).send({ error: "Konektor není připojený" });
+
+      const servers = [];
+      for (const row of rows) {
+        const t = await ctx.mcpRegistry.testConnection(row.id);
+        servers.push({
+          serverId: row.id,
+          name: row.name,
+          ok: t.ok,
+          reason: t.ok ? null : humanizeConnectorError(t.error),
+        });
+      }
+      return { ok: servers.every((s) => s.ok), servers };
     });
 
     const credentialsSchema = z.object({ values: z.record(z.string(), z.string()) });

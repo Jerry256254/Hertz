@@ -241,6 +241,47 @@ describe("connector catalog", () => {
     assert.equal(catalog.connectorForServerArgs([]), undefined);
     assert.equal(catalog.connectorForServerArgs(null), undefined);
   });
+
+  it("user-facing copy contains no technical jargon", () => {
+    const JARGON = [/redirect/i, /\boauth\b/i, /scopes?/i, /client\s*id/i, /client\s*secret/i, /callback/i, /\buri\b/i, /\btoken\b/i];
+    for (const c of catalog.CONNECTOR_CATALOG) {
+      const texts = [
+        c.tagline,
+        c.description,
+        c.setupHelp,
+        ...(c.credentialFields ?? []).flatMap((f) => [f.label, f.hint]),
+      ].filter(Boolean);
+      assert.ok(texts.length > 0, `${c.id}: must have user-facing copy`);
+      for (const t of texts) {
+        for (const re of JARGON) {
+          assert.ok(!re.test(t), `${c.id}: jargon ${re} in user copy: ${t.slice(0, 90)}`);
+        }
+      }
+    }
+  });
+
+  it("apiKey connectors ask for a single human-labeled key field", () => {
+    const apiKeyConnectors = catalog.CONNECTOR_CATALOG.filter((c) => c.credentialKind === "apiKey");
+    assert.ok(apiKeyConnectors.length > 0);
+    for (const c of apiKeyConnectors) {
+      const required = (c.credentialFields ?? []).filter((f) => f.required !== false);
+      assert.equal(required.length, 1, `${c.id}: exactly one required key field`);
+      assert.equal(required[0].label, "Vlož klíč", `${c.id}: key field must be labeled for humans`);
+      assert.equal(required[0].secret, true, `${c.id}: key field must be secret`);
+    }
+  });
+
+  it("humanizeConnectorError maps raw failures to plain Czech reasons", () => {
+    const h = catalog.humanizeConnectorError;
+    assert.match(h("401 Unauthorized"), /vypršelo/);
+    assert.match(h("Request failed with status code 403"), /odmítla/);
+    assert.match(h("spawn node ENOENT"), /chybí/);
+    assert.match(h("fetch failed"), /nepodařilo zastihnout/);
+    const other = h("weird explosion xyz");
+    assert.ok(!other.includes("weird explosion"), "raw detail must not leak");
+    assert.match(other, /odpojit a připojit znovu/);
+    assert.match(h(null), /Neznámá chyba/);
+  });
 });
 
 // --- Tool registry: connect/disconnect with a fake stdio MCP server --------
@@ -411,11 +452,28 @@ describe("oauth routes: one-click connect/disconnect end-to-end", () => {
   const post = (url, payload) =>
     app.inject({ method: "POST", url, headers: { ...auth, "content-type": "application/json" }, payload });
 
-  it("missing OAuth app redirects with a Czech setup hint, not a JSON error", async () => {
+  it("missing OAuth app redirects with a human Czech hint (no jargon), not a JSON error", async () => {
     const res = await app.inject({ method: "GET", url: "/api/oauth/github/start?catalogId=github", headers: auth });
     assert.equal(res.statusCode, 302);
     assert.ok(res.headers.location.startsWith("/?oauthError="), res.headers.location);
-    assert.ok(decodeURIComponent(res.headers.location).includes("Client ID"), res.headers.location);
+    const msg = decodeURIComponent(res.headers.location);
+    assert.ok(msg.includes("zapnuté"), msg);
+    assert.ok(!/client id/i.test(msg), `no jargon in user message: ${msg}`);
+  });
+
+  it("server env OAuth app lets start redirect without a stored app", async () => {
+    process.env.HERTZ_OAUTH_GITHUB_CLIENT_ID = "env-github-cid";
+    process.env.HERTZ_OAUTH_GITHUB_CLIENT_SECRET = "env-github-secret";
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/oauth/github/start?catalogId=github", headers: auth });
+      assert.equal(res.statusCode, 302);
+      const location = new URL(res.headers.location);
+      assert.equal(location.host, new URL(mockBase).host, "must redirect to the provider, not an error page");
+      assert.equal(location.searchParams.get("client_id"), "env-github-cid");
+    } finally {
+      delete process.env.HERTZ_OAUTH_GITHUB_CLIENT_ID;
+      delete process.env.HERTZ_OAUTH_GITHUB_CLIENT_SECRET;
+    }
   });
 
   it("stores the notion OAuth app without ever exposing the secret", async () => {
@@ -471,6 +529,12 @@ describe("oauth routes: one-click connect/disconnect end-to-end", () => {
     const notion = JSON.parse(intRes.body).connectors.find((c) => c.id === "notion");
     assert.equal(notion.connected, true);
     assert.equal(notion.appConfigured, true);
+    assert.equal(notion.oauthReady, true, "stored notion app → oauthReady");
+    assert.ok(typeof notion.adminSetupHelp === "string" && notion.adminSetupHelp.length > 10);
+    const github = JSON.parse(intRes.body).connectors.find((c) => c.id === "github");
+    assert.equal(github.oauthReady, false, "no github credentials → oauthReady false");
+    const rss = JSON.parse(intRes.body).connectors.find((c) => c.id === "rss");
+    assert.equal(rss.oauthReady, null, "non-oauth connector → oauthReady null");
 
     // Tools are registered in the agent's toolset (real MCP server binary over stdio).
     const defs = await registry.listToolDefinitions("agent-1");
@@ -654,6 +718,26 @@ describe("apiKey connectors: credentials route end-to-end", () => {
     assert.equal(rss.connected, true);
     const defs = await registry.listToolDefinitions("agent-1");
     assert.ok(defs.some((d) => d.name === "mcp__rss__rss_read_feed"), "rss tool must be registered");
+  });
+
+  it("test endpoint reports ok for a working connector", async () => {
+    const res = await post("/api/integrations/rss/test", {});
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.ok, true);
+    assert.ok(Array.isArray(body.servers) && body.servers.length === 1);
+    assert.equal(body.servers[0].ok, true);
+    assert.equal(body.servers[0].reason, null);
+  });
+
+  it("test endpoint is a 404 for a connector that is not connected", async () => {
+    const res = await post("/api/integrations/todoist/test", {});
+    assert.equal(res.statusCode, 404);
+  });
+
+  it("test endpoint is a 400 for an unknown connector", async () => {
+    const res = await post("/api/integrations/slack/test", {});
+    assert.equal(res.statusCode, 400);
   });
 
   it("disconnect removes the apiKey row and unregisters its tools", async () => {
