@@ -31,6 +31,7 @@ import type { ChannelDecision, ChannelDriver, InboundMessage, OutboundStream } f
 import { isClearCommand, isNewChatCommand, parseDecisionCommand } from "./types.js";
 import { handleTelegramCallback, handleTelegramCommand, type TelegramCommandEnv } from "./telegram-commands.js";
 import { buildApprovalCard } from "./approval-card.js";
+import { toolStatusLine } from "./tool-status.js";
 import { stripEmoji } from "../text/strip-emoji.js";
 
 export interface ChannelManagerDeps {
@@ -57,6 +58,8 @@ interface RunningChannel {
 interface SessionTap {
   unsubscribe: () => void;
   buffer: string;
+  /** Compact Czech activity line ("Hledám na webu…") shown on live streams. */
+  status: string | null;
   workingNotified: boolean;
   targets: Map<string, ChannelDriver>;
   /** Live streams per external chat — finished (not re-sent) when the turn ends. */
@@ -422,6 +425,7 @@ export class ChannelManager {
     if (existing) return existing;
     const tap: SessionTap = {
       buffer: "",
+      status: null,
       workingNotified: false,
       targets: new Map(),
       streams: new Map(),
@@ -447,7 +451,9 @@ export class ChannelManager {
     }
     if (event.type === "tool_call") {
       // Open the live stream eagerly so the user sees activity immediately,
-      // not after the first tool round finishes.
+      // not after the first tool round finishes. The stream shows a compact
+      // Czech status line for the tool — never a raw tool-call dump.
+      tap.status = toolStatusLine(event.name, event.input);
       await this.updateStreams(tap);
       for (const [chatId, driver] of tap.targets) {
         if (typeof driver.beginStream === "function") {
@@ -460,6 +466,15 @@ export class ChannelManager {
       return;
     }
     if (event.type === "tool_result") {
+      // The tool finished — the status line described "right now", so clear
+      // it; the next tool_call (or the final text) takes over.
+      if (tap.status !== null) {
+        tap.status = null;
+        for (const [chatId] of tap.targets) {
+          const stream = tap.streams.get(chatId);
+          if (stream?.setStatus) await stream.setStatus(null).catch(() => {});
+        }
+      }
       // Long tool runs: keep the typing bubble alive on streaming targets.
       for (const [chatId, driver] of tap.targets) {
         if (typeof driver.beginStream === "function") {
@@ -542,6 +557,7 @@ export class ChannelManager {
         stream = opened;
       }
       await stream.update(tap.buffer).catch(() => {});
+      if (stream.setStatus) await stream.setStatus(tap.status).catch(() => {});
     }
   }
 

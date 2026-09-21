@@ -65,15 +65,41 @@ function renderStreamHtml(markdown: string): string {
   return "…\n" + html.slice(-STREAM_LIMIT);
 }
 
+function escapeHtmlLite(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Pause/stop controls attached to the live stream message while the agent
+ * works. Callback data stays well under Telegram's 64-byte limit; routing
+ * reuses the existing tgcmd command-callback path (no new protocol).
+ * UI chrome — no emoji.
+ */
+function streamControlsKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Pozastavit", callback_data: "tgcmd:pauza:run" },
+        { text: "Zastavit", callback_data: "tgcmd:zastavit:run" },
+      ],
+    ],
+  };
+}
+
 /**
  * One live-updating Telegram message. Edits are throttled (Telegram allows
  * roughly one edit per second per message before it starts complaining) and
  * the typing bubble is re-armed on a timer — Telegram clears it whenever a
  * message lands, so without re-arming the user sees silence after each edit.
+ *
+ * Besides the reply draft, the message can carry a transient status line
+ * ("Hledám na webu…", set via setStatus) rendered as an italic footer while
+ * the agent works. The final render never carries it.
  */
 class TelegramOutboundStream implements OutboundStream {
+  private draftText = "";
+  private statusText: string | null = null;
   private lastSentHtml: string | null = null;
-  private pendingHtml: string | null = null;
   private lastEditAt = 0;
   private timer: NodeJS.Timeout | null = null;
   private typingTimer: NodeJS.Timeout | null = null;
@@ -103,12 +129,29 @@ class TelegramOutboundStream implements OutboundStream {
 
   async update(text: string): Promise<void> {
     if (this.closed) return;
-    const html = renderStreamHtml(text);
-    if (html === this.lastSentHtml) {
-      this.pendingHtml = null;
-      return;
-    }
-    this.pendingHtml = html;
+    this.draftText = text;
+    await this.schedule();
+  }
+
+  async setStatus(status: string | null): Promise<void> {
+    if (this.closed) return;
+    const next = status?.trim() ? status.trim() : null;
+    if (next === this.statusText) return;
+    this.statusText = next;
+    await this.schedule();
+  }
+
+  /** Draft (+ status footer) → stream-safe HTML for the live message. */
+  private renderLive(): string {
+    const draft = renderStreamHtml(this.draftText);
+    const status = this.statusText ? `<i>${escapeHtmlLite(this.statusText)}</i>` : null;
+    if (!draft) return status ?? "…";
+    return status ? `${draft}\n\n${status}` : draft;
+  }
+
+  private async schedule(): Promise<void> {
+    const html = this.renderLive();
+    if (html === this.lastSentHtml) return;
     const wait = this.opts.editThrottleMs - (Date.now() - this.lastEditAt);
     if (wait <= 0) {
       await this.flush();
@@ -122,9 +165,9 @@ class TelegramOutboundStream implements OutboundStream {
   }
 
   private async flush(): Promise<void> {
-    if (this.closed || this.pendingHtml === null) return;
-    const html = this.pendingHtml;
-    this.pendingHtml = null;
+    if (this.closed) return;
+    const html = this.renderLive();
+    if (html === this.lastSentHtml) return;
     this.lastEditAt = Date.now();
     this.editChain = this.editChain.then(() => this.driver.editStreamMessage(this.chatId, this.messageId, html));
     await this.editChain;
@@ -151,6 +194,9 @@ class TelegramOutboundStream implements OutboundStream {
       if (first !== this.lastSentHtml) {
         await this.driver.editStreamMessage(this.chatId, this.messageId, first).catch(() => {});
       }
+      // The run is over — drop the pause/stop buttons even when the text
+      // needed no final edit.
+      await this.driver.clearStreamControls(this.chatId, this.messageId);
       for (const chunk of chunks.slice(1)) {
         await this.driver.sendHtmlChunk(this.externalChatId, chunk).catch(() => {});
       }
@@ -162,7 +208,7 @@ class TelegramOutboundStream implements OutboundStream {
     if (this.closed) return;
     this.closed = true;
     this.clearTimers();
-    this.pendingHtml = null;
+    this.statusText = null;
     await this.editChain.catch(() => {});
     await this.driver.deleteStreamMessage(this.chatId, this.messageId);
     this.onClose?.();
@@ -472,6 +518,10 @@ export class TelegramDriver implements ChannelDriver {
    * Open a live-updating message for streamed agent output. Only one stream
    * per chat — a previous one is retired first. Returns undefined when the
    * placeholder message itself can't be sent (caller falls back to sendText).
+   *
+   * The placeholder carries pause/stop controls: tapping one pauses the
+   * running agent via the existing tgcmd callback path. The buttons are
+   * removed when the stream finishes.
    */
   async beginStream(externalChatId: string, initialText = ""): Promise<OutboundStream | undefined> {
     try {
@@ -482,6 +532,7 @@ export class TelegramDriver implements ChannelDriver {
         chat_id: chatId,
         text: initialText.trim() ? renderStreamHtml(initialText) : "…",
         parse_mode: "HTML",
+        reply_markup: streamControlsKeyboard(),
       });
       const stream = new TelegramOutboundStream(this, externalChatId, chatId, sent.message_id, this.opts);
       this.activeStreams.set(externalChatId, stream);
@@ -570,5 +621,25 @@ export class TelegramDriver implements ChannelDriver {
   /** @internal — used by TelegramOutboundStream. */
   async deleteStreamMessage(chatId: string, messageId: number): Promise<void> {
     await this.api("deleteMessage", { chat_id: chatId, message_id: messageId }).catch(() => {});
+  }
+
+  /**
+   * @internal — used by TelegramOutboundStream. Drops the pause/stop buttons
+   * from a finished stream message. Best-effort UI cleanup: never throws.
+   */
+  async clearStreamControls(chatId: string, messageId: number): Promise<void> {
+    try {
+      // An explicitly empty inline keyboard is how editMessageReplyMarkup
+      // removes buttons from a message.
+      await this.api("editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: [] },
+      });
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (/message is not modified/i.test(msg)) return;
+      console.warn(`[hertz] telegram clearStreamControls failed: ${msg}`);
+    }
   }
 }

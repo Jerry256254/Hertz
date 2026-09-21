@@ -66,6 +66,12 @@ export interface OutboundStream {
   /** Render the current draft of the reply (throttled by the driver). */
   update(text: string): Promise<void>;
   /**
+   * Transient activity line ("Hledám na webu…") rendered with the draft
+   * while the agent works; null clears it. The final render never carries
+   * it. Drivers without live status leave this undefined.
+   */
+  setStatus?(status: string | null): Promise<void>;
+  /**
    * Render the final reply in place. When `finalText` is empty the placeholder
    * is removed instead, so a tool-only run leaves no litter behind.
    */

@@ -688,6 +688,25 @@ export async function handleTelegramCallback(
       }
       return;
     }
+    case "pauza":
+    case "zastavit": {
+      // Inline run controls from the live stream message — same behavior as
+      // the /pauza and /zastavit text commands (the session is resolved from
+      // the chat binding, so the payload is only a marker).
+      const sessionId = await env.boundSessionId(externalChatId);
+      if (!sessionId || !env.agentLoop.isRunning(sessionId)) {
+        await env.driver.sendText(externalChatId, "Teď nic neběží — není co pozastavit.");
+        return;
+      }
+      await env.agentLoop.pause(sessionId);
+      await env.driver.sendText(
+        externalChatId,
+        action === "pauza"
+          ? "Pozastaveno. Práci obnovíš příkazem /pokracuj."
+          : "Zastaveno. Až budeš chtít, pokračujeme příkazem /pokracuj.",
+      );
+      return;
+    }
     case "modelprov": {
       // Step 1 of /model: provider chosen — show its models, editing the
       // picker message in place when we know its id.
