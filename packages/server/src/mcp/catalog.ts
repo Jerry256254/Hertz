@@ -96,11 +96,16 @@ export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
     setupUrlLabel: "Otevřít Google Cloud Console",
     setupHelp:
       "Klikni na „Připojit“, přihlas se svým Googlem a potvrď souhlas. " +
-      "Hotovo — nic dalšího nastavovat nemusíš.",
+      "Pozor: jedním kliknutím to projde jen tehdy, když Hertz otevíráš přes localhost nebo přes veřejnou adresu. " +
+      "Když se k Hertzi připojuješ přes lokální síť (adresa jako 192.168.x.x), Google takové přihlášení odmítne — " +
+      "pak pomůže SSH tunel (otevři Hertz na http://localhost:4173) nebo veřejná adresa se zabezpečeným spojením (https); " +
+      "návratovou adresu pak přidej v Google Cloud Console.",
     adminSetupHelp:
       "Jednorázové nastavení pro správce serveru: " +
       "1. V Google Cloud Console vytvoř projekt a OAuth klienta typu „Webová aplikace“. " +
       "2. Jako autorizovanou adresu pro návrat přidej adresu tohoto serveru + /api/oauth/google/callback (např. https://vase-domena/api/oauth/google/callback). " +
+      "Google přijímá jen veřejné adresy se zabezpečeným spojením (https) nebo http://localhost — adresy z lokální sítě (např. 192.168.x.x) odmítá, " +
+      "pak je potřeba SSH tunel (návratová adresa http://localhost:4173/api/oauth/google/callback) nebo veřejná doména. " +
       "3. Povol API: Gmail, Calendar, Drive, Sheets, Docs a Slides. " +
       "4. Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_GOOGLE_CLIENT_ID a HERTZ_OAUTH_GOOGLE_CLIENT_SECRET.",
     serverDistSuffix: "mcp-google/dist/server.js",
@@ -119,11 +124,13 @@ export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
     setupUrlLabel: "Otevřít Notion → My integrations",
     setupHelp:
       "Klikni na „Připojit“, vyber svůj Notion pracovní prostor a potvrď. " +
-      "Hotovo — nic dalšího nastavovat nemusíš.",
+      "Pozor: funguje to jen přes localhost nebo veřejnou adresu se zabezpečeným spojením (https) — " +
+      "přes lokální síť (adresa jako 192.168.x.x) Notion přihlášení odmítne, pak pomůže SSH tunel nebo veřejná doména.",
     adminSetupHelp:
       "Jednorázové nastavení pro správce serveru: " +
       "1. Na stránce My integrations vytvoř novou „public“ integraci. " +
-      "2. Jako adresu pro návrat nastav adresu tohoto serveru + /api/oauth/notion/callback. " +
+      "2. Jako adresu pro návrat nastav adresu tohoto serveru + /api/oauth/notion/callback — Notion přijímá jen https adresy nebo http://localhost, " +
+      "adresy z lokální sítě (např. 192.168.x.x) odmítá (pak pomůže SSH tunel nebo veřejná doména). " +
       "3. V nastavení integrace povol čtení i zápis obsahu a čtení uživatelů. " +
       "4. Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_NOTION_CLIENT_ID a HERTZ_OAUTH_NOTION_CLIENT_SECRET.",
     serverDistSuffix: "mcp-notion/dist/server.js",

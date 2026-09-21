@@ -26,6 +26,11 @@ import {
   verifyState,
   type OAuthService,
 } from "../oauth/oauth-service.js";
+import {
+  checkRedirectUri,
+  localNetworkOAuthBlockedMessage,
+  PROVIDERS_REQUIRING_PUBLIC_REDIRECT,
+} from "../oauth/redirect-check.js";
 import { providerConfigs } from "../db/schema.js";
 import { getConnector, type ConnectorId } from "../mcp/catalog.js";
 
@@ -152,6 +157,14 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       }
 
       const redirectUri = `${request.protocol}://${request.headers.host}/api/oauth/${service}/callback`;
+
+      // Google (a Notion) odmítají návratové adresy z lokální sítě kryptickou
+      // chybou 400 — místo redirectu na poskytovatele vrať rovnou srozumitelné
+      // vysvětlení s návodem (karta chyby v Nastavení → Konektory).
+      if (PROVIDERS_REQUIRING_PUBLIC_REDIRECT.has(service) && !checkRedirectUri(redirectUri).ok) {
+        return fail(localNetworkOAuthBlockedMessage({ service, redirectUri }));
+      }
+
       const statePayload = {
         service,
         catalogId: catalogId ?? getConnector(service as ConnectorId)?.catalogId ?? "",

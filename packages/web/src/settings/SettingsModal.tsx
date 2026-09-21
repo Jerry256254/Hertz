@@ -657,7 +657,7 @@ function ConnectorsSection({ agent }: { agent: Agent }) {
         U každého konektoru nastavíš, co agent smí dělat — výchozí je jen čtení.
       </SectionHead>
       {notice && (
-        <p className={`mb-3 rounded-[14px] border px-4 py-2.5 text-[13px] ${notice.kind === "ok" ? "border-live/25 bg-live/10 text-fg" : "border-danger/25 bg-danger-wash text-danger"}`}>
+        <p className={`mb-3 whitespace-pre-line rounded-[14px] border px-4 py-2.5 text-[13px] ${notice.kind === "ok" ? "border-live/25 bg-live/10 text-fg" : "border-danger/25 bg-danger-wash text-danger"}`}>
           {notice.text}
         </p>
       )}
