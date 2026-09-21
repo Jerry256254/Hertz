@@ -5,6 +5,7 @@ import type { AppContext } from "../context.js";
 import { agents, approvals, projectMembers, projects, sessions, users } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
 import { decideApproval } from "../tools/approval-tools.js";
+import { parseMcpOpPayload } from "../mcp/tool-policy.js";
 import { resolveVaultUseApproval } from "../tools/vault-tools.js";
 import { hasProjectAccess } from "../auth/project-access.js";
 import {
@@ -125,6 +126,55 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: AppContext): v
             detail: { op: payload.op, hostPath: payload.hostPath, ok: opResult.ok, bytes: opResult.bytes, error: opResult.error },
           });
           inboundText = formatHostAccessExecutedInbound(payload, opResult);
+        }
+      } else if (result.kind === "mcp_op") {
+        // Sensitive MCP ops (sending e-mail, deleting, overwriting…): on
+        // approve the SERVER executes the call itself (the agent must never
+        // run it directly); on reject nothing runs.
+        const mcpPayload = parseMcpOpPayload(result.payload);
+        if (!mcpPayload) {
+          inboundText = `[Citlivá operace "${result.summary}" měla nečitelná data — server ji nemohl provést. Pokračuj bez ní.]`;
+        } else if (parsed.data.decision === "rejected") {
+          await ctx.audit.record({
+            actorId: request.user!.id,
+            actorType: "user",
+            sessionId: result.sessionId,
+            projectId: result.projectId,
+            action: "mcp_op.rejected",
+            target: `${mcpPayload.serverName}:${mcpPayload.toolName}`,
+            targetType: "mcp_tool",
+            result: "denied",
+            detail: { serverId: mcpPayload.serverId, toolName: mcpPayload.toolName, approvalId: id },
+          });
+          inboundText = `[Uživatel ZAMÍTL citlivou operaci "${result.summary}".] Neprováděj ji a nepokoušej se ji obejít jinou cestou. Pokračuj bez ní.`;
+        } else {
+          await ctx.audit.record({
+            actorId: request.user!.id,
+            actorType: "user",
+            sessionId: result.sessionId,
+            projectId: result.projectId,
+            action: "mcp_op.approved",
+            target: `${mcpPayload.serverName}:${mcpPayload.toolName}`,
+            targetType: "mcp_tool",
+            result: "allowed",
+            detail: { serverId: mcpPayload.serverId, toolName: mcpPayload.toolName, approvalId: id },
+          });
+          const mcpResult = await ctx.mcpRegistry.executeApprovedOp(mcpPayload.serverId, mcpPayload.toolName, mcpPayload.input);
+          await ctx.db.update(approvals).set({ result: JSON.stringify({ summary: mcpResult.summary, isError: !!mcpResult.isError }) }).where(eq(approvals.id, id));
+          await ctx.audit.record({
+            actorId: request.user!.id,
+            actorType: "user",
+            sessionId: result.sessionId,
+            projectId: result.projectId,
+            action: "mcp_op.executed",
+            target: `${mcpPayload.serverName}:${mcpPayload.toolName}`,
+            targetType: "mcp_tool",
+            result: mcpResult.isError ? "error" : "allowed",
+            detail: { serverId: mcpPayload.serverId, toolName: mcpPayload.toolName, approvalId: id },
+          });
+          inboundText = mcpResult.isError
+            ? `[Uživatel SCHVÁLIL citlivou operaci "${result.summary}", ale její provedení selhalo: ${mcpResult.summary}] Pokračuj bez ní, případně navrhni alternativu.`
+            : `[Uživatel SCHVÁLIL citlivou operaci "${result.summary}" — server ji provedl s tímto výsledkem:\n${mcpResult.summary}] Pokračuj v úkolu s tímto výsledkem.`;
         }
       } else if (result.kind === "vault_use") {
         // Vault-use approvals are machine-readable too: on approve the server

@@ -238,24 +238,39 @@ export interface McpToolsForAgent {
   error?: string;
 }
 
+export interface IntegrationConnectorToolPolicy {
+  name: string;
+  class: "read" | "write" | "sensitive";
+  classLabel: string;
+  requiresApproval: boolean;
+  allowed: boolean;
+}
+
 export interface IntegrationConnectorServer {
   id: string;
   name: string;
   enabled: boolean;
   tools: string[];
   error: string | null;
+  policy: {
+    mode: "read-only" | "read-write";
+    modeLabel: string;
+    tools: IntegrationConnectorToolPolicy[];
+  };
 }
 
 export interface IntegrationConnector {
-  id: "google" | "notion" | "github";
-  service: "google" | "notion" | "github";
+  id: "google" | "notion" | "github" | "presentation";
+  service: "google" | "notion" | "github" | "local";
+  /** Lokální konektor bez OAuth — zapíná se jedním kliknutím. */
+  local: boolean;
   name: string;
   tagline: string;
   description: string;
   capabilities: string[];
-  setupUrl: string;
-  setupUrlLabel: string;
-  setupHelp: string;
+  setupUrl: string | null;
+  setupUrlLabel: string | null;
+  setupHelp: string | null;
   appConfigured: boolean;
   clientId: string | null;
   secretHint: string | null;

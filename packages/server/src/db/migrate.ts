@@ -204,6 +204,8 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   encrypted_env TEXT,
   url TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
+  policy_mode TEXT NOT NULL DEFAULT 'read-only',
+  policy_tools_json TEXT,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_agent ON mcp_servers(agent_id);
@@ -390,6 +392,8 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE channel_configs ADD COLUMN allowed_senders_json TEXT",
   "ALTER TABLE approvals ADD COLUMN payload TEXT",
   "ALTER TABLE approvals ADD COLUMN result TEXT",
+  "ALTER TABLE mcp_servers ADD COLUMN policy_mode TEXT NOT NULL DEFAULT 'read-only'",
+  "ALTER TABLE mcp_servers ADD COLUMN policy_tools_json TEXT",
 ];
 
 /**

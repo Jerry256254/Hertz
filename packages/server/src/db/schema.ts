@@ -354,6 +354,14 @@ export const mcpServers = sqliteTable("mcp_servers", {
   /** sse only. */
   url: text("url"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /**
+   * Per-connector security policy (see mcp/tool-policy.ts). "read-only" is the
+   * least-privilege default; "read-write" unlocks write tools (sensitive ops
+   * still always require user approval). policyToolsJson = JSON map
+   * { toolName: "allow" | "deny" } for per-tool allow/deny (absent = allow).
+   */
+  policyMode: text("policy_mode", { enum: ["read-only", "read-write"] }).notNull().default("read-only"),
+  policyToolsJson: text("policy_tools_json"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -505,9 +513,13 @@ export const approvals = sqliteTable("approvals", {
    * request_host_access (payload = HostAccessPayload JSON, result = HostAccessResult JSON);
    * 'vault_use' = machine-readable one-shot credential use filed via vault_use
    * (payload = VaultUsePayload JSON, result = metadata-only JSON — the secret
-   * itself is never stored here).
+   * itself is never stored here);
+   * 'mcp_op' = machine-readable one-shot sensitive MCP tool call filed by the
+   * MCP registry's policy layer (payload = McpOpPayload JSON: serverId,
+   * serverName, toolName, input; result = ToolResult JSON). On approve the
+   * server executes the call itself; on reject nothing runs.
    */
-  kind: text("kind", { enum: ["generic", "host_access", "vault_use"] }).notNull().default("generic"),
+  kind: text("kind", { enum: ["generic", "host_access", "vault_use", "mcp_op"] }).notNull().default("generic"),
   /** JSON-encoded HostAccessPayload for kind='host_access'; null otherwise. */
   payload: text("payload"),
   /** JSON-encoded HostAccessResult once a host_access op has been executed; null until then. */

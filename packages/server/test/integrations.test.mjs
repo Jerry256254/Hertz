@@ -121,12 +121,14 @@ describe("oauth-service: state signing", () => {
 });
 
 describe("oauth-service: auth URLs and scopes", () => {
-  it("google one-click URL requests gmail+drive+calendar scopes", () => {
+  it("google one-click URL requests gmail+drive+calendar+sheets+docs scopes", () => {
     const scopes = oauth.googleScopesFor("google");
     assert.ok(scopes.includes("https://www.googleapis.com/auth/gmail.readonly"));
     assert.ok(scopes.includes("https://www.googleapis.com/auth/drive.readonly"));
     assert.ok(scopes.includes("https://www.googleapis.com/auth/calendar.readonly"));
     assert.ok(scopes.includes("https://www.googleapis.com/auth/calendar.events"));
+    assert.ok(scopes.includes("https://www.googleapis.com/auth/spreadsheets"));
+    assert.ok(scopes.includes("https://www.googleapis.com/auth/documents"));
     const url = new URL(oauth.googleAuthUrl({ clientId: "cid", redirectUri: "https://app/cb", catalogId: "google", state: "s" }));
     assert.equal(url.host, new URL(mockBase).host, "env override for authorize URL is honored");
     assert.ok(url.searchParams.get("scope").includes("calendar"));
@@ -198,17 +200,20 @@ describe("connector catalog", () => {
 
   it("contains google, notion and github with unique ids", () => {
     const ids = catalog.CONNECTOR_CATALOG.map((c) => c.id).sort();
-    assert.deepEqual(ids, ["github", "google", "notion"]);
+    assert.deepEqual(ids, ["github", "google", "notion", "presentation"]);
   });
 
   it("every entry has Czech copy, setup docs and a distinct server binary", () => {
     const suffixes = new Set();
     for (const c of catalog.CONNECTOR_CATALOG) {
       assert.ok(c.name && c.name.length > 0, `${c.id}.name must be non-empty`);
-      for (const field of ["tagline", "description", "setupUrl", "setupUrlLabel", "setupHelp"]) {
+      const fields = ["tagline", "description"];
+      // Lokální konektory (bez OAuth) nemají setup návod.
+      if (!c.local) fields.push("setupUrl", "setupUrlLabel", "setupHelp");
+      for (const field of fields) {
         assert.ok(c[field] && c[field].length > 10, `${c.id}.${field} must be non-empty Czech copy`);
       }
-      assert.ok(c.setupUrl.startsWith("https://"));
+      if (!c.local) assert.ok(c.setupUrl.startsWith("https://"));
       assert.ok(Array.isArray(c.capabilities) && c.capabilities.length > 0);
       assert.ok(!suffixes.has(c.serverDistSuffix), "serverDistSuffix must be unique");
       suffixes.add(c.serverDistSuffix);

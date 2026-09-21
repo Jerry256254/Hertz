@@ -116,7 +116,13 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
       const tool = allByName.get(name);
       let result: Awaited<ReturnType<typeof runTool>>;
       if (deps.mcpRegistry.isMcpTool(name)) {
-        result = await deps.mcpRegistry.run(name, input);
+        // Předáme kontext aktéra, aby citlivé MCP operace mohly založit
+        // schvalovací žádost (kind "mcp_op") a zaparkovat sezení.
+        result = await deps.mcpRegistry.run(name, input, {
+          agentId: ctx.actor.actorId,
+          projectId: ctx.actor.projectId,
+          sessionId: ctx.actor.sessionId,
+        });
       } else if (tool) {
         result = await tool.execute(input, ctx);
       } else {

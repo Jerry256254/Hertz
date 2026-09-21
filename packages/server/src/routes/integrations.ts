@@ -1,11 +1,46 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { createRequire } from "node:module";
+import path from "node:path";
 import type { AppContext } from "../context.js";
 import { mcpServers, oauthApps } from "../db/schema.js";
+import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
-import { decryptSecret, maskKey } from "../secrets/key-encryption.js";
+import { decryptSecret, encryptSecret, maskKey } from "../secrets/key-encryption.js";
 import { CONNECTOR_CATALOG, getConnector } from "../mcp/catalog.js";
+import { POLICY_MODE_CZ, TOOL_CLASS_CZ } from "../mcp/tool-policy.js";
+
+const require = createRequire(import.meta.url);
+
+/** Líně, až když je potřeba: chybějící balíček nesmí rozbít celý routes modul. */
+function resolvePresentationServerPath(): string | null {
+  try {
+    return require.resolve("@kuclab-hertz/mcp-presentation/dist/server.js");
+  } catch {
+    return null;
+  }
+}
+
+const CONNECTOR_IDS = ["google", "notion", "github", "presentation"] as const;
+
+const policySchema = z.object({
+  /** "read-only" (výchozí, nejméně práv) nebo "read-write". */
+  mode: z.enum(["read-only", "read-write"]).optional(),
+  /** Per-tool allow/deny: { toolName: "allow" | "deny" }. Neuvedené nástroje se nemění. */
+  tools: z.record(z.enum(["allow", "deny"])).optional(),
+});
+
+/** Všechny mcp_servers řádky patřící konektoru (podle spouštěného binárního souboru). */
+async function rowsForConnector(ctx: AppContext, connectorId: (typeof CONNECTOR_IDS)[number]) {
+  const def = getConnector(connectorId);
+  if (!def) return [];
+  const rows = await ctx.db.select().from(mcpServers);
+  return rows.filter((r) => {
+    const args = r.argsJson ? (JSON.parse(r.argsJson) as string[]) : [];
+    return (args[0] ?? "").endsWith(def.serverDistSuffix);
+  });
+}
 
 /**
  * One-click integrations API: the catalog of available connectors (Google,
@@ -20,7 +55,8 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
 
     instance.get("/api/integrations", async () => {
       const appRows = await ctx.db.select().from(oauthApps);
-      const configuredByService = new Map(appRows.map((r) => [r.service, r]));
+      // Klíčováno prostým stringem: lokální konektory ("local") v oauthApps nikdy nejsou.
+      const configuredByService = new Map<string, (typeof appRows)[number]>(appRows.map((r) => [r.service, r]));
       const display = await ctx.mcpRegistry.listAllForDisplay();
 
       return {
@@ -31,13 +67,14 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
           return {
             id: def.id,
             service: def.service,
+            local: !!def.local,
             name: def.name,
             tagline: def.tagline,
             description: def.description,
             capabilities: def.capabilities,
-            setupUrl: def.setupUrl,
-            setupUrlLabel: def.setupUrlLabel,
-            setupHelp: def.setupHelp,
+            setupUrl: def.setupUrl ?? null,
+            setupUrlLabel: def.setupUrlLabel ?? null,
+            setupHelp: def.setupHelp ?? null,
             appConfigured: !!appRow,
             // The client ID is public by OAuth design (it travels in the
             // authorize URL); the secret is never exposed, only a masked hint.
@@ -50,6 +87,11 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
               enabled: s.enabled,
               tools: s.tools,
               error: s.error ?? null,
+              policy: {
+                mode: s.policy.mode,
+                modeLabel: POLICY_MODE_CZ[s.policy.mode],
+                tools: s.policy.tools.map((t) => ({ ...t, classLabel: TOOL_CLASS_CZ[t.class] })),
+              },
             })),
           };
         }),
@@ -60,7 +102,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
     // connector (deleting the encrypted tokens with it) and unregisters
     // its tools from the agent's toolset.
     instance.post("/api/integrations/:id/disconnect", async (request, reply) => {
-      const parsed = z.enum(["google", "notion", "github"]).safeParse((request.params as { id: string }).id);
+      const parsed = z.enum(CONNECTOR_IDS).safeParse((request.params as { id: string }).id);
       if (!parsed.success) return reply.code(400).send({ error: "Neznámý konektor" });
       const def = getConnector(parsed.data);
       if (!def) return reply.code(400).send({ error: "Neznámý konektor" });
@@ -75,6 +117,79 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
         ctx.mcpRegistry.invalidate(row.id);
       }
       return { ok: true, removed: matching.length };
+    });
+
+    // One-click enable pro lokální konektory (bez OAuth): založí mcp_servers
+    // řádek se serverem běžícím na tomto stroji. Výchozí politika je
+    // read-only (nejméně práv).
+    instance.post("/api/integrations/:id/enable", async (request, reply) => {
+      const parsed = z.enum(CONNECTOR_IDS).safeParse((request.params as { id: string }).id);
+      if (!parsed.success) return reply.code(400).send({ error: "Neznámý konektor" });
+      const def = getConnector(parsed.data);
+      if (!def || !def.local) return reply.code(400).send({ error: "Tento konektor se zapíná přes OAuth přihlášení." });
+
+      const serverBin = def.id === "presentation" ? resolvePresentationServerPath() : null;
+      if (!serverBin) return reply.code(500).send({ error: "Prezentační konektor není nainstalovaný (chybí balíček @kuclab-hertz/mcp-presentation)." });
+
+      const env: Record<string, string> = {};
+      // Výstupní adresář prezentací patří pod datový adresář aplikace.
+      // (V testech se appka staví bez paths — server má vlastní výchozí adresář.)
+      if (ctx.paths?.dataDir) env.PRESENTATION_OUTPUT_DIR = path.join(ctx.paths.dataDir, "presentations");
+
+      const existing = await rowsForConnector(ctx, parsed.data);
+      let serverId: string;
+      if (existing[0]) {
+        await ctx.db.update(mcpServers).set({ encryptedEnv: encryptSecret(ctx.masterKey, JSON.stringify(env)), enabled: true, name: def.name }).where(eq(mcpServers.id, existing[0].id));
+        serverId = existing[0].id;
+      } else {
+        serverId = newId();
+        await ctx.db.insert(mcpServers).values({
+          id: serverId,
+          agentId: null,
+          name: def.name,
+          transport: "stdio",
+          command: "node",
+          argsJson: JSON.stringify([serverBin]),
+          encryptedEnv: encryptSecret(ctx.masterKey, JSON.stringify(env)),
+          url: null,
+          enabled: true,
+          policyMode: "read-only",
+          policyToolsJson: null,
+          createdAt: new Date(),
+        });
+      }
+      ctx.mcpRegistry.invalidate(serverId);
+      return { ok: true, serverId };
+    });
+
+    // Per-konektor bezpečnostní politika: režim read-only / read-write
+    // (výchozí read-only = nejméně práv) + per-tool allow/deny.
+    // Citlivé operace (mazání, odesílání e-mailů, publikování, přepisování)
+    // vyžadují schválení uživatele vždy — ani read-write je neobchází.
+    instance.post("/api/integrations/:id/policy", async (request, reply) => {
+      const parsed = z.enum(CONNECTOR_IDS).safeParse((request.params as { id: string }).id);
+      if (!parsed.success) return reply.code(400).send({ error: "Neznámý konektor" });
+      const body = policySchema.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.message });
+
+      const rows = await rowsForConnector(ctx, parsed.data);
+      if (rows.length === 0) return reply.code(404).send({ error: "Konektor není připojený" });
+
+      for (const row of rows) {
+        const current = row.policyToolsJson ? (JSON.parse(row.policyToolsJson) as Record<string, string>) : {};
+        // Ukládáme i explicitní "allow": v režimu read-only přepisuje zákaz zápisu.
+        const merged = { ...current, ...(body.data.tools ?? {}) };
+        await ctx.db
+          .update(mcpServers)
+          .set({
+            ...(body.data.mode ? { policyMode: body.data.mode } : {}),
+            policyToolsJson: Object.keys(merged).length > 0 ? JSON.stringify(merged) : null,
+          })
+          .where(eq(mcpServers.id, row.id));
+        ctx.mcpRegistry.invalidate(row.id);
+      }
+      ctx.mcpRegistry.invalidateIndex();
+      return { ok: true, updated: rows.length };
     });
   });
 }

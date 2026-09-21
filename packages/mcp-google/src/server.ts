@@ -8,7 +8,7 @@ const clientId = process.env.GOOGLE_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const accessToken = process.env.GOOGLE_ACCESS_TOKEN;
 const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-const enabledApis = new Set((process.env.GOOGLE_ENABLED_APIS ?? "gmail,drive,calendar").split(","));
+const enabledApis = new Set((process.env.GOOGLE_ENABLED_APIS ?? "gmail,drive,calendar,sheets,docs").split(","));
 
 if (!clientId || !clientSecret || !refreshToken) {
   console.error("mcp-google: missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN");
@@ -26,6 +26,12 @@ auth.setCredentials({ access_token: accessToken, refresh_token: refreshToken });
 const gmail = google.gmail({ version: "v1", auth });
 const drive = google.drive({ version: "v3", auth });
 const calendar = google.calendar({ version: "v3", auth });
+// GOOGLE_API_ROOT_URL = testovací/mock přepínač: když je nastavený (např.
+// http://127.0.0.1:8080/), míří všechna volání Google API na něj místo
+// produkčních endpointů. V produkci se nenastavuje.
+const apiRootUrl = process.env.GOOGLE_API_ROOT_URL || undefined;
+const sheets = google.sheets({ version: "v4", auth, ...(apiRootUrl ? { rootUrl: apiRootUrl } : {}) });
+const docs = google.docs({ version: "v1", auth, ...(apiRootUrl ? { rootUrl: apiRootUrl } : {}) });
 
 function decodeBase64Url(data: string): string {
   return Buffer.from(data, "base64url").toString("utf8");
@@ -217,6 +223,162 @@ if (enabledApis.has("calendar")) {
     async ({ calendarId, eventId }) => {
       await calendar.events.delete({ calendarId, eventId });
       return { content: [{ type: "text", text: `Deleted event ${eventId}.` }] };
+    },
+  );
+}
+
+if (enabledApis.has("sheets")) {
+  server.registerTool(
+    "sheets_read_range",
+    {
+      description: "Read a range of cells from a Google Sheet (A1 notation, e.g. 'List1!A1:C10'). Returns the values as rows.",
+      inputSchema: {
+        spreadsheetId: z.string().describe("Spreadsheet id (from the URL between /d/ and /edit)"),
+        range: z.string().describe("A1 range, e.g. 'List1!A1:C10'"),
+      },
+    },
+    async ({ spreadsheetId, range }) => {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+      const values = res.data.values ?? [];
+      if (values.length === 0) return { content: [{ type: "text", text: "Range is empty." }] };
+      const text = values.map((row) => row.map((c) => String(c ?? "")).join("\t")).join("\n");
+      return { content: [{ type: "text", text: `Range ${res.data.range} (${values.length} rows):\n${text}` }] };
+    },
+  );
+
+  server.registerTool(
+    "sheets_write_range",
+    {
+      description:
+        "Overwrite a range of cells in a Google Sheet (A1 notation). Replaces existing content in that range — a destructive write, always asks the user for approval first.",
+      inputSchema: {
+        spreadsheetId: z.string(),
+        range: z.string().describe("A1 range where the top-left value lands, e.g. 'List1!A1'"),
+        values: z.array(z.array(z.union([z.string(), z.number(), z.boolean()]))).describe("Rows of values to write"),
+      },
+    },
+    async ({ spreadsheetId, range, values }) => {
+      const res = await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values },
+      });
+      return { content: [{ type: "text", text: `Wrote ${res.data.updatedCells ?? 0} cells to ${res.data.updatedRange}.` }] };
+    },
+  );
+
+  server.registerTool(
+    "sheets_append_values",
+    {
+      description: "Append rows to the end of a Google Sheet table (A1 notation, e.g. 'List1!A:C'). Does not overwrite existing data.",
+      inputSchema: {
+        spreadsheetId: z.string(),
+        range: z.string().describe("A1 range of the table columns, e.g. 'List1!A:C'"),
+        values: z.array(z.array(z.union([z.string(), z.number(), z.boolean()]))).describe("Rows to append"),
+      },
+    },
+    async ({ spreadsheetId, range, values }) => {
+      const res = await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values },
+      });
+      return { content: [{ type: "text", text: `Appended ${res.data.updates?.updatedRows ?? values.length} rows to ${res.data.updates?.updatedRange}.` }] };
+    },
+  );
+
+  server.registerTool(
+    "sheets_create_spreadsheet",
+    {
+      description: "Create a new empty Google spreadsheet with the given title (optionally with named sheets).",
+      inputSchema: {
+        title: z.string().describe("Spreadsheet title"),
+        sheetTitles: z.array(z.string()).optional().describe("Names of the initial sheets (default: one sheet)"),
+      },
+    },
+    async ({ title, sheetTitles }) => {
+      const res = await sheets.spreadsheets.create({
+        requestBody: {
+          properties: { title },
+          sheets: sheetTitles?.map((t) => ({ properties: { title: t } })),
+        },
+      });
+      return { content: [{ type: "text", text: `Created spreadsheet "${res.data.properties?.title}" (id ${res.data.spreadsheetId}). ${res.data.spreadsheetUrl ?? ""}` }] };
+    },
+  );
+}
+
+function extractDocsText(structural: any[] | undefined): string {
+  if (!structural) return "";
+  let out = "";
+  for (const el of structural) {
+    if (el.paragraph?.elements) {
+      for (const pe of el.paragraph.elements) {
+        if (pe.textRun?.content) out += pe.textRun.content;
+      }
+    } else if (el.table?.tableRows) {
+      for (const row of el.table.tableRows) {
+        const cells = (row.tableCells ?? []).map((cell: any) => extractDocsText(cell.content).replace(/\n+$/, ""));
+        out += cells.join(" | ") + "\n";
+      }
+    } else if (el.sectionBreak) {
+      out += "\n";
+    }
+  }
+  return out;
+}
+
+if (enabledApis.has("docs")) {
+  server.registerTool(
+    "docs_read",
+    {
+      description: "Read a Google document's full text by id (from the URL between /d/ and /edit).",
+      inputSchema: {
+        documentId: z.string(),
+        maxChars: z.number().int().positive().max(200_000).optional().default(100_000),
+      },
+    },
+    async ({ documentId, maxChars }) => {
+      const res = await docs.documents.get({ documentId });
+      const text = extractDocsText(res.data.body?.content).slice(0, maxChars);
+      const title = res.data.title ?? "(no title)";
+      return { content: [{ type: "text", text: `Document: ${title}\n\n${text || "(empty document)"}` }] };
+    },
+  );
+
+  server.registerTool(
+    "docs_create_document",
+    {
+      description: "Create a new empty Google document with the given title.",
+      inputSchema: { title: z.string().describe("Document title") },
+    },
+    async ({ title }) => {
+      const res = await docs.documents.create({ requestBody: { title } });
+      return { content: [{ type: "text", text: `Created document "${res.data.title}" (id ${res.data.documentId}).` }] };
+    },
+  );
+
+  server.registerTool(
+    "docs_append_text",
+    {
+      description: "Append text to the end of a Google document. Adds to existing content, never overwrites.",
+      inputSchema: {
+        documentId: z.string(),
+        text: z.string().max(100_000).describe("Text to append (a trailing newline is added if missing)"),
+      },
+    },
+    async ({ documentId, text }) => {
+      const doc = await docs.documents.get({ documentId, fields: "body(content(endIndex))" });
+      const content = doc.data.body?.content ?? [];
+      const endIndex = content.length > 0 ? (content[content.length - 1]?.endIndex ?? 2) : 2;
+      const body = text.endsWith("\n") ? text : `${text}\n`;
+      await docs.documents.batchUpdate({
+        documentId,
+        requestBody: { requests: [{ insertText: { location: { index: Math.max(endIndex - 1, 1) }, text: body } }] },
+      });
+      return { content: [{ type: "text", text: `Appended ${body.length} characters to the document.` }] };
     },
   );
 }

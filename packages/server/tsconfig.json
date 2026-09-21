@@ -11,6 +11,7 @@
     { "path": "../mcp-google" },
     { "path": "../mcp-notion" },
     { "path": "../mcp-github" },
+    { "path": "../mcp-presentation" },
     { "path": "../providers" },
     { "path": "../sandbox" },
     { "path": "../standard" },

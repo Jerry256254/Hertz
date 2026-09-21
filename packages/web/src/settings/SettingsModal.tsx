@@ -627,6 +627,14 @@ function OneClickConnectors() {
     },
   });
 
+  const enable = useMutation({
+    mutationFn: (id: string) => api.post(`/integrations/${id}/enable`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+    },
+  });
+
   function startSetup(c: IntegrationConnector) {
     setSetupFor(c.id);
     setClientId(c.clientId ?? "");
@@ -664,11 +672,19 @@ function OneClickConnectors() {
               </div>
               {c.connected ? (
                 <button
-                  onClick={() => { if (window.confirm(`Odpojit „${c.name}“? Agent přestane jeho nástroje vidět.`)) disconnect.mutate(c.id); }}
+                  onClick={() => { if (window.confirm(`${c.local ? "Vypnout" : "Odpojit"} „${c.name}“? Agent přestane jeho nástroje vidět.`)) disconnect.mutate(c.id); }}
                   disabled={disconnect.isPending}
                   className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg disabled:opacity-40"
                 >
-                  Odpojit
+                  {c.local ? "Vypnout" : "Odpojit"}
+                </button>
+              ) : c.local ? (
+                <button
+                  onClick={() => enable.mutate(c.id)}
+                  disabled={enable.isPending}
+                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40"
+                >
+                  Zapnout
                 </button>
               ) : c.appConfigured ? (
                 <a
@@ -698,13 +714,25 @@ function OneClickConnectors() {
                 Nástroje: {c.servers.flatMap((s) => s.tools).join(", ")}
               </p>
             )}
-            {setupFor === c.id || (!c.appConfigured && !c.connected) ? (
+            {c.id === "google" && c.connected && (
+              <p className="mt-2 text-[12.5px] text-fg-muted">
+                Nově umí i Tabulky a Dokumenty.{" "}
+                <a href={`/api/oauth/${c.service}/start?catalogId=${c.id}`} className="font-[600] text-accent underline">
+                  Znovu připojit
+                </a>{" "}
+                pro rozšířená oprávnění (Google se znovu zeptá na souhlas).
+              </p>
+            )}
+            {c.connected && <ConnectorPolicy c={c} />}
+            {!c.local && (setupFor === c.id || (!c.appConfigured && !c.connected)) ? (
               <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
                 <p className="text-[13px] font-[600] text-fg">Nejprve přidejte OAuth aplikaci</p>
                 <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
-                <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
-                  {c.setupUrlLabel}
-                </a>
+                {c.setupUrl && (
+                  <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
+                    {c.setupUrlLabel}
+                  </a>
+                )}
                 {saveErr && <p className="rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{saveErr}</p>}
                 <Field label="Client ID">
                   <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="např. 123….apps.googleusercontent.com" className={`${inputCls} mono`} />
@@ -737,6 +765,84 @@ function OneClickConnectors() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ── Práva konektoru (politika) ─────────────────────────────────────────── */
+
+function ConnectorPolicy({ c }: { c: IntegrationConnector }) {
+  const queryClient = useQueryClient();
+  const [err, setErr] = useState<string | null>(null);
+  const server = c.servers.find((s) => s.enabled) ?? c.servers[0];
+  const policy = server?.policy;
+  const tools = policy?.tools ?? [];
+
+  const setPolicy = useMutation({
+    mutationFn: (body: { mode?: "read-only" | "read-write"; tools?: Record<string, "allow" | "deny"> }) =>
+      api.post(`/integrations/${c.id}/policy`, body),
+    onSuccess: () => {
+      setErr(null);
+      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Uložení práv selhalo"),
+  });
+
+  if (!policy) return null;
+  const modeBtn = (mode: "read-only" | "read-write", label: string) => (
+    <button
+      key={mode}
+      onClick={() => setPolicy.mutate({ mode })}
+      disabled={setPolicy.isPending || policy.mode === mode}
+      className={`pressable inline-flex min-h-[36px] items-center justify-center rounded-full px-4 text-[12.5px] font-[600] disabled:opacity-40 ${
+        policy.mode === mode ? "bg-accent text-white" : "border border-border bg-bg-sunken text-fg"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="mt-3 rounded-[12px] border border-border bg-bg px-4 py-3">
+      <p className="text-[13px] font-[600] text-fg">Práva konektoru</p>
+      <div className="mt-2 flex gap-2">
+        {modeBtn("read-only", "Jen čtení")}
+        {modeBtn("read-write", "Čtení a zápis")}
+      </div>
+      <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">
+        Výchozí je „Jen čtení“ (nejméně práv). Citlivé operace — odeslání e-mailu, mazání, publikování, přepisování —
+        vyžadují schválení vždy, i v režimu „Čtení a zápis“.
+      </p>
+      {tools.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {tools.map((t) => (
+            <div key={t.name} className="flex items-center gap-2 rounded-[10px] bg-bg-sunken px-3 py-1.5">
+              <span className="mono min-w-0 flex-1 truncate text-[11.5px] text-fg" title={t.name}>
+                {t.name}
+              </span>
+              <span className="shrink-0 rounded-full bg-bg px-2 py-0.5 text-[10.5px] font-[700] text-fg-muted">
+                {t.classLabel}
+              </span>
+              {t.requiresApproval && (
+                <span className="shrink-0 rounded-full bg-danger/15 px-2 py-0.5 text-[10.5px] font-[700] text-danger" title="Před spuštěním se vždy zobrazí žádost o schválení.">
+                  Vyžaduje schválení
+                </span>
+              )}
+              <button
+                onClick={() => setPolicy.mutate({ tools: { [t.name]: t.allowed ? "deny" : "allow" } })}
+                disabled={setPolicy.isPending}
+                className={`pressable inline-flex min-h-[32px] shrink-0 items-center justify-center rounded-full px-3 text-[11.5px] font-[600] disabled:opacity-40 ${
+                  t.allowed ? "border border-border bg-bg text-fg" : "bg-danger/15 text-danger"
+                }`}
+                title={t.allowed ? "Zakázat tento nástroj" : "Povolit tento nástroj"}
+              >
+                {t.allowed ? "Povoleno" : "Zakázáno"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {err && <p className="mt-2 rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{err}</p>}
     </div>
   );
 }
