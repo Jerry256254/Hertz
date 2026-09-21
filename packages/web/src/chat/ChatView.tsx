@@ -416,8 +416,8 @@ export function ChatView({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* top bar */}
-      <header className="flex h-[60px] shrink-0 items-center gap-2 px-3 md:px-5">
-        <button onClick={onToggleSidebar} className="pressable flex items-center gap-2 rounded-full border border-border bg-bg-raised py-2 pl-3 pr-4 text-[13px] font-[600] text-fg hover:bg-bg-hover">
+      <header className="safe-top flex h-14 shrink-0 items-center gap-2 px-3 sm:h-[60px] md:px-5">
+        <button onClick={onToggleSidebar} className="pressable flex min-h-[44px] items-center gap-2 rounded-full border border-border bg-bg-raised py-2 pl-3 pr-4 text-[13px] font-[600] text-fg hover:bg-bg-hover">
           <span className="flex flex-col gap-[3px]">
             <span className="h-[2px] w-4 rounded bg-fg" />
             <span className="h-[2px] w-4 rounded bg-fg" />
@@ -426,7 +426,7 @@ export function ChatView({
           Chaty
         </button>
         <span className="flex-1" />
-        <button onClick={onOpenAgent} title="Otevřít nastavení agenta" className="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 hover:bg-bg-hover">
+        <button onClick={onOpenAgent} title="Otevřít nastavení agenta" className="pressable flex min-h-[44px] items-center gap-2 rounded-full py-1 pl-1 pr-3 hover:bg-bg-hover">
           <AgentAvatar seed={agent.id} version={avatarVersion} mood={mood} size={30} />
           <span className="max-w-[32vw] truncate text-[14px] font-[600] text-fg">{agent.name}</span>
           {isRunning && (
@@ -449,13 +449,13 @@ export function ChatView({
         {isError && !data && (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-[13.5px] text-fg-muted">Konverzaci se nepodařilo načíst.</p>
-            <button onClick={() => refetch()} className="pressable rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white">
+            <button onClick={() => refetch()} className="pressable min-h-[44px] rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white">
               Zkusit znovu
             </button>
           </div>
         )}
         {!isLoading && !isError && !streamingText && renderBlocks.length === 0 && (
-          <div className="mx-auto w-full max-w-[760px] px-4 py-10 text-center">
+          <div className="mx-auto w-full max-w-[760px] px-3 sm:px-4 py-10 text-center">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center"><AgentAvatar seed={agent.id} version={avatarVersion} size={52} /></div>
             <p className="text-[15px] font-[700] text-fg">Nová konverzace</p>
             <p className="mx-auto mt-1 max-w-[420px] text-[13px] leading-relaxed text-fg-muted">
@@ -488,7 +488,7 @@ export function ChatView({
           ),
         )}
         {streamingText && (
-          <div className="mx-auto w-full max-w-[760px] animate-fade-in px-4 pb-2.5 pt-2.5">
+          <div className="mx-auto w-full max-w-[760px] animate-fade-in px-3 pb-2.5 pt-2.5 sm:px-4">
             <div className="max-w-[88%]">
               <div className="mb-1.5 flex select-none items-baseline gap-1.5 pl-[18px]">
                 <span className="text-[11.5px] font-[700] uppercase tracking-[0.04em] text-fg-subtle">{agent.name}</span>
@@ -503,7 +503,7 @@ export function ChatView({
           </div>
         )}
         {(isRunning || isPaused) && !streamingText && (
-          <div className="mx-auto flex w-full max-w-[760px] items-center gap-2 px-4 py-1.5">
+          <div className="mx-auto flex w-full max-w-[760px] items-center gap-2 px-3 py-1.5 sm:px-4">
             <span className="flex items-center gap-1.5 text-[12px] text-fg-muted">
               <span className={`h-1.5 w-1.5 rounded-full ${isPaused ? "bg-warning" : "bg-live animate-pulse"}`} />
               {isPaused ? "pozastaveno" : "pracuje…"}
@@ -516,7 +516,7 @@ export function ChatView({
           </div>
         )}
         {runError && (
-          <div className="mx-auto flex w-full max-w-[760px] items-start gap-2.5 px-4 py-2">
+          <div className="mx-auto flex w-full max-w-[760px] items-start gap-2.5 px-3 py-2 sm:px-4">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-danger-wash text-danger"><TriangleAlert size={14} /></span>
             <div className="rounded-[16px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">
               <p className="font-[600]">Běh selhal</p>
@@ -525,25 +525,25 @@ export function ChatView({
           </div>
         )}
         {fileWarning && (
-          <div className="mx-auto flex w-full max-w-[760px] items-start gap-2.5 px-4 py-2">
+          <div className="mx-auto flex w-full max-w-[760px] items-start gap-2.5 px-3 py-2 sm:px-4">
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[16px] border border-warning/25 bg-warning-wash px-4 py-2.5 text-[13px] text-fg">
               <p className="min-w-0 flex-1">{fileWarning}</p>
-              <button onClick={() => setFileWarning(undefined)} className="shrink-0 font-[600] text-fg-muted hover:text-fg">Zavřít</button>
+              <button onClick={() => setFileWarning(undefined)} className="flex min-h-[44px] shrink-0 items-center px-2 font-[600] text-fg-muted hover:text-fg">Zavřít</button>
             </div>
           </div>
         )}
       </div>
 
       {/* run controls + pending states */}
-      <div className="shrink-0 px-3 pb-4 pt-1 md:px-5">
+      <div className="shrink-0 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-1 sm:px-5">
         <div className="mx-auto w-full max-w-[760px]">
           {data?.pendingTakeover && (
             <div className="mb-2 rounded-[16px] border border-warning/30 bg-warning-wash p-3.5">
               <p className="text-[13px] font-[600] text-fg">Agent potřebuje převzít obrazovku</p>
               <p className="mt-0.5 text-[12.5px] text-fg-muted">{data.pendingTakeover.reason}</p>
               <div className="mt-2.5 flex items-center gap-2">
-                <button onClick={onOpenPreview} className="pressable rounded-full bg-accent px-4 py-1.5 text-[12.5px] font-[600] text-white">Převzít</button>
-                <button onClick={() => doneTakeover.mutate()} disabled={doneTakeover.isPending} className="pressable rounded-full border border-border bg-bg-raised px-4 py-1.5 text-[12.5px] font-[600] text-fg disabled:opacity-40">
+                <button onClick={onOpenPreview} className="pressable min-h-[44px] rounded-full bg-accent px-4 py-1.5 text-[12.5px] font-[600] text-white">Převzít</button>
+                <button onClick={() => doneTakeover.mutate()} disabled={doneTakeover.isPending} className="pressable min-h-[44px] rounded-full border border-border bg-bg-raised px-4 py-1.5 text-[12.5px] font-[600] text-fg disabled:opacity-40">
                   {doneTakeover.isPending ? "Předávám…" : "Mám hotovo"}
                 </button>
               </div>
@@ -581,7 +581,7 @@ export function ChatView({
                   {images.map((img, i) => (
                     <div key={i} className="group relative">
                       <img src={`data:${img.mimeType};base64,${img.data}`} className="h-14 w-14 rounded-[12px] border border-border object-cover" />
-                      <button type="button" onClick={() => setImages((p) => p.filter((_, idx) => idx !== i))} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted opacity-0 group-hover:opacity-100"><X size={11} /></button>
+                      <button type="button" onClick={() => setImages((p) => p.filter((_, idx) => idx !== i))} aria-label="Odebrat obrázek" className="absolute -right-2 -top-2 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted shadow-sm hover:text-fg sm:opacity-0 sm:group-hover:opacity-100"><X size={13} /></button>
                     </div>
                   ))}
                 </div>
@@ -591,7 +591,7 @@ export function ChatView({
                   {docFiles.map((f, i) => (
                     <span key={i} className="mono flex items-center gap-1.5 rounded-full border border-border bg-bg-sunken px-3 py-1 text-[11px] text-fg-muted">
                       <Paperclip size={11} /> {f.name}
-                      <button type="button" onClick={() => setDocFiles((p) => p.filter((_, idx) => idx !== i))} className="text-fg-subtle hover:text-fg"><X size={11} /></button>
+                      <button type="button" onClick={() => setDocFiles((p) => p.filter((_, idx) => idx !== i))} aria-label="Odebrat soubor" className="-my-1.5 -mr-2 flex h-11 w-11 items-center justify-center text-fg-subtle hover:text-fg"><X size={13} /></button>
                     </span>
                   ))}
                 </div>
@@ -599,7 +599,7 @@ export function ChatView({
               {/* Jedna řádka, vše vertikálně vycentrované: příloha vlevo, text uprostřed, odeslat (nebo pauza/stop během generování) vpravo. */}
               <div className="flex items-center gap-1.5 p-2">
                 <input type="file" accept="image/*,.txt,.md,.markdown,.csv,.json,.log,.ts,.js,.py" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id={`file-input-${sessionId}`} />
-                <IconButton type="button" title="Přiložit soubor" aria-label="Přiložit soubor" className="h-10 w-10 shrink-0" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
+                <IconButton type="button" title="Přiložit soubor" aria-label="Přiložit soubor" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
                 <textarea
                   ref={textareaRef}
                   value={text}
@@ -608,19 +608,19 @@ export function ChatView({
                   onPaste={(e) => void onFiles(e.clipboardData.files)}
                   placeholder={`Napiš ${agent.name}…`}
                   rows={1}
-                  className="max-h-[160px] min-h-[40px] w-full min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-[14px] leading-[22px] text-fg placeholder:text-fg-subtle outline-none"
+                  className="max-h-[160px] min-h-[44px] w-full min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-[14px] leading-[22px] text-fg placeholder:text-fg-subtle outline-none"
                 />
                 {(isRunning || isPaused) ? (
                   <span className="flex shrink-0 items-center gap-1.5">
                     {isPaused ? (
-                      <button type="button" onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} title="Pokračovat v běhu" aria-label="Pokračovat v běhu" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:text-fg disabled:opacity-40"><Play size={15} /></button>
+                      <button type="button" onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} title="Pokračovat v běhu" aria-label="Pokračovat v běhu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:text-fg disabled:opacity-40"><Play size={15} /></button>
                     ) : (
-                      <button type="button" onClick={() => pauseResume.mutate("pause")} disabled={pauseResume.isPending} title="Pozastavit běh" aria-label="Pozastavit běh" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:text-fg disabled:opacity-40"><Pause size={15} /></button>
+                      <button type="button" onClick={() => pauseResume.mutate("pause")} disabled={pauseResume.isPending} title="Pozastavit běh" aria-label="Pozastavit běh" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:text-fg disabled:opacity-40"><Pause size={15} /></button>
                     )}
-                    <button type="button" onClick={() => stopRun.mutate()} disabled={stopRun.isPending} title="Zastavit běh" aria-label="Zastavit běh" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:border-danger/50 hover:text-danger disabled:opacity-40"><Square size={14} /></button>
+                    <button type="button" onClick={() => stopRun.mutate()} disabled={stopRun.isPending} title="Zastavit běh" aria-label="Zastavit běh" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border text-fg-muted transition-colors hover:border-danger/50 hover:text-danger disabled:opacity-40"><Square size={14} /></button>
                   </span>
                 ) : (
-                  <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" aria-label="Odeslat zprávu" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={17} strokeWidth={2.2} /></button>
+                  <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" aria-label="Odeslat zprávu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={17} strokeWidth={2.2} /></button>
                 )}
               </div>
             </form>
@@ -636,7 +636,7 @@ export function BrowserCardRow({ title, onOpen }: { title: string; onOpen: () =>
     <div className="flex items-center gap-2">
       <Globe size={13} className="shrink-0 text-fg-subtle" />
       <span className="min-w-0 flex-1 truncate text-[12px] text-fg-muted">Prohlížeč · {title}</span>
-      <button onClick={onOpen} className="pressable shrink-0 text-[12px] font-[600] text-accent hover:underline">
+      <button onClick={onOpen} className="pressable flex min-h-[44px] shrink-0 items-center px-1.5 text-[12px] font-[600] text-accent hover:underline">
         Náhled
       </button>
     </div>
@@ -645,7 +645,7 @@ export function BrowserCardRow({ title, onOpen }: { title: string; onOpen: () =>
 
 export function BrowserCard({ title, onOpen }: { title: string; onOpen: () => void }) {
   return (
-    <div className="mx-auto w-full max-w-[760px] px-4 py-1">
+    <div className="mx-auto w-full max-w-[760px] px-3 sm:px-4 py-1">
       <div className="ml-[34px]"><BrowserCardRow title={title} onOpen={onOpen} /></div>
     </div>
   );
@@ -679,7 +679,7 @@ export function GroupedSteps({
   const showBrowser = messages.some(hasBrowserTools);
   const images = messages.flatMap(messageImages);
   return (
-    <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
+    <div className="mx-auto w-full max-w-[760px] px-3 sm:px-4 py-1.5">
       <div className="min-w-0">
         <details className="group px-0.5 py-1">
           <summary className="flex cursor-pointer list-none items-center gap-0.5 text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
@@ -714,7 +714,7 @@ export function ArtifactCard({ image, title, bare }: { image: { mimeType: string
   );
   if (bare) return <div className="py-1.5">{inner}</div>;
   return (
-    <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
+    <div className="mx-auto w-full max-w-[760px] px-3 sm:px-4 py-1.5">
       {inner}
     </div>
   );

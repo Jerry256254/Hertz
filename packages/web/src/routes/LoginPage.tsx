@@ -17,7 +17,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center bg-bg px-4 py-8">
+    <div className="flex min-h-dvh items-center justify-center bg-bg px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(2rem,env(safe-area-inset-top))]">
       <form onSubmit={onSubmit} className="w-full max-w-[380px] rounded-[24px] border border-border bg-bg-raised p-6 shadow-sm md:p-8">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-[15px] font-[800] text-white">H</div>

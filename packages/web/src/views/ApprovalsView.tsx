@@ -10,7 +10,7 @@ export function ApprovalsView() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-[60px] shrink-0 items-center gap-3 px-3 md:px-5">
+      <header className="safe-top flex h-14 shrink-0 items-center gap-3 px-3 sm:h-[60px] md:px-5">
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-warning-wash text-warning"><ShieldCheck size={18} /></span>
         <div>
           <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Schválení</p>
@@ -25,7 +25,7 @@ export function ApprovalsView() {
           {isError && (
             <div className="rounded-[20px] border border-danger/30 bg-danger-wash p-5 text-center">
               <p className="text-[13.5px] font-[600] text-fg">Schválení se nepodařilo načíst.</p>
-              <button onClick={() => refetch()} className="pressable mt-3 rounded-full bg-danger px-4 py-2 text-[13px] font-[600] text-white">
+              <button onClick={() => refetch()} className="pressable mt-3 inline-flex min-h-[44px] items-center rounded-full bg-danger px-4 py-2 text-[13px] font-[600] text-white">
                 Zkusit znovu
               </button>
             </div>

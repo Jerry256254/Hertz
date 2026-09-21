@@ -19,9 +19,10 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: "h-[32px] px-4 text-[12.5px] gap-1.5 rounded-full",
-  md: "h-[38px] px-5 text-[13.5px] gap-2 rounded-full",
-  lg: "h-[46px] px-7 text-[14.5px] gap-2.5 rounded-full",
+  // Všechny velikosti tlačítek drží minimum 44 px — cíl pro prst na mobilu.
+  sm: "min-h-[44px] px-4 py-1.5 text-[12.5px] gap-1.5 rounded-full",
+  md: "min-h-[48px] px-5 text-[13.5px] gap-2 rounded-full",
+  lg: "min-h-[52px] px-7 text-[14.5px] gap-2.5 rounded-full",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -44,7 +45,8 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
   ({ className = "", ...props }, ref) => (
     <button
       ref={ref}
-      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-transparent text-fg-muted hover:bg-bg-sunken hover:text-fg active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      // 44×44 — minimální pohodlný cíl pro prst.
+      className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-fg-muted hover:bg-bg-sunken hover:text-fg active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
       {...props}
     />
   ),
@@ -55,7 +57,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ({ className = "", ...props }, ref) => (
     <input
       ref={ref}
-      className={`h-[40px] w-full rounded-full border border-border bg-bg-sunken px-4 text-[14px] leading-none text-fg placeholder:text-fg-subtle outline-none focus:border-accent disabled:opacity-50 ${className}`}
+      className={`h-11 w-full rounded-full border border-border bg-bg-sunken px-4 text-[14px] leading-none text-fg placeholder:text-fg-subtle outline-none focus:border-accent disabled:opacity-50 ${className}`}
       {...props}
     />
   ),
@@ -66,7 +68,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   ({ className = "", ...props }, ref) => (
     <textarea
       ref={ref}
-      className={`w-full resize-none rounded-[16px] border border-border bg-bg-sunken px-4 py-3 text-[14px] leading-relaxed text-fg placeholder:text-fg-subtle outline-none focus:border-accent disabled:opacity-50 ${className}`}
+      className={`min-h-[44px] w-full resize-none rounded-[16px] border border-border bg-bg-sunken px-4 py-3 text-[14px] leading-relaxed text-fg placeholder:text-fg-subtle outline-none focus:border-accent disabled:opacity-50 ${className}`}
       {...props}
     />
   ),

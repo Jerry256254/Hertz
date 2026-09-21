@@ -55,7 +55,7 @@ export function ModelFields({
         id={`${idPrefix}-provider`}
         value={known ? providerId : ""}
         onChange={(e) => pickProvider(e.target.value)}
-        className="h-10 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[13px] text-fg outline-none focus:border-accent"
+        className="h-11 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[13px] text-fg outline-none focus:border-accent"
       >
         {!known && (
           <option value="" disabled>
@@ -80,7 +80,7 @@ export function ModelFields({
         value={model}
         onChange={(e) => onModelChange(e.target.value)}
         placeholder="…nebo napiš ID modelu ručně"
-        className="mono mt-2 h-10 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[12.5px] text-fg outline-none focus:border-accent"
+        className="mono mt-2 h-11 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[12.5px] text-fg outline-none focus:border-accent"
       />
     </div>
   );

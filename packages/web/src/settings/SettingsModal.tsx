@@ -40,8 +40,8 @@ export function SettingsModal({ agent, projectId, initialSection = "agent", onCl
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" style={{ backdropFilter: "blur(6px)" }} onClick={onClose}>
-      <div className="flex max-h-[92dvh] w-full max-w-[600px] animate-fade-in overflow-hidden rounded-[24px] border border-border bg-bg shadow-popover" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 sm:items-center sm:p-4" style={{ backdropFilter: "blur(6px)" }} onClick={onClose}>
+      <div className="safe-bottom flex max-h-[94dvh] w-full animate-fade-in overflow-hidden rounded-t-[24px] border border-border bg-bg shadow-popover sm:max-h-[92dvh] sm:max-w-[600px] sm:rounded-[24px]" onClick={(e) => e.stopPropagation()}>
         {/* Levý sloupec s navigací (na mobilu skrytý — tam jsou záložky pod hlavičkou) */}
         <nav aria-label="Sekce nastavení" className="flex w-[188px] shrink-0 flex-col border-r border-border bg-bg-sidebar p-2.5 max-sm:hidden">
           <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
@@ -50,21 +50,21 @@ export function SettingsModal({ agent, projectId, initialSection = "agent", onCl
                 key={n.id}
                 onClick={() => setSection(n.id)}
                 aria-current={section === n.id ? "true" : undefined}
-                className={`pressable flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[13.5px] ${section === n.id ? "bg-bg-sunken font-[600] text-fg" : "text-fg-muted hover:bg-bg-sunken/50 hover:text-fg"}`}
+                className={`pressable flex min-h-[44px] w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[13.5px] ${section === n.id ? "bg-bg-sunken font-[600] text-fg" : "text-fg-muted hover:bg-bg-sunken/50 hover:text-fg"}`}
               >
                 <span className="shrink-0">{n.icon}</span>
                 {n.label}
               </button>
             ))}
           </div>
-          <button onClick={() => void logout()} className="pressable mt-2 flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[13.5px] text-fg-muted hover:bg-bg-sunken/50 hover:text-danger">
+          <button onClick={() => void logout()} className="pressable mt-2 flex min-h-[44px] w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[13.5px] text-fg-muted hover:bg-bg-sunken/50 hover:text-danger">
             <LogOut size={15} /> Odhlásit se
           </button>
           {user?.email && <p className="truncate px-3 pb-1 pt-1.5 text-[11px] text-fg-subtle">{user.email}</p>}
         </nav>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-1 pt-4">
+          <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-4 sm:px-5">
             <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">{NAV.find((n) => n.id === section)?.label}</p>
             <div className="flex items-center gap-1">
               <button onClick={() => void logout()} title="Odhlásit se" aria-label="Odhlásit se" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-danger sm:hidden"><LogOut size={17} /></button>
@@ -72,7 +72,7 @@ export function SettingsModal({ agent, projectId, initialSection = "agent", onCl
             </div>
           </div>
           {/* Záložky pro mobil */}
-          <div className="flex shrink-0 gap-1.5 overflow-x-auto px-5 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:hidden" role="tablist" aria-label="Sekce nastavení">
+          <div className="scrollbar-none flex shrink-0 gap-1.5 overflow-x-auto px-4 pb-3 sm:hidden sm:px-5" role="tablist" aria-label="Sekce nastavení">
             {NAV.map((n) => (
               <button
                 key={n.id}
@@ -85,7 +85,7 @@ export function SettingsModal({ agent, projectId, initialSection = "agent", onCl
               </button>
             ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-5 pb-6 pt-4">
+          <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-4 pb-6 pt-4 sm:px-5">
             {section === "agent" && <AgentSection agent={agent} />}
             {section === "model" && <ModelSection agent={agent} />}
             {section === "folders" && <FoldersSection projectId={projectId} />}

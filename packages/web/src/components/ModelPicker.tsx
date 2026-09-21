@@ -79,7 +79,7 @@ export function ModelPicker({
             placeholder="Filtrovat modely…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="h-8 pl-7 text-xs"
+            className="pl-7 text-xs"
           />
         </div>
         <button
@@ -87,7 +87,7 @@ export function ModelPicker({
           title="Znovu načíst modely od providera"
           disabled={modelsQuery.isFetching}
           onClick={() => void queryClient.invalidateQueries({ queryKey: ["provider-models", providerConfigId] })}
-          className="pressable shrink-0 rounded-full border border-border bg-bg-sunken p-2 text-fg-muted hover:text-fg disabled:opacity-40"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-40"
         >
           <RefreshCw size={13} className={modelsQuery.isFetching ? "animate-spin" : ""} />
         </button>
@@ -98,7 +98,7 @@ export function ModelPicker({
             key={m.id}
             type="button"
             onClick={() => onChange(m.id)}
-            className={`mono flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs ${
+            className={`mono flex min-h-[44px] w-full items-center justify-between px-2.5 py-1.5 text-left text-xs ${
               value === m.id ? "bg-accent-wash text-accent" : "text-fg hover:bg-bg-hover"
             }`}
           >

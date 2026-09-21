@@ -115,7 +115,7 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
         <span className="flex-1" />
         <button
           onClick={() => { setCreating(true); setEditing(false); setSelected(null); setError(null); }}
-          className="pressable flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white"
+          className="pressable flex min-h-[44px] items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white"
         >
           <Plus size={14} /> Nová dovednost
         </button>
@@ -239,8 +239,8 @@ function SkillDetail({ file, onEdit, onDelete }: {
         {file.isDefault && (
           <span className="shrink-0 rounded-full border border-border bg-bg-sunken px-2.5 py-1 text-[11px] font-[600] text-fg-muted">výchozí</span>
         )}
-        <button onClick={onEdit} title="Upravit" aria-label="Upravit dovednost" className="pressable rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg"><Pencil size={15} /></button>
-        <button onClick={() => onDelete(file.name)} title="Smazat" aria-label="Smazat dovednost" className="pressable rounded-full p-2 text-fg-muted hover:bg-danger-wash hover:text-danger"><Trash2 size={15} /></button>
+        <button onClick={onEdit} title="Upravit" aria-label="Upravit dovednost" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg"><Pencil size={15} /></button>
+        <button onClick={() => onDelete(file.name)} title="Smazat" aria-label="Smazat dovednost" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-danger-wash hover:text-danger"><Trash2 size={15} /></button>
       </div>
       <div className="mt-3 border-t border-border pt-3">
         <Markdown>{file.body}</Markdown>
@@ -285,7 +285,7 @@ function SkillForm({ agentId, initial, onDone, onCancel }: {
       <div className="flex items-center gap-2">
         <p className="text-[15px] font-[700] text-fg">{initial ? `Upravit „${initial.name}"` : "Nová dovednost"}</p>
         <span className="flex-1" />
-        <button onClick={onCancel} title="Zavřít" className="pressable rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={15} /></button>
+        <button onClick={onCancel} title="Zavřít" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={15} /></button>
       </div>
       {error && <p className="mt-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{error}</p>}
       <div className="mt-3 space-y-3">
@@ -306,10 +306,10 @@ function SkillForm({ agentId, initial, onDone, onCancel }: {
           <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={4} placeholder="#!/bin/bash" className={`${inputCls} mono resize-y`} />
         </div>
         <div className="flex gap-2">
-          <button onClick={() => save.mutate()} disabled={save.isPending || !name.trim() || !description.trim() || !instructions.trim()} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+          <button onClick={() => save.mutate()} disabled={save.isPending || !name.trim() || !description.trim() || !instructions.trim()} className="pressable min-h-[44px] rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
             {save.isPending ? "Ukládám…" : "Uložit dovednost"}
           </button>
-          <button onClick={onCancel} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
+          <button onClick={onCancel} className="pressable min-h-[44px] rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
         </div>
       </div>
     </div>

@@ -52,7 +52,7 @@ export function DirectoryPicker({
           <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-4">
             <Dialog.Title className="text-sm font-semibold text-fg">Vyber složku</Dialog.Title>
 <Dialog.Close asChild>
-              <button aria-label="Zavřít" className="flex h-10 w-10 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
+              <button aria-label="Zavřít" className="flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
                 <X size={16} />
               </button>
             </Dialog.Close>

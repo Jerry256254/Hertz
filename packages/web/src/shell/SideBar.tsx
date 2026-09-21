@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageSquare, MessageSquarePlus, Plus, Search, Send, Trash2 } from "lucide-react";
+import { MessageSquare, MessageSquarePlus, Plus, Search, Send, Trash2, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { Agent, ChannelBinding, ChannelConfig, SessionListItem } from "../lib/types";
@@ -16,6 +16,7 @@ export function SideBar({
   onSelectChat,
   onSelectChannel,
   onOpenSearch,
+  onClose,
 }: {
   agent: Agent;
   projectId: string;
@@ -25,6 +26,8 @@ export function SideBar({
   onSelectChat: (sessionId: string) => void;
   onSelectChannel: (binding: ChannelBinding) => void;
   onOpenSearch: () => void;
+  /** Zavře drawer — jen na mobilu, kde je panel overlay. */
+  onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -82,6 +85,14 @@ export function SideBar({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-semibold tracking-[-0.01em] text-fg">{agent.name}</span>
         </span>
+        <button
+          onClick={onClose}
+          title="Zavřít panel"
+          aria-label="Zavřít panel"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg md:hidden"
+        >
+          <X size={17} />
+        </button>
       </div>
 
       {/* actions */}
@@ -89,7 +100,7 @@ export function SideBar({
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenSearch}
-            className="pressable flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-border-faint bg-bg-raised px-3.5 text-[13px] text-fg-subtle shadow-xs hover:border-border-strong hover:text-fg-muted"
+            className="pressable flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-border-faint bg-bg-raised px-3.5 text-[13px] text-fg-subtle shadow-xs hover:border-border-strong hover:text-fg-muted"
           >
             <Search size={15} className="shrink-0" />
             <span className="truncate">Hledat v chatech</span>
@@ -99,7 +110,7 @@ export function SideBar({
             disabled={createChat.isPending}
             title="Nový chat"
             aria-label="Nový chat"
-            className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent text-white shadow-sm hover:bg-accent-hover disabled:opacity-50"
+            className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent text-white shadow-sm hover:bg-accent-hover disabled:opacity-50"
           >
             <Plus size={17} strokeWidth={2.5} />
           </button>
@@ -206,13 +217,13 @@ export function SideBar({
                     <span className="flex shrink-0 items-center gap-1.5 pr-2">
                       <button
                         onClick={() => deleteChat.mutate(s.id)}
-                        className="pressable h-9 rounded-full bg-danger px-3.5 text-[12px] font-bold text-white hover:brightness-110"
+                        className="pressable min-h-[44px] rounded-full bg-danger px-3.5 text-[12px] font-bold text-white hover:brightness-110"
                       >
                         Smazat
                       </button>
                       <button
                         onClick={() => setConfirmDelete(null)}
-                        className="pressable h-9 rounded-full bg-bg-hover px-3.5 text-[12px] font-semibold text-fg-muted hover:text-fg"
+                        className="pressable min-h-[44px] rounded-full bg-bg-hover px-3.5 text-[12px] font-semibold text-fg-muted hover:text-fg"
                       >
                         Nechat
                       </button>
@@ -222,7 +233,7 @@ export function SideBar({
                       onClick={() => setConfirmDelete(s.id)}
                       title="Smazat chat"
                       aria-label="Smazat chat"
-                      className="pressable mr-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-faint hover:bg-bg-sunken hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                      className="pressable mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-faint hover:bg-bg-sunken hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -267,7 +278,7 @@ function ChatRow({
   return (
     <button
       onClick={onClick}
-      className={`pressable flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors duration-150 ${
+      className={`pressable flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors duration-150 ${
         active ? "bg-accent/[0.10] ring-1 ring-inset ring-accent/20" : "hover:bg-white/[0.045]"
       }`}
     >

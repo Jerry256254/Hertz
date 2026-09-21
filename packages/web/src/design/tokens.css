@@ -92,6 +92,44 @@
   --z-overlay: 30;
   --z-popover: 40;
   --z-toast: 50;
+
+  /* safe-area insets (notch / gesta) — 0 na zařízeních bez výřezu */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+
+  /* minimální pohodlný cíl pro prst */
+  --tap-min: 44px;
+}
+
+/* pomocné třídy pro safe-area — používej na okrajích fullscreen ploch.
+   !important, aby vyhrály i nad Tailwind padding utilitami (tokens.css se
+   importuje před @tailwind utilities). */
+.safe-top { padding-top: var(--sat) !important; }
+.safe-bottom { padding-bottom: var(--sab) !important; }
+.safe-x { padding-left: var(--sal) !important; padding-right: var(--sar) !important; }
+
+/* žádný horizontální scroll na úrovni stránky — přetečení patří dovnitř komponent */
+html, body { overflow-x: clip; }
+
+/* nativní pocit z klepnutí: žádný šedý záblesk, žádná 300ms prodleva */
+button, a, summary, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* každé rozbalovací „details" je pohodlný cíl pro prst */
+details > summary { display: flex; min-height: var(--tap-min); align-items: center; }
+
+/* skrytí posuvníku u horizontálních lišt (záložky, chipy) */
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Na telefonech nikdy nezmenšovat text ve formulářových polích pod 16 px —
+   iOS Safari by při focusu automaticky přibližoval celou stránku. */
+@media (max-width: 639px) {
+  input, select, textarea { font-size: 16px !important; }
 }
 
 /* ── base ── */

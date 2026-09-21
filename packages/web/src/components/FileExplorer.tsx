@@ -62,9 +62,9 @@ export function FileExplorer({
   return (
     <div className="flex h-full flex-col bg-bg-raised">
       <div className="flex min-h-[48px] shrink-0 items-center gap-2 border-b border-border px-2">
-        <button onClick={goUp} disabled={currentPath === "."} aria-label="O úroveň výš" className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><ChevronUp size={14} /></button>
+        <button onClick={goUp} disabled={currentPath === "."} aria-label="O úroveň výš" className="flex h-11 w-11 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><ChevronUp size={14} /></button>
         <span className="mono truncate text-[11px] font-[500] tracking-wide text-fg-muted">{currentPath === "." ? "/" : currentPath}</span>
-        <button onClick={promptNewFolder} disabled={createFolder.isPending} title="Nová složka" aria-label="Nová složka" className="ml-auto flex h-10 w-10 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><FolderPlus size={14} /></button>
+        <button onClick={promptNewFolder} disabled={createFolder.isPending} title="Nová složka" aria-label="Nová složka" className="ml-auto flex h-11 w-11 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><FolderPlus size={14} /></button>
         {isFetching && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-live pulse-live" />}
       </div>
       {createFolder.isError && <p className="shrink-0 border-b border-danger/20 bg-danger-wash px-2 py-1.5 mono text-[11px] text-danger">{(createFolder.error as Error).message}</p>}

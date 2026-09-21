@@ -34,14 +34,14 @@ export function ComputerView({ agent, projectId, bare = false }: { agent: Agent;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {!bare ? (
-        <header className="flex h-[60px] shrink-0 items-center gap-3 px-3 md:px-5">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-wash text-success"><Monitor size={18} /></span>
-          <div>
+        <header className="safe-top flex h-14 shrink-0 items-center gap-2.5 px-3 sm:h-[60px] sm:gap-3 md:px-5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-success-wash text-success"><Monitor size={18} /></span>
+          <div className="min-w-0">
             <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Počítač</p>
-            <p className="text-[12px] text-fg-muted">{statusLine()}</p>
+            <p className="truncate text-[12px] text-fg-muted">{statusLine()}</p>
           </div>
           <span className="flex-1" />
-          <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
+          <div className="flex shrink-0 gap-1 rounded-full border border-border bg-bg-raised p-1">
             <ComputerTab active={tab === "files"} onClick={() => setTab("files")} icon={<FolderOpen size={14} />} label="Soubory" />
             <ComputerTab active={tab === "shells"} onClick={() => setTab("shells")} icon={<Terminal size={14} />} label="Terminály" />
             <ComputerTab active={tab === "desktop"} onClick={() => setTab("desktop")} icon={<Monitor size={14} />} label="Obrazovka" />

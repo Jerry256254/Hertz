@@ -64,7 +64,7 @@ export function FileAttachmentCard({ attachment, projectId }: { attachment: Mess
           <button
             type="button"
             onClick={() => setPreviewOpen((v) => !v)}
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[12.5px] font-[600] text-fg-muted transition-colors hover:bg-bg-sunken hover:text-fg"
+            className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[12.5px] font-[600] text-fg-muted transition-colors hover:bg-bg-sunken hover:text-fg"
           >
             {previewOpen ? <X size={13} /> : <Eye size={13} />}
             {previewOpen ? "Skrýt náhled" : "Náhled"}
@@ -73,7 +73,7 @@ export function FileAttachmentCard({ attachment, projectId }: { attachment: Mess
         <a
           href={downloadUrl}
           download={attachment.filename}
-          className="flex shrink-0 items-center gap-1.5 rounded-full bg-fg px-3.5 py-1.5 text-[12.5px] font-[600] text-fg-inverse transition-opacity hover:opacity-90"
+          className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full bg-fg px-3.5 py-1.5 text-[12.5px] font-[600] text-fg-inverse transition-opacity hover:opacity-90"
         >
           <Download size={13} />
           Stáhnout

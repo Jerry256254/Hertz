@@ -53,7 +53,7 @@ function ShellRow({ shell }: { shell: EmployeeShell }) {
           <button
             title="Zavřít terminál"
             onClick={() => { if (window.confirm(`Zavřít terminál „${shell.name}“?`)) remove.mutate(); }}
-            className="rounded-full p-2 text-fg-subtle hover:bg-bg-sunken hover:text-danger"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-danger"
           >
             <Trash2 size={14} />
           </button>
@@ -62,7 +62,7 @@ function ShellRow({ shell }: { shell: EmployeeShell }) {
       {bufferError && (
         <p className="mt-2 text-[12px] text-danger">
           {bufferError}{" "}
-          <button onClick={loadBuffer} className="font-[600] hover:underline">
+          <button onClick={loadBuffer} className="inline-flex min-h-[44px] items-center px-1 font-[600] hover:underline">
             Zkusit znovu
           </button>
         </p>
@@ -107,7 +107,7 @@ export function ShellsPanel({ agentId }: { agentId: string }) {
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Terminály</h2>
-        <button onClick={() => setShowForm((v) => !v)} className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg">
+        <button onClick={() => setShowForm((v) => !v)} className="flex min-h-[44px] items-center gap-1.5 px-2 text-[13px] font-[600] text-fg-muted hover:text-fg">
           <Plus size={13} /> Nový terminál
         </button>
       </div>

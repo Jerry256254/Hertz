@@ -36,7 +36,7 @@ export function MessageView({
   if (message.purpose === "summarization") {
     const text = message.content.filter((b) => b.type === "text").map((b) => (b.type === "text" ? b.text : "")).join("\n");
     return (
-      <div className="mx-auto w-full max-w-[760px] px-4 py-2">
+      <div className="mx-auto w-full max-w-[760px] px-3 py-2 sm:px-4">
         <details className="group rounded-[16px] border border-border bg-bg-raised px-4 py-2.5">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-[12px] font-[600] text-fg-muted marker:hidden">
             <Minimize2 size={12} className="shrink-0" />
@@ -57,7 +57,7 @@ export function MessageView({
     const onlyText = textBlocks.length === 1 && imageBlocks.length === 0 && toolResults.length === 0 ? textBlocks[0] : undefined;
     if (onlyText?.type === "text" && onlyText.text.startsWith(NUDGE_PREFIX)) {
       return (
-        <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
+        <div className="mx-auto w-full max-w-[760px] px-3 py-1.5 sm:px-4">
           <p className="rounded-[14px] border border-dashed border-border px-4 py-2.5 text-center text-[12.5px] italic leading-relaxed text-fg-muted">
             {onlyText.text.slice(NUDGE_PREFIX.length).trim()}
           </p>
@@ -68,8 +68,8 @@ export function MessageView({
     // Stacked same-side bubbles square the corners facing their neighbours.
     const rounding = `rounded-[22px] ${lastInRun ? "rounded-br-[7px]" : ""} ${firstInRun ? "" : "rounded-tr-[7px]"}`;
     return (
-      <div className={`mx-auto flex w-full max-w-[760px] animate-fade-in justify-end px-4 ${firstInRun ? "pt-2.5" : "pt-[3px]"} ${lastInRun ? "pb-2.5" : "pb-[3px]"}`}>
-        <div className="flex max-w-[78%] flex-col items-end">
+      <div className={`mx-auto flex w-full max-w-[760px] animate-fade-in justify-end px-3 sm:px-4 ${firstInRun ? "pt-2.5" : "pt-[3px]"} ${lastInRun ? "pb-2.5" : "pb-[3px]"}`}>
+        <div className="flex max-w-[85%] flex-col items-end sm:max-w-[78%]">
           <div
             className={rounding}
             style={{
@@ -101,8 +101,8 @@ export function MessageView({
 
   const rounding = `rounded-[22px] ${lastInRun ? "rounded-bl-[7px]" : ""} ${firstInRun ? "" : "rounded-tl-[7px]"}`;
   return (
-    <div className={`mx-auto w-full max-w-[760px] animate-fade-in px-4 ${firstInRun ? "pt-2.5" : "pt-[3px]"} ${lastInRun ? "pb-2.5" : "pb-[3px]"}`}>
-      <div className="max-w-[88%]">
+    <div className={`mx-auto w-full max-w-[760px] animate-fade-in px-3 sm:px-4 ${firstInRun ? "pt-2.5" : "pt-[3px]"} ${lastInRun ? "pb-2.5" : "pb-[3px]"}`}>
+      <div className="max-w-[92%] sm:max-w-[88%]">
         {firstInRun && (
           <div className="mb-1.5 flex select-none items-baseline gap-1.5 pl-[18px]">
             <span className="text-[11.5px] font-[700] uppercase tracking-[0.04em] text-fg-subtle">{agentName ?? "Hertz"}</span>

@@ -34,7 +34,7 @@ export function SearchOverlay({ agent, onClose, onSelect }: { agent: Agent; onCl
         <div className="flex items-center gap-2.5 border-b border-border px-5 py-4">
           <Search size={17} className="shrink-0 text-fg-subtle" />
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Hledat" className="w-full bg-transparent text-[16px] text-fg placeholder:text-fg-subtle outline-none" />
-          <button onClick={onClose} aria-label="Zavřít hledání" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-fg"><X size={16} /></button>
+          <button onClick={onClose} aria-label="Zavřít hledání" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-fg"><X size={16} /></button>
         </div>
         <div className="max-h-[50vh] overflow-y-auto p-2.5">
           <p className="px-3 pb-1 pt-1.5 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">{q.trim() ? "VÝSLEDKY" : "NEDÁVNÉ"}</p>

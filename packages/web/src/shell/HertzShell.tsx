@@ -5,6 +5,7 @@ import type { Agent, ChannelBinding, Project, ProviderConfig } from "../lib/type
 import { Button, Input, Label } from "../components/ui";
 import { AgentAvatar } from "../components/AgentAvatar";
 import { IconRail, type Module } from "./IconRail";
+import { MobileTabBar } from "./MobileTabBar";
 import { SideBar } from "./SideBar";
 import { ChatView } from "../chat/ChatView";
 import { AgentPanel, type AgentTab } from "../panels/AgentPanel";
@@ -84,7 +85,7 @@ export function HertzShell() {
       <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
         <p className="text-[15px] font-[600] text-fg">Agenta se nepodařilo načíst</p>
         <p className="text-[13px] text-fg-muted">{agentQuery.error instanceof Error ? agentQuery.error.message : "Neznámá chyba"}</p>
-        <button onClick={() => void queryClient.invalidateQueries({ queryKey: ["agent"] })} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white">
+        <button onClick={() => void queryClient.invalidateQueries({ queryKey: ["agent"] })} className="pressable min-h-[44px] rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white">
           Zkusit znovu
         </button>
       </div>
@@ -104,15 +105,19 @@ export function HertzShell() {
     setActiveSessionId(id);
     setActiveBinding(null);
     setModule("chat");
+    // Na mobilu se drawer po výběru sám zavře — jako nativní appka.
+    if (window.innerWidth < 768) setSidebarOpen(false);
   }
   function selectChannel(b: ChannelBinding) {
     setActiveBinding(b);
     setModule("channel");
+    if (window.innerWidth < 768) setSidebarOpen(false);
   }
 
   return (
-    <div className="flex h-full min-h-0 bg-bg">
+    <div className="flex h-dvh min-h-0 bg-bg">
       <IconRail
+        className="hidden md:flex"
         module={module}
         pendingApprovals={pendingCount}
         onModule={(m) => {
@@ -125,8 +130,8 @@ export function HertzShell() {
 
       {showSidebar && (
         <>
-          <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed inset-y-0 left-0 z-40 flex w-[320px] max-w-[86vw] animate-slide-in flex-col border-r border-border bg-bg-sidebar md:static md:z-auto md:shrink-0">
+          <div className="fixed inset-0 z-30 animate-fade-in bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
+          <aside className="safe-top fixed inset-y-0 left-0 z-40 flex w-[320px] max-w-[86vw] animate-slide-in flex-col border-r border-border bg-bg-sidebar md:static md:z-auto md:shrink-0">
             <SideBar
             agent={agent}
             projectId={projectId}
@@ -136,6 +141,7 @@ export function HertzShell() {
             onSelectChat={selectChat}
             onSelectChannel={selectChannel}
             onOpenSearch={() => setSearchOpen(true)}
+            onClose={() => setSidebarOpen(false)}
           />
           </aside>
         </>
@@ -169,12 +175,24 @@ export function HertzShell() {
         {module === "soul" && <SoulEditor agent={agent} onClose={() => setModule("chat")} />}
         {module === "user-profile" && <UserProfileEditor agent={agent} onClose={() => setModule("chat")} />}
         {module === "approvals" && <ApprovalsView />}
+
+        {/* Spodní lišta místo postranního railu — jen na telefonech */}
+        <MobileTabBar
+          module={module}
+          pendingApprovals={pendingCount}
+          onModule={(m) => {
+            setModule(m);
+            if (m === "chat" && mainChatId && !activeSessionId) setActiveSessionId(mainChatId);
+          }}
+          onSearch={() => setSearchOpen(true)}
+          onSettings={() => setSettingsOpen(true)}
+        />
       </main>
 
       {rightPanel && (
         <>
-          <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setRightPanel(null)} />
-          <aside className={`fixed inset-y-0 right-0 z-40 flex w-[360px] max-w-[92vw] flex-col border-l border-border bg-bg-sidebar lg:static lg:z-auto lg:shrink-0 ${skillsWide ? "lg:w-[640px] xl:w-[720px]" : ""}`}>
+          <div className="fixed inset-0 z-30 animate-fade-in bg-black/50 lg:hidden" onClick={() => setRightPanel(null)} />
+          <aside className={`safe-top fixed inset-y-0 right-0 z-40 flex w-[360px] max-w-[92vw] flex-col border-l border-border bg-bg-sidebar lg:static lg:z-auto lg:shrink-0 ${skillsWide ? "lg:w-[640px] xl:w-[720px]" : ""}`}>
             {rightPanel === "agent" ? (
             <AgentPanel
               agent={agent}
@@ -405,7 +423,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
             <button
               onClick={() => void rerollAvatar()}
               disabled={busy}
-              className="pressable mt-5 rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg-muted hover:text-fg disabled:opacity-50"
+              className="pressable mt-5 min-h-[44px] rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg-muted hover:text-fg disabled:opacity-50"
             >
               {busy ? "Generuji…" : "Vygenerovat jiný vzhled"}
             </button>

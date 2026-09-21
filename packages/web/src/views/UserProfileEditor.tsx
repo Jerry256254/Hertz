@@ -41,20 +41,19 @@ export function UserProfileEditor({ agent, onClose }: { agent: Agent; onClose: (
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-[60px] shrink-0 items-center gap-2.5 px-3 md:px-5">
+      <header className="safe-top flex h-14 shrink-0 items-center gap-2 px-3 sm:h-[60px] md:px-5">
         <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={30} />
-        <h1 className="text-[15px] font-[700] text-fg">USER.md — obraz uživatele</h1>
-        <span className="flex-1" />
-        <button onClick={() => setPreview((v) => !v)} className={`pressable rounded-full px-4 py-2 text-[12.5px] font-[600] ${preview ? "bg-bg-sunken text-fg" : "text-fg-muted hover:text-fg"}`}>
+        <h1 className="min-w-0 flex-1 truncate text-[15px] font-[700] text-fg">USER.md — obraz uživatele</h1>
+        <button onClick={() => setPreview((v) => !v)} className={`pressable min-h-[44px] shrink-0 rounded-full px-4 py-2 text-[12.5px] font-[600] ${preview ? "bg-bg-sunken text-fg" : "text-fg-muted hover:text-fg"}`}>
           {preview ? "Upravit" : "Náhled"}
         </button>
         {dirty && (
-          <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable inline-flex min-h-[44px] items-center rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+          <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable hidden min-h-[44px] items-center rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white disabled:opacity-40 sm:inline-flex">
             {save.isPending ? "Ukládám…" : saved ? "Uloženo" : "Uložit"}
           </button>
         )}
-        {saved && !dirty && <span className="text-[13px] font-[600] text-live">Uloženo</span>}
-        <button onClick={askClose} title="Zavřít" aria-label="Zavřít" className="pressable flex h-10 w-10 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
+        {saved && !dirty && <span className="hidden shrink-0 text-[13px] font-[600] text-live sm:inline">Uloženo</span>}
+        <button onClick={askClose} title="Zavřít" aria-label="Zavřít" className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
           <X size={16} />
         </button>
       </header>
@@ -81,6 +80,14 @@ export function UserProfileEditor({ agent, onClose }: { agent: Agent; onClose: (
           )}
         </div>
       </div>
+      {/* Uložit na dosah palce — na mobilu v dolní liště, ne v hlavičce */}
+      {dirty && (
+        <div className="shrink-0 border-t border-border bg-bg px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:hidden">
+          <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable flex min-h-[52px] w-full items-center justify-center rounded-full bg-accent text-[14.5px] font-[700] text-white disabled:opacity-40">
+            {save.isPending ? "Ukládám…" : saved ? "Uloženo" : "Uložit změny"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

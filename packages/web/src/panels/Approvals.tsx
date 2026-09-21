@@ -131,14 +131,14 @@ export function ApprovalCard({ approval, compact = false }: { approval: Approval
           <button
             onClick={() => decide.mutate("approved")}
             disabled={decide.isPending}
-            className="pressable flex-1 rounded-full bg-accent py-2 text-[13px] font-[600] text-white hover:bg-accent-hover disabled:opacity-40"
+            className="pressable min-h-[44px] flex-1 rounded-full bg-accent py-2 text-[13px] font-[600] text-white hover:bg-accent-hover disabled:opacity-40"
           >
             Povolit
           </button>
           <button
             onClick={() => decide.mutate("rejected")}
             disabled={decide.isPending}
-            className="pressable flex-1 rounded-full border border-border bg-bg-sunken py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40"
+            className="pressable min-h-[44px] flex-1 rounded-full border border-border bg-bg-sunken py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40"
           >
             Zamítnout
           </button>

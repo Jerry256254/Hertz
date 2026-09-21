@@ -33,10 +33,10 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="mono text-[11px] text-fg-subtle">{lang}</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => void download()} title="Stáhnout" className="rounded-full p-1.5 text-fg-muted hover:bg-bg-sunken hover:text-fg">
+          <button onClick={() => void download()} title="Stáhnout" className="flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
             <Download size={13} />
           </button>
-          <button onClick={() => void copy()} title="Kopírovat" className="rounded-full p-1.5 text-fg-muted hover:bg-bg-sunken hover:text-fg">
+          <button onClick={() => void copy()} title="Kopírovat" className="flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
             {copied ? <Check size={13} className="text-live" /> : <Copy size={13} />}
           </button>
         </div>

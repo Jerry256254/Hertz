@@ -21,11 +21,11 @@ export function SubagentIndicator({ subagents }: { subagents: SubagentInfo[] }) 
 
   const names = active.map((s) => s.label).join(", ");
   return (
-    <div className="shrink-0 px-3 pt-2 md:px-5">
+    <div className="shrink-0 px-3 pt-2 sm:px-4">
       <div className="mx-auto w-full max-w-[760px]">
         <button
           onClick={() => setOpen((o) => !o)}
-          className="pressable flex w-full items-center gap-2 rounded-[14px] border border-border bg-bg-raised px-3.5 py-2 text-left hover:bg-bg-hover"
+          className="pressable flex min-h-[44px] w-full items-center gap-2 rounded-[14px] border border-border bg-bg-raised px-3.5 py-2 text-left hover:bg-bg-hover"
           title="Podagenti pracující na pozadí"
         >
           <span className="relative flex h-2 w-2 shrink-0">

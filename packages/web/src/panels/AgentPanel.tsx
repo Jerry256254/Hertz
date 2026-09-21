@@ -45,28 +45,29 @@ export function AgentPanel({
           <X size={14} />
         </button>
         <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={48} />
-        <p className="mt-1.5 text-[15px] font-[700] tracking-[-0.02em] text-fg">{agent.name}</p>
+        <p className="mt-1.5 max-w-full truncate px-2 text-[15px] font-[700] tracking-[-0.02em] text-fg">{agent.name}</p>
         <ModelRow agent={agent} />
-        <div className="mt-2.5 grid w-full grid-cols-7 gap-1 rounded-full border border-border bg-bg-raised p-0.5">
-          <PanelTabButton active={tab === "activity"} onClick={() => onTabChange("activity")} title="Aktivita">
+        {/* Záložky s popisky: horizontálně rolovatelné, každá min. 44 px vysoká */}
+        <div className="scrollbar-none mt-2.5 flex w-full gap-1 overflow-x-auto rounded-full border border-border bg-bg-raised p-1">
+          <PanelTabButton active={tab === "activity"} onClick={() => onTabChange("activity")} title="Aktivita" label="Aktivita">
             <ListTodo size={14} />
           </PanelTabButton>
-          <PanelTabButton active={tab === "approvals"} onClick={() => onTabChange("approvals")} title="Schválení" badge={pendingCount}>
+          <PanelTabButton active={tab === "approvals"} onClick={() => onTabChange("approvals")} title="Schválení" label="Schválení" badge={pendingCount}>
             <ShieldCheck size={14} />
           </PanelTabButton>
-          <PanelTabButton active={tab === "routines"} onClick={() => onTabChange("routines")} title="Rutiny">
+          <PanelTabButton active={tab === "routines"} onClick={() => onTabChange("routines")} title="Rutiny" label="Rutiny">
             <Clock size={14} />
           </PanelTabButton>
-          <PanelTabButton active={tab === "identity"} onClick={() => onTabChange("identity")} title="Identita">
+          <PanelTabButton active={tab === "identity"} onClick={() => onTabChange("identity")} title="Identita" label="Identita">
             <Fingerprint size={14} />
           </PanelTabButton>
-          <PanelTabButton active={tab === "skills"} onClick={() => onTabChange("skills")} title="Dovednosti">
+          <PanelTabButton active={tab === "skills"} onClick={() => onTabChange("skills")} title="Dovednosti" label="Dovednosti">
             <Zap size={14} />
           </PanelTabButton>
-          <PanelTabButton active={tab === "memory"} onClick={() => onTabChange("memory")} title="Paměť">
+          <PanelTabButton active={tab === "memory"} onClick={() => onTabChange("memory")} title="Paměť" label="Paměť">
             <Brain size={14} />
           </PanelTabButton>
-          <PanelTabButton active={tab === "computer"} onClick={() => onTabChange("computer")} title="Počítač">
+          <PanelTabButton active={tab === "computer"} onClick={() => onTabChange("computer")} title="Počítač" label="Počítač">
             <Monitor size={14} />
           </PanelTabButton>
         </div>
@@ -120,7 +121,7 @@ function ModelRow({ agent }: { agent: Agent }) {
 
   if (!open) {
     return (
-      <button onClick={startEdit} title="Změnit model" className="pressable mt-2.5 flex w-full items-center gap-2 rounded-[14px] border border-border bg-bg-raised px-3.5 py-2 text-left hover:bg-bg-hover">
+      <button onClick={startEdit} title="Změnit model" className="pressable mt-2.5 flex min-h-[44px] w-full items-center gap-2 rounded-[14px] border border-border bg-bg-raised px-3.5 py-2 text-left hover:bg-bg-hover">
         <Cpu size={14} className="shrink-0 text-fg-muted" />
         <span className="mono min-w-0 flex-1 truncate text-[12.5px] text-fg">{agent.model}</span>
         <Pencil size={12} className="shrink-0 text-fg-subtle" />
@@ -134,23 +135,24 @@ function ModelRow({ agent }: { agent: Agent }) {
       {currentProvider && <p className="mt-1.5 text-[11.5px] text-fg-subtle">Nyní: {currentProvider.label} · {agent.model}</p>}
       {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
       <div className="mt-2.5 flex gap-2">
-        <button onClick={() => save.mutate()} disabled={save.isPending || !model.trim()} className="pressable flex-1 rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+        <button onClick={() => save.mutate()} disabled={save.isPending || !model.trim()} className="pressable min-h-[44px] flex-1 rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
           {save.isPending ? "Ukládám…" : "Uložit"}
         </button>
-        <button onClick={() => setOpen(false)} className="pressable rounded-full border border-border bg-bg-sunken px-4 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
+        <button onClick={() => setOpen(false)} className="pressable min-h-[44px] rounded-full border border-border bg-bg-sunken px-4 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
       </div>
     </div>
   );
 }
 
-function PanelTabButton({ active, onClick, title, children, badge }: { active: boolean; onClick: () => void; title: string; children: React.ReactNode; badge?: number }) {
+function PanelTabButton({ active, onClick, title, label, children, badge }: { active: boolean; onClick: () => void; title: string; label: string; children: React.ReactNode; badge?: number }) {
   return (
     <button
       onClick={onClick}
       title={title}
-      className={`pressable relative flex items-center justify-center rounded-full py-1.5 ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}
+      className={`pressable relative flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-[600] ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}
     >
       {children}
+      {label}
       {!!badge && badge > 0 && (
         <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-[700] text-white">
           {badge}
@@ -263,17 +265,17 @@ function RoutinesTab({ agent, projectId }: { agent: Agent; projectId: string }) 
     <div>
       <div className="mb-2 flex items-center justify-between px-2">
         <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">Denně</p>
-        <button onClick={() => setShowForm((v) => !v)} className="pressable flex h-7 w-7 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted hover:text-fg">
+        <button onClick={() => setShowForm((v) => !v)} className="pressable flex h-11 w-11 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted hover:text-fg">
           {showForm ? <X size={14} /> : <Plus size={14} />}
         </button>
       </div>
 
       {showForm && (
         <div className="mb-2 space-y-2 rounded-[16px] border border-border bg-bg-raised p-3">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Název rutiny" className="h-10 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Název rutiny" className="h-11 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent" />
           <textarea value={task} onChange={(e) => setTask(e.target.value)} placeholder="Co má agent udělat…" rows={2} className="w-full resize-none rounded-[14px] border border-border bg-bg-sunken px-4 py-2.5 text-[13px] text-fg outline-none focus:border-accent" />
-          <input value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="Rozvrh — např. daily 09:00" className="h-10 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent" />
-          <button onClick={() => create.mutate()} disabled={!title.trim() || !task.trim() || create.isPending} className="pressable w-full rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+          <input value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="Rozvrh — např. daily 09:00" className="h-11 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent" />
+          <button onClick={() => create.mutate()} disabled={!title.trim() || !task.trim() || create.isPending} className="pressable min-h-[44px] w-full rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
             Přidat rutinu
           </button>
           {create.isError && <p className="text-[12px] text-danger">{(create.error as Error).message}</p>}
@@ -299,7 +301,7 @@ function RoutinesTab({ agent, projectId }: { agent: Agent; projectId: string }) 
             <p className={`truncate text-[13px] font-[600] ${r.enabled ? "text-fg" : "text-fg-subtle"}`}>{r.title}</p>
             <p className="truncate text-[12px] text-fg-muted">{r.nextRunAt ? relTime(r.nextRunAt) : r.schedule}</p>
           </div>
-          <button onClick={() => remove.mutate(r.id)} title="Smazat" aria-label="Smazat rutinu" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:text-danger md:hidden md:group-hover:flex md:focus-visible:flex">
+          <button onClick={() => remove.mutate(r.id)} title="Smazat" aria-label="Smazat rutinu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:text-danger md:hidden md:group-hover:flex md:focus-visible:flex">
             <X size={14} />
           </button>
         </div>
@@ -343,11 +345,11 @@ function IdentityTab({ agent, onOpenSoul, onOpenUserProfile, onOpenMemory, onRen
     <div className="space-y-3">
       <div className="flex items-center justify-between rounded-[16px] border border-border bg-bg-raised px-4 py-3">
         {editing ? (
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setName(agent.name); setEditing(false); } }} className="h-9 w-full rounded-full border border-accent bg-bg-sunken px-3.5 text-[14px] text-fg outline-none" />
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setName(agent.name); setEditing(false); } }} className="h-11 w-full rounded-full border border-accent bg-bg-sunken px-3.5 text-[14px] text-fg outline-none" />
         ) : (
           <>
             <p className="text-[15px] font-[600] text-fg">{agent.name}</p>
-            <button onClick={() => setEditing(true)} className="pressable rounded-full border border-border bg-bg-sunken px-4 py-1.5 text-[12.5px] font-[600] text-fg hover:bg-bg-hover">
+            <button onClick={() => setEditing(true)} className="pressable min-h-[44px] rounded-full border border-border bg-bg-sunken px-4 py-1.5 text-[12.5px] font-[600] text-fg hover:bg-bg-hover">
               Upravit
             </button>
           </>
@@ -434,7 +436,7 @@ function ProfileForm({ agent }: { agent: Agent }) {
         <button
           onClick={() => regenerate.mutate()}
           disabled={regenerate.isPending}
-          className="pressable flex items-center gap-1.5 rounded-full border border-border bg-bg-sunken px-3.5 py-2 text-[12.5px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40"
+          className="pressable flex min-h-[44px] items-center gap-1.5 rounded-full border border-border bg-bg-sunken px-3.5 py-2 text-[12.5px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40"
         >
           <RefreshCw size={13} className={regenerate.isPending ? "animate-spin" : ""} />
           {regenerate.isPending ? "Generuji…" : "Nový avatar"}
@@ -448,7 +450,7 @@ function ProfileForm({ agent }: { agent: Agent }) {
           onChange={(e) => setCharacter(e.target.value)}
           placeholder="např. trpělivý průvodce, co věci dotahuje do konce"
           maxLength={200}
-          className="h-10 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent"
+          className="h-11 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent"
         />
       </label>
       <label className="block">
@@ -458,14 +460,14 @@ function ProfileForm({ agent }: { agent: Agent }) {
           onChange={(e) => setVibe(e.target.value)}
           placeholder="např. klidný, vtipný, přímý"
           maxLength={200}
-          className="h-10 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent"
+          className="h-11 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent"
         />
       </label>
 
       {err && <p className="px-1 text-[12px] text-danger">{err}</p>}
       {savedTick && !dirty && <p className="px-1 text-[12px] font-[600] text-live">Uloženo</p>}
       {dirty && (
-        <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable w-full rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+        <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable min-h-[44px] w-full rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
           {save.isPending ? "Ukládám…" : "Uložit profil"}
         </button>
       )}

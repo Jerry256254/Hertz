@@ -8,15 +8,17 @@ export function IconRail({
   onModule,
   onSearch,
   onSettings,
+  className = "",
 }: {
   module: Module;
   pendingApprovals: number;
   onModule: (m: Module) => void;
   onSearch: () => void;
   onSettings: () => void;
+  className?: string;
 }) {
   return (
-    <nav aria-label="Hlavní navigace" className="flex w-14 shrink-0 flex-col items-center gap-1.5 overflow-y-auto border-r border-border bg-bg-sidebar py-3">
+    <nav aria-label="Hlavní navigace" className={`flex w-14 shrink-0 flex-col items-center gap-1.5 overflow-y-auto border-r border-border bg-bg-sidebar py-3 ${className}`}>
       <RailButton active={module === "chat"} onClick={() => onModule("chat")} title="Chat">
         <MessageCircle size={19} />
       </RailButton>
