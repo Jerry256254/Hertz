@@ -17,6 +17,7 @@ import {
   generatePkcePair,
   githubAuthUrl,
   googleAuthUrl,
+  googleScopesFor,
   mistralAuthUrl,
   notionAuthUrl,
   refreshMistralToken,
@@ -27,6 +28,12 @@ import {
   type OAuthService,
   type OAuthStatePayload,
 } from "../oauth/oauth-service.js";
+import {
+  DeviceFlowError,
+  pollDeviceToken,
+  requestDeviceCode,
+  type DeviceSessionStatus,
+} from "../oauth/device-flow.js";
 import {
   checkRedirectUri,
   localNetworkOAuthBlockedMessage,
@@ -174,6 +181,129 @@ export function callbackRedirectUri(service: OAuthService, protocol: string, hos
   return relayBounceUrl ?? `${protocol}://${host}/api/oauth/${service}/callback`;
 }
 
+/**
+ * Uloží (nebo při opakovaném připojení obnoví) MCP server pro dokončené
+ * OAuth přihlášení — stejnou cestou pro web callback i device flow, aby
+ * refresh tokenů a odpojení fungovaly beze změny.
+ */
+async function provisionConnectedService(
+  ctx: AppContext,
+  opts: { service: OAuthService; catalogId: string; agentId: string | null; env: Record<string, string> },
+): Promise<{ serverId: string; name: string }> {
+  const target = targetFor(opts.service, opts.catalogId);
+  // Re-connecting refreshes the stored tokens instead of stacking
+  // duplicate rows: match by the spawned server binary + agent scope.
+  const existingRows = await ctx.db.select().from(mcpServers);
+  const existing = existingRows.find(
+    (r) =>
+      (r.agentId ?? null) === (opts.agentId ?? null) &&
+      (JSON.parse(r.argsJson ?? "[]") as string[])[0] === target.args[0],
+  );
+  const encryptedEnv = encryptSecret(ctx.masterKey, JSON.stringify(opts.env));
+  let serverId: string;
+  if (existing) {
+    await ctx.db
+      .update(mcpServers)
+      .set({ encryptedEnv, enabled: true, name: target.name })
+      .where(eq(mcpServers.id, existing.id));
+    serverId = existing.id;
+  } else {
+    serverId = newId();
+    await ctx.db.insert(mcpServers).values({
+      id: serverId,
+      agentId: opts.agentId,
+      name: target.name,
+      transport: "stdio",
+      command: target.command,
+      argsJson: JSON.stringify(target.args),
+      encryptedEnv,
+      url: null,
+      enabled: true,
+      createdAt: new Date(),
+    });
+  }
+  ctx.mcpRegistry.invalidate(serverId);
+  return { serverId, name: target.name };
+}
+
+interface DeviceSession {
+  id: string;
+  userId: string;
+  agentId: string | null;
+  catalogId: string;
+  clientId: string;
+  /** Drží se jen v paměti serveru — nikdy se neposílá klientovi ani neloguje. */
+  clientSecret: string;
+  /** Drží se jen v paměti serveru — nikdy se neposílá klientovi ani neloguje. */
+  deviceCode: string;
+  intervalSec: number;
+  expiresInSec: number;
+  status: DeviceSessionStatus;
+  /** Česká zpráva pro uživatele (jen u koncových stavů). */
+  message?: string;
+  finishedAt?: number;
+}
+
+/**
+ * In-memory mapa device-flow relací: session id → stav. Polling běží na
+ * pozadí serveru; klient se na stav ptá přes GET /device/status.
+ */
+const deviceSessions = new Map<string, DeviceSession>();
+const DEVICE_SESSION_TTL_MS = 10 * 60 * 1000;
+
+function pruneDeviceSessions(): void {
+  if (deviceSessions.size < 100) return;
+  const cutoff = Date.now() - DEVICE_SESSION_TTL_MS;
+  for (const [id, s] of deviceSessions) {
+    if (s.status !== "pending" && (s.finishedAt ?? 0) < cutoff) deviceSessions.delete(id);
+  }
+}
+
+/**
+ * Pozadí device flow: polluje token endpoint a po úspěchu uloží tokeny
+ * stejnou cestou jako web callback. Nikdy neloguje secret, device_code
+ * ani tokeny; do session.message jde jen česká zpráva pro uživatele.
+ */
+async function runDevicePolling(ctx: AppContext, session: DeviceSession): Promise<void> {
+  try {
+    const tokens = await pollDeviceToken({
+      clientId: session.clientId,
+      clientSecret: session.clientSecret || undefined,
+      deviceCode: session.deviceCode,
+      intervalSec: session.intervalSec,
+      expiresInSec: session.expiresInSec,
+    });
+    const env: Record<string, string> = {
+      GOOGLE_CLIENT_ID: session.clientId,
+      GOOGLE_CLIENT_SECRET: session.clientSecret,
+      GOOGLE_ACCESS_TOKEN: tokens.accessToken,
+      GOOGLE_REFRESH_TOKEN: tokens.refreshToken,
+      GOOGLE_ENABLED_APIS: googleEnabledApis(session.catalogId),
+    };
+    await provisionConnectedService(ctx, {
+      service: "google",
+      catalogId: session.catalogId,
+      agentId: session.agentId,
+      env,
+    });
+    session.status = "connected";
+  } catch (err) {
+    if (err instanceof DeviceFlowError) {
+      session.status = err.code === "access_denied" ? "denied" : err.code === "expired_token" ? "expired" : "error";
+      session.message = err.message;
+    } else {
+      session.status = "error";
+      session.message = "Párování se nezdařilo z neočekávaného důvodu — zkuste to prosím znovu.";
+    }
+  } finally {
+    session.finishedAt = Date.now();
+    // Výsledek necháme chvíli k přečtení, pak relaci uklidíme z paměti.
+    setTimeout(() => {
+      deviceSessions.delete(session.id);
+    }, DEVICE_SESSION_TTL_MS).unref();
+  }
+}
+
 export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
     instance.addHook("preHandler", requireAuth);
@@ -291,6 +421,67 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       }
     });
 
+    // OAuth 2.0 Device Authorization Grant (RFC 8628): "click to play"
+    // připojení Google bez redirect URI — pro instance na privátní IP,
+    // kde web redirect Google odmítá. Polling běží na pozadí serveru,
+    // klient se na stav ptá přes GET /device/status.
+    instance.post("/api/oauth/google/device/start", async (request, reply) => {
+      const { catalogId, agentId } = (request.body ?? {}) as { catalogId?: string; agentId?: string };
+      const cid = typeof catalogId === "string" && catalogId ? catalogId : "google";
+
+      const creds = await resolveAppCredentials(ctx, "google");
+      if (!creds) {
+        return reply.code(400).send({
+          error:
+            "Nejdřív vložte Client ID a Client secret v Nastavení → Konektory (krok pro správce serveru) — " +
+            "OAuth klient v Google Cloud Console musí být typu „Desktop“ nebo „TV a zařízení s omezeným vstupem“. " +
+            "Návod na vytvoření: https://developers.google.com/identity/protocols/oauth2/native-app#creatingcred",
+        });
+      }
+
+      let authz;
+      try {
+        authz = await requestDeviceCode(creds.clientId, googleScopesFor(cid));
+      } catch (err) {
+        return reply.code(502).send({ error: (err as Error).message });
+      }
+
+      pruneDeviceSessions();
+      const session: DeviceSession = {
+        id: randomUUID(),
+        userId: request.user!.id,
+        agentId: typeof agentId === "string" && agentId ? agentId : null,
+        catalogId: cid,
+        clientId: creds.clientId,
+        clientSecret: creds.clientSecret,
+        deviceCode: authz.deviceCode,
+        intervalSec: authz.interval,
+        expiresInSec: authz.expiresIn,
+        status: "pending",
+      };
+      deviceSessions.set(session.id, session);
+      // Polling na pozadí — nečekáme na něj, klient polluje /device/status.
+      void runDevicePolling(ctx, session);
+
+      return {
+        user_code: authz.userCode,
+        verification_url: authz.verificationUrlComplete ?? authz.verificationUrl,
+        expires_in: authz.expiresIn,
+        device_session_id: session.id,
+      };
+    });
+
+    instance.get("/api/oauth/google/device/status", async (request, reply) => {
+      const { session } = request.query as { session?: string };
+      const s = typeof session === "string" ? deviceSessions.get(session) : undefined;
+      if (!s || s.userId !== request.user!.id) {
+        return reply
+          .code(404)
+          .send({ error: "Relace pro párování neexistuje nebo vypršela — začněte připojení znovu." });
+      }
+      return s.message ? { status: s.status, message: s.message } : { status: s.status };
+    });
+
     // The provider redirects the browser back here after the user consents (or declines).
     instance.get("/api/oauth/:service/callback", async (request, reply) => {
       const { service } = request.params as { service: OAuthService };
@@ -383,41 +574,14 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         return back(`?oauthError=${encodeURIComponent(`Přihlášení u ${SERVICE_CZ[service] ?? service} se nezdařilo: ${(err as Error).message}`)}`);
       }
 
-      const target = targetFor(service, payload.catalogId);
-      // Re-connecting refreshes the stored tokens instead of stacking
-      // duplicate rows: match by the spawned server binary + agent scope.
-      const existingRows = await ctx.db.select().from(mcpServers);
-      const existing = existingRows.find(
-        (r) =>
-          (r.agentId ?? null) === (payload.agentId ?? null) &&
-          (JSON.parse(r.argsJson ?? "[]") as string[])[0] === target.args[0],
-      );
-      const encryptedEnv = encryptSecret(ctx.masterKey, JSON.stringify(env));
-      let serverId: string;
-      if (existing) {
-        await ctx.db
-          .update(mcpServers)
-          .set({ encryptedEnv, enabled: true, name: target.name })
-          .where(eq(mcpServers.id, existing.id));
-        serverId = existing.id;
-      } else {
-        serverId = newId();
-        await ctx.db.insert(mcpServers).values({
-          id: serverId,
-          agentId: payload.agentId,
-          name: target.name,
-          transport: "stdio",
-          command: target.command,
-          argsJson: JSON.stringify(target.args),
-          encryptedEnv,
-          url: null,
-          enabled: true,
-          createdAt: new Date(),
-        });
-      }
-      ctx.mcpRegistry.invalidate(serverId);
+      const { name } = await provisionConnectedService(ctx, {
+        service,
+        catalogId: payload.catalogId,
+        agentId: payload.agentId,
+        env,
+      });
 
-      return reply.redirect(`/?connected=${encodeURIComponent(target.name)}`);
+      return reply.redirect(`/?connected=${encodeURIComponent(name)}`);
     });
   });
 }
