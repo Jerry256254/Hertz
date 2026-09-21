@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Globe, Image as ImageIcon, MonitorUp, Paperclip, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Globe, Image as ImageIcon, MonitorUp, Paperclip, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Agent, Budget, HertzSession, PersistedMessage } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
@@ -399,7 +399,7 @@ export function ChatView({
         <span className="flex-1" />
         <button onClick={onOpenAgent} title="Otevřít nastavení agenta" className="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 hover:bg-bg-hover">
           <AgentAvatar seed={agent.id} mood={mood} size={30} />
-          <span className="text-[14px] font-[600] text-fg">{agent.name}</span>
+          <span className="max-w-[32vw] truncate text-[14px] font-[600] text-fg">{agent.name}</span>
           <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-live pulse-live" : "bg-live"}`} title={isRunning ? "Pracuje" : "Připojeno"} />
         </button>
       </header>
@@ -471,15 +471,15 @@ export function ChatView({
             {!readOnly && (
               <span className="flex items-center gap-1">
                 {isPaused ? (
-                  <button onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
+                  <button onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} className="pressable flex min-h-[44px] items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
                     <Play size={11} /> {pauseResume.isPending ? "Pokračuji…" : "Pokračovat"}
                   </button>
                 ) : (
-                  <button onClick={() => pauseResume.mutate("pause")} disabled={pauseResume.isPending} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
+                  <button onClick={() => pauseResume.mutate("pause")} disabled={pauseResume.isPending} className="pressable flex min-h-[44px] items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
                     <Pause size={11} /> Pozastavit
                   </button>
                 )}
-                <button onClick={() => stopRun.mutate()} disabled={stopRun.isPending} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-danger disabled:opacity-40">
+                <button onClick={() => stopRun.mutate()} disabled={stopRun.isPending} className="pressable flex min-h-[44px] items-center gap-1 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] font-[600] text-fg-muted hover:text-danger disabled:opacity-40">
                   <Square size={10} /> {stopRun.isPending ? "Zastavuji…" : "Zastavit"}
                 </button>
               </span>
@@ -528,7 +528,7 @@ export function ChatView({
               <p className="mt-1.5 text-[13.5px] text-fg">{data.pendingQuestion}</p>
               <div className="mt-2.5 flex items-center gap-2">
                 <textarea value={answerText} onChange={(e) => setAnswerText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitAnswer(e); } }} rows={2} autoFocus placeholder="Tvá odpověď…" className="max-h-[140px] w-full resize-none rounded-[14px] border border-border bg-bg-sunken px-3.5 py-2.5 text-[13.5px] text-fg placeholder:text-fg-subtle outline-none focus:border-accent" />
-                <button type="submit" disabled={!answerText.trim() || answerQuestion.isPending} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white disabled:opacity-30"><ArrowUp size={16} /></button>
+                <button type="submit" disabled={!answerText.trim() || answerQuestion.isPending} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white disabled:opacity-30"><ArrowUp size={16} /></button>
               </div>
             </form>
           )}
@@ -543,7 +543,7 @@ export function ChatView({
               className="relative rounded-[28px] border border-border bg-bg-raised shadow-[0_12px_40px_rgba(0,0,0,0.35)] transition-colors focus-within:border-accent/50"
             >
               {showJumpToBottom && (
-                <button type="button" onClick={jumpToBottom} title="Skočit dolů" className="absolute -top-14 right-2 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted shadow-lg hover:text-fg">
+                <button type="button" onClick={jumpToBottom} title="Skočit dolů" className="absolute -top-14 right-2 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted shadow-lg hover:text-fg">
                   <ArrowDown size={16} />
                 </button>
               )}
@@ -579,10 +579,10 @@ export function ChatView({
               />
               <div className="flex items-center gap-1 px-2.5 pb-2.5">
                 <input type="file" accept="image/*,.txt,.md,.markdown,.csv,.json,.log,.ts,.js,.py" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id={`file-input-${sessionId}`} />
-                <IconButton type="button" title="Přiložit soubor" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
+                <IconButton type="button" title="Přiložit soubor" className="h-11 w-11" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
                 <span className="flex-1" />
-                <span className="hidden select-none text-[11px] text-fg-faint sm:block">Enter ↵ odešle · Shift+Enter nový řádek</span>
-                <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={16} strokeWidth={2.2} /></button>
+                <span className="hidden select-none text-[11px] text-fg-faint sm:block">Enter odešle · Shift+Enter nový řádek</span>
+                <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={17} strokeWidth={2.2} /></button>
               </div>
             </form>
           )}
@@ -646,8 +646,9 @@ export function GroupedSteps({
       </div>
       <div className="min-w-0 flex-1">
         <details className="group px-0.5 py-1">
-          <summary className="cursor-pointer list-none text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
-            {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"} ▸
+          <summary className="flex cursor-pointer list-none items-center gap-0.5 text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
+            {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"}
+            <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
           </summary>
           <div className="mt-1"><ToolStepChecklist steps={steps} settled={settled} /></div>
         </details>

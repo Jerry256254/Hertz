@@ -1,4 +1,4 @@
-import { Minimize2 } from "lucide-react";
+import { ChevronRight, Minimize2 } from "lucide-react";
 import type { PersistedMessage } from "../lib/types";
 import { AgentAvatar } from "./AgentAvatar";
 import { Markdown } from "./Markdown";
@@ -83,8 +83,9 @@ export function MessageView({
         )}
         {steps.length > 0 && (collapsibleTools ? (
           <details className="group px-0.5 py-1">
-            <summary className="cursor-pointer list-none text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
-              {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"} ▸
+            <summary className="flex cursor-pointer list-none items-center gap-0.5 text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
+              {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"}
+              <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
             </summary>
             <div className="mt-1"><ToolStepChecklist steps={steps} settled={stepsSettled} /></div>
           </details>

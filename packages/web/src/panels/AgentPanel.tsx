@@ -39,7 +39,7 @@ export function AgentPanel({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* profile header */}
       <div className="relative flex shrink-0 flex-col items-center px-4 pb-2.5 pt-4">
-        <button onClick={onClose} title="Zavřít panel" className="pressable absolute right-2 top-2 rounded-full p-1.5 text-fg-muted hover:bg-bg-sunken hover:text-fg">
+        <button onClick={onClose} title="Zavřít panel" aria-label="Zavřít panel" className="pressable absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
           <X size={14} />
         </button>
         <AgentAvatar seed={agent.id} size={48} />
@@ -61,7 +61,7 @@ export function AgentPanel({
           <PanelTabButton active={tab === "identity"} onClick={() => onTabChange("identity")} title="Identita">
             <Fingerprint size={14} />
           </PanelTabButton>
-          <PanelTabButton active={tab === "skills"} onClick={() => onTabChange("skills")} title="Skills">
+          <PanelTabButton active={tab === "skills"} onClick={() => onTabChange("skills")} title="Dovednosti">
             <Zap size={14} />
           </PanelTabButton>
           <PanelTabButton active={tab === "memory"} onClick={() => onTabChange("memory")} title="Paměť">
@@ -283,7 +283,7 @@ function RoutinesTab({ agent, projectId }: { agent: Agent; projectId: string }) 
 
       <RoutineRow
         title="Heartbeat"
-        desc={heartbeatOn ? `Každých ${agent.heartbeatMinutes} minut` : "Vypnuto — zapneš v Nastavení → Obecné"}
+        desc={heartbeatOn ? `Každých ${agent.heartbeatMinutes} minut` : "Vypnuto — zapneš v Nastavení › Obecné"}
         enabled={heartbeatOn}
         locked
       />
@@ -291,7 +291,7 @@ function RoutinesTab({ agent, projectId }: { agent: Agent; projectId: string }) 
         <div key={r.id} className="group flex items-center gap-3 rounded-[14px] px-2 py-2.5 hover:bg-bg-sunken/50">
           <button
             onClick={() => toggle.mutate({ id: r.id, enabled: !r.enabled })}
-            className={`flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 ${r.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}
+            className={`relative flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 before:absolute before:-inset-3 before:content-[''] ${r.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}
             title={r.enabled ? "Vypnout" : "Zapnout"}
           >
             <span className="h-5 w-5 rounded-full bg-white shadow" />
@@ -300,7 +300,7 @@ function RoutinesTab({ agent, projectId }: { agent: Agent; projectId: string }) 
             <p className={`truncate text-[13px] font-[600] ${r.enabled ? "text-fg" : "text-fg-subtle"}`}>{r.title}</p>
             <p className="truncate text-[12px] text-fg-muted">{r.nextRunAt ? relTime(r.nextRunAt) : r.schedule}</p>
           </div>
-          <button onClick={() => remove.mutate(r.id)} title="Smazat" className="hidden rounded-full p-1.5 text-fg-subtle hover:text-danger group-hover:block">
+          <button onClick={() => remove.mutate(r.id)} title="Smazat" aria-label="Smazat rutinu" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:text-danger md:hidden md:group-hover:flex md:focus-visible:flex">
             <X size={14} />
           </button>
         </div>

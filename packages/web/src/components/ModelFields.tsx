@@ -41,7 +41,7 @@ export function ModelFields({
   if (providers.length === 0) {
     return (
       <p className="py-2 text-[12.5px] leading-relaxed text-fg-muted">
-        Zatím žádný poskytovatel. Přidej ho v Nastavení → Poskytovatelé.
+        Zatím žádný poskytovatel. Přidej ho v Nastavení › Poskytovatelé.
       </p>
     );
   }

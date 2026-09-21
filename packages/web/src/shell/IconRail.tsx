@@ -16,7 +16,7 @@ export function IconRail({
   onSettings: () => void;
 }) {
   return (
-    <nav className="flex w-[64px] shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-bg-sidebar py-3">
+    <nav aria-label="Hlavní navigace" className="flex w-14 shrink-0 flex-col items-center gap-1.5 overflow-y-auto border-r border-border bg-bg-sidebar py-3">
       <RailButton active={module === "chat"} onClick={() => onModule("chat")} title="Chat">
         <MessageCircle size={19} />
       </RailButton>
@@ -41,12 +41,15 @@ function RailButton({ active, onClick, title, children, badge }: { active: boole
     <button
       onClick={onClick}
       title={title}
-      className={`pressable relative flex h-11 w-11 items-center justify-center rounded-full ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:bg-bg-sunken/60 hover:text-fg-muted"}`}
+      aria-label={title}
+      className={`pressable relative flex h-11 w-11 items-center justify-center rounded-2xl transition-colors ${
+        active ? "bg-accent/[0.14] text-accent" : "text-fg-subtle hover:bg-bg-sunken/70 hover:text-fg"
+      }`}
     >
       {children}
       {!!badge && badge > 0 && (
         <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-[700] text-white">
-          {badge}
+          {badge > 99 ? "99+" : badge}
         </span>
       )}
     </button>

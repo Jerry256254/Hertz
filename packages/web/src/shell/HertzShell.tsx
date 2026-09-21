@@ -109,7 +109,7 @@ export function HertzShell() {
       {showSidebar && (
         <>
           <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed inset-y-0 left-0 z-40 flex w-[300px] max-w-[85vw] flex-col border-r border-border bg-bg-sidebar md:static md:z-auto md:shrink-0">
+          <aside className="fixed inset-y-0 left-0 z-40 flex w-[300px] max-w-[86vw] animate-slide-in flex-col border-r border-border bg-bg-sidebar md:static md:z-auto md:shrink-0">
             <SideBar
             agent={agent}
             projectId={projectId}
@@ -230,7 +230,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
         const created = await api.post<{ id: string }>("/projects", { name: projectName.trim() || "Můj projekt", rootPath });
         pid = created.id;
       }
-      if (!providerId) throw new Error("Přidej nejdřív poskytovatele v Nastavení → Poskytovatelé (nebo se vrať).");
+      if (!providerId) throw new Error("Přidej nejdřív poskytovatele v Nastavení › Poskytovatelé (nebo se vrať).");
       if (!model.trim()) throw new Error("Zadej model, např. claude-sonnet-4-5.");
       await api.post("/agent/ensure", { projectId: pid, providerConfigId: providerId, model: model.trim(), name: agentName.trim() || "Orion" });
       onDone();

@@ -74,8 +74,8 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
       <header className="flex h-[60px] shrink-0 items-center gap-2.5 px-3 md:px-5">
         <AgentAvatar seed={agent.id} size={30} />
         <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
-          <button onClick={() => setTab("soul")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "soul" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>SOUL.md</button>
-          <button onClick={() => setTab("skills")} className={`pressable rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "skills" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>Skills</button>
+          <button onClick={() => setTab("soul")} className={`pressable min-h-[44px] rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "soul" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>SOUL.md</button>
+          <button onClick={() => setTab("skills")} className={`pressable min-h-[44px] rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "skills" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>Dovednosti</button>
         </div>
         <span className="flex-1" />
         {tab === "soul" && (
@@ -91,7 +91,7 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
             </div>
             <ToolButton title="Náhled" onClick={() => setPreview((v) => !v)} active={preview}><MoreHorizontal size={15} /></ToolButton>
             {dirty && (
-              <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+              <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable inline-flex min-h-[44px] items-center rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
                 {save.isPending ? "Ukládám…" : saved ? "Uloženo" : "Uložit"}
               </button>
             )}
@@ -144,7 +144,7 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
 
 function ToolButton({ title, onClick, children, active = false }: { title: string; onClick: () => void; children: React.ReactNode; active?: boolean }) {
   return (
-    <button onClick={onClick} title={title} className={`pressable rounded-full p-2 ${active ? "bg-bg-sunken text-fg" : "text-fg-muted hover:bg-bg-sunken hover:text-fg"}`}>
+    <button onClick={onClick} title={title} aria-label={title} className={`pressable flex h-10 w-10 items-center justify-center rounded-full ${active ? "bg-bg-sunken text-fg" : "text-fg-muted hover:bg-bg-sunken hover:text-fg"}`}>
       {children}
     </button>
   );

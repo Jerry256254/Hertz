@@ -61,17 +61,17 @@ export function FileExplorer({
 
   return (
     <div className="flex h-full flex-col bg-bg-raised">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2">
-        <button onClick={goUp} disabled={currentPath === "."} className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><ChevronUp size={13} /></button>
+      <div className="flex min-h-[48px] shrink-0 items-center gap-2 border-b border-border px-2">
+        <button onClick={goUp} disabled={currentPath === "."} aria-label="O úroveň výš" className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><ChevronUp size={14} /></button>
         <span className="mono truncate text-[11px] font-[500] tracking-wide text-fg-muted">{currentPath === "." ? "/" : currentPath}</span>
-        <button onClick={promptNewFolder} disabled={createFolder.isPending} title="Nová složka" className="ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><FolderPlus size={13} /></button>
+        <button onClick={promptNewFolder} disabled={createFolder.isPending} title="Nová složka" aria-label="Nová složka" className="ml-auto flex h-10 w-10 items-center justify-center rounded-md border border-border bg-bg-sunken text-fg-muted hover:text-fg disabled:opacity-30"><FolderPlus size={14} /></button>
         {isFetching && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-live pulse-live" />}
       </div>
       {createFolder.isError && <p className="shrink-0 border-b border-danger/20 bg-danger-wash px-2 py-1.5 mono text-[11px] text-danger">{(createFolder.error as Error).message}</p>}
       <div className="min-h-0 flex-1 overflow-auto">
         {previewPath ? (
           <div className="flex h-full flex-col">
-            <button onClick={() => setPreviewPath(undefined)} className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 mono text-[11px] font-[600] tracking-wide text-fg-muted hover:text-fg"><ArrowLeft size={12} /> zpět</button>
+            <button onClick={() => setPreviewPath(undefined)} className="flex min-h-[44px] shrink-0 items-center gap-1 border-b border-border px-3 mono text-[11px] font-[600] tracking-wide text-fg-muted hover:text-fg"><ArrowLeft size={12} /> zpět</button>
             <div className="min-h-0 flex-1 overflow-auto">
               {previewLoading && <p className="p-3 mono text-[11px] text-fg-subtle">Načítám náhled…</p>}
               {previewError && <p className="p-3 mono text-[11px] text-danger">Náhled se nepodařilo načíst.</p>}
@@ -83,7 +83,7 @@ export function FileExplorer({
           <ul className="divide-y divide-border/60">
             {listing?.entries.map((entry) => (
               <li key={entry.name}>
-                <button onClick={() => open(entry)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-sunken">
+                <button onClick={() => open(entry)} className="flex min-h-[44px] w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-sunken">
                   <span className={`flex h-6 w-6 items-center justify-center rounded-sm border ${entry.type === "directory" ? "border-fg bg-fg text-bg-raised" : "border-border bg-bg-sunken text-fg-subtle"}`}>
                     {entry.type === "directory" ? <Folder size={11} strokeWidth={1.8} /> : <File size={11} strokeWidth={1.8} />}
                   </span>

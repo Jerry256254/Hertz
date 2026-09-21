@@ -29,7 +29,7 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
             <p className="text-[12px] text-fg-muted">Co si {agent.name} pamatuje</p>
           </div>
           <span className="flex-1" />
-          <button onClick={onOpenSoul} className="pressable rounded-full border border-border bg-bg-raised px-4 py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover">
+          <button onClick={onOpenSoul} className="pressable inline-flex min-h-[44px] items-center rounded-full border border-border bg-bg-raised px-4 py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover">
             Otevřít SOUL.md
           </button>
         </header>
@@ -85,7 +85,7 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
                     <p className="text-[13px] leading-relaxed text-fg">{a.text}</p>
                     <p className="mt-1 text-[11.5px] text-fg-subtle">důležitost {a.importance} · {relTime(a.createdAt)}</p>
                   </div>
-                  <button onClick={() => forget.mutate(a.id)} title="Zapomenout" className="shrink-0 rounded-full p-1.5 text-fg-subtle hover:text-danger [@media(hover:hover)]:invisible [@media(hover:hover)]:group-hover:visible">
+                  <button onClick={() => forget.mutate(a.id)} title="Zapomenout" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:text-danger [@media(hover:hover)]:invisible [@media(hover:hover)]:group-hover:visible">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -97,7 +97,7 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
                     <p className="text-[13px] leading-relaxed text-fg">{n.note}</p>
                     <p className="mt-1 text-[11.5px] text-fg-subtle">{relTime(n.createdAt)}</p>
                   </div>
-                  <button onClick={() => forget.mutate(n.id)} title="Zapomenout" className="shrink-0 rounded-full p-1.5 text-fg-subtle hover:text-danger [@media(hover:hover)]:invisible [@media(hover:hover)]:group-hover:visible">
+                  <button onClick={() => forget.mutate(n.id)} title="Zapomenout" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:text-danger [@media(hover:hover)]:invisible [@media(hover:hover)]:group-hover:visible">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -112,7 +112,7 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
 
 function MemoryTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className={`pressable rounded-full py-2 text-[13px] font-[600] ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>
+    <button onClick={onClick} className={`pressable min-h-[44px] rounded-full py-2 text-[13px] font-[600] ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>
       {children}
     </button>
   );

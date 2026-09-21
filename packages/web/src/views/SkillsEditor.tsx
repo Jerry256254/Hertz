@@ -60,7 +60,7 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
   });
 
   function askDelete(name: string) {
-    if (window.confirm(`Opravdu smazat skill „${name}"? Agent na ten postup zapomene.`)) remove.mutate(name);
+    if (window.confirm(`Opravdu smazat dovednost „${name}"? Agent na ten postup zapomene.`)) remove.mutate(name);
   }
 
   return (
@@ -71,13 +71,13 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
       </p>
 
       <div className="mt-4 flex items-center gap-2">
-        <h1 className="text-[22px] font-[700]">Skills</h1>
+        <h1 className="text-[22px] font-[700]">Dovednosti</h1>
         <span className="flex-1" />
         <button
           onClick={() => { setCreating(true); setEditing(false); setSelected(null); setError(null); }}
           className="pressable flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white"
         >
-          <Plus size={14} /> Nový skill
+          <Plus size={14} /> Nová dovednost
         </button>
       </div>
       {error && <p className="mt-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{error}</p>}
@@ -99,11 +99,11 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
       ) : (
         <div className="mt-3 grid gap-3 md:grid-cols-[240px_1fr]">
           <div className="space-y-2">
-            {indexLoading && <p className="p-4 text-[13px] text-fg-subtle">Načítám skilly…</p>}
-            {indexError && <p className="rounded-[16px] border border-danger/25 bg-danger-wash p-4 text-[13px] text-danger">Seznam skillů se nepodařilo načíst.</p>}
+            {indexLoading && <p className="p-4 text-[13px] text-fg-subtle">Načítám dovednosti…</p>}
+            {indexError && <p className="rounded-[16px] border border-danger/25 bg-danger-wash p-4 text-[13px] text-danger">Seznam dovedností se nepodařilo načíst.</p>}
             {!indexLoading && !indexError && skills.length === 0 && (
               <p className="rounded-[16px] border border-dashed border-border p-4 text-[13px] text-fg-subtle">
-                Zatím žádné skilly. Agent si je začne tvořit sám — nebo přidej první.
+                Zatím žádné dovednosti. Agent si je začne tvořit sám — nebo přidej první.
               </p>
             )}
             {skills.map((s) => (
@@ -182,7 +182,7 @@ function SkillForm({ agentId, initial, onDone, onCancel }: {
   return (
     <div className="mt-3 rounded-[20px] border border-border bg-bg-raised p-5">
       <div className="flex items-center gap-2">
-        <p className="text-[15px] font-[700] text-fg">{initial ? `Upravit „${initial.name}"` : "Nový skill"}</p>
+        <p className="text-[15px] font-[700] text-fg">{initial ? `Upravit „${initial.name}"` : "Nová dovednost"}</p>
         <span className="flex-1" />
         <button onClick={onCancel} title="Zavřít" className="pressable rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={15} /></button>
       </div>

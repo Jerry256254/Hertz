@@ -1,37 +1,36 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bell, Blocks, ChevronRight, FolderOpen, HeartHandshake, Landmark, LogOut,
-  Pencil, Plus, Scale, Send, Server, ShieldCheck, Trash2, Wallet, X,
+  Blocks, Database, FolderOpen, LifeBuoy, LogOut,
+  Pencil, Plus, Scale, Send, Server, SlidersHorizontal, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import type { Agent, ApprovalItem, ChannelConfig, McpServer, MountList, ProviderConfig, Routine, UsageRecord } from "../lib/types";
-import { relTime } from "../lib/format";
+import type { Agent, ChannelConfig, McpServer, MountList, ProviderConfig, Routine } from "../lib/types";
 import { DirectoryPicker } from "../components/DirectoryPicker";
 import { ModelFields } from "../components/ModelFields";
 import { ProviderCreateForm } from "../components/ProviderCreateForm";
 import { AgentAvatar } from "../components/AgentAvatar";
-import { ApprovalCard } from "../panels/Approvals";
 
-type Section = "general" | "folders" | "providers" | "permissions" | "channels" | "connectors" | "wallet" | "data" | "help" | "legal";
+type Section = "general" | "folders" | "providers" | "channels" | "connectors" | "data" | "help" | "legal";
+// NOTE: sekci "vault" (Trezor) sem přidá vault agent —
+// do typu Section, do NAV níže a do přepínače sekcí v SettingsModal.
 
-const NAV: Array<{ id: Section; label: string; icon: React.ReactNode; admin?: boolean }> = [
-  { id: "general", label: "Obecné", icon: <Bell size={15} /> },
-  { id: "folders", label: "Složky", icon: <FolderOpen size={15} /> },
-  { id: "providers", label: "Poskytovatelé", icon: <Server size={15} /> },
-  { id: "permissions", label: "Oprávnění", icon: <ShieldCheck size={15} /> },
-  { id: "channels", label: "Kanály zpráv", icon: <Send size={15} /> },
-  { id: "connectors", label: "Konektory", icon: <Blocks size={15} /> },
-  { id: "wallet", label: "Peněženka", icon: <Wallet size={15} /> },
-  { id: "data", label: "Nastavení dat", icon: <Landmark size={15} /> },
-  { id: "help", label: "Nápověda a podpora", icon: <HeartHandshake size={15} /> },
-  { id: "legal", label: "Právní údaje", icon: <Scale size={15} /> },
+const NAV: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
+  { id: "general", label: "Obecné", icon: <SlidersHorizontal size={14} /> },
+  { id: "folders", label: "Složky", icon: <FolderOpen size={14} /> },
+  { id: "providers", label: "Poskytovatelé", icon: <Server size={14} /> },
+  { id: "channels", label: "Kanály zpráv", icon: <Send size={14} /> },
+  { id: "connectors", label: "Konektory", icon: <Blocks size={14} /> },
+  // ── TREZOR: sem patří sekce "vault" (přidá vault agent) ──
+  { id: "data", label: "Nastavení dat", icon: <Database size={14} /> },
+  { id: "help", label: "Nápověda", icon: <LifeBuoy size={14} /> },
+  { id: "legal", label: "Právní údaje", icon: <Scale size={14} /> },
 ];
 
 export function SettingsModal({ agent, projectId, initialSection = "general", onClose }: { agent: Agent; projectId: string; initialSection?: Section; onClose: () => void }) {
   const [section, setSection] = useState<Section>(initialSection);
-  const { logout, user } = useAuth();
+  const { logout } = useAuth();
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -43,53 +42,38 @@ export function SettingsModal({ agent, projectId, initialSection = "general", on
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" style={{ backdropFilter: "blur(6px)" }} onClick={onClose}>
-      <div className="flex max-h-[86vh] w-full max-w-[880px] overflow-hidden rounded-[24px] border border-border bg-bg-sidebar shadow-popover animate-fade-in" onClick={(e) => e.stopPropagation()}>
-        <div className="flex w-[220px] shrink-0 flex-col border-r border-border bg-bg-sidebar p-2.5 max-sm:hidden">
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {NAV.map((n) => (
-              <button
-                key={n.id}
-                onClick={() => setSection(n.id)}
-                className={`flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2 text-left text-[13.5px] ${section === n.id ? "bg-bg-sunken font-[600] text-fg" : "text-fg-muted hover:bg-bg-sunken/50 hover:text-fg"}`}
-              >
-                <span className="shrink-0">{n.icon}</span>
-                {n.label}
-              </button>
-            ))}
+      <div className="flex max-h-[92dvh] w-full max-w-[600px] animate-fade-in flex-col overflow-hidden rounded-[24px] border border-border bg-bg shadow-popover" onClick={(e) => e.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-1 pt-4">
+          <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Nastavení</p>
+          <div className="flex items-center gap-1">
+            <button onClick={() => void logout()} title="Odhlásit se" aria-label="Odhlásit se" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-danger"><LogOut size={17} /></button>
+            <button onClick={onClose} title="Zavřít" aria-label="Zavřít" className="pressable flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={17} /></button>
           </div>
-          <button onClick={() => void logout()} className="mt-2 flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2 text-left text-[13.5px] text-fg-muted hover:bg-bg-sunken/50 hover:text-danger">
-            <LogOut size={15} /> Odhlásit se
-          </button>
-          <p className="truncate px-3 pb-1 pt-2 text-[11px] text-fg-subtle">{user?.email}</p>
         </div>
-
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
-          <div className="flex shrink-0 items-center justify-between px-5 pb-1 pt-4">
-            <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">{NAV.find((n) => n.id === section)?.label}</p>
-            <div className="flex items-center gap-1">
-              <button onClick={() => void logout()} title="Odhlásit se" className="rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-danger sm:hidden"><LogOut size={17} /></button>
-              <button onClick={onClose} className="rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={17} /></button>
-            </div>
-          </div>
-          <div className="flex gap-1 overflow-x-auto border-b border-border px-5 pb-2.5 sm:hidden">
-            {NAV.map((n) => (
-              <button key={n.id} onClick={() => setSection(n.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-[600] ${section === n.id ? "bg-bg-sunken text-fg" : "text-fg-subtle"}`}>
-                {n.label}
-              </button>
-            ))}
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-3">
-            {section === "general" && <GeneralSection agent={agent} />}
-            {section === "folders" && <FoldersSection projectId={projectId} />}
-            {section === "providers" && <ProvidersSection agent={agent} />}
-            {section === "permissions" && <PermissionsSection onNavigate={setSection} />}
-            {section === "channels" && <ChannelsSection agent={agent} />}
-            {section === "connectors" && <ConnectorsSection agent={agent} />}
-            {section === "wallet" && <WalletSection />}
-            {section === "data" && <DataSection agent={agent} projectId={projectId} />}
-            {section === "help" && <HelpSection />}
-            {section === "legal" && <LegalSection />}
-          </div>
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto px-5 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Sekce nastavení">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              role="tab"
+              aria-selected={section === n.id}
+              onClick={() => setSection(n.id)}
+              className={`pressable flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-4 text-[12.5px] font-[600] ${section === n.id ? "bg-accent text-white" : "text-fg-muted hover:bg-bg-sunken hover:text-fg"}`}
+            >
+              {n.icon}
+              {n.label}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-5 pb-6 pt-4">
+          {section === "general" && <GeneralSection agent={agent} />}
+          {section === "folders" && <FoldersSection projectId={projectId} />}
+          {section === "providers" && <ProvidersSection agent={agent} />}
+          {section === "channels" && <ChannelsSection agent={agent} />}
+          {section === "connectors" && <ConnectorsSection agent={agent} />}
+          {/* ── TREZOR: {section === "vault" && <VaultSection />} sem přidá vault agent ── */}
+          {section === "data" && <DataSection agent={agent} projectId={projectId} />}
+          {section === "help" && <HelpSection />}
+          {section === "legal" && <LegalSection />}
         </div>
       </div>
     </div>
@@ -106,7 +90,7 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
-const inputCls = "h-10 w-full rounded-full border border-border bg-bg-raised px-4 text-[13.5px] text-fg outline-none focus:border-accent disabled:opacity-50";
+const inputCls = "h-11 w-full rounded-full border border-border bg-bg-raised px-4 text-[13.5px] text-fg outline-none focus:border-accent disabled:opacity-50";
 
 /* ── Obecné ─────────────────────────────────────────────────────────── */
 
@@ -186,7 +170,7 @@ function GeneralSection({ agent }: { agent: Agent }) {
         <input value={heartbeat} onChange={(e) => { touch("heartbeat"); setHeartbeat(e.target.value); }} inputMode="numeric" className={inputCls} />
       </Field>
       {err && <p className="mb-3 text-[13px] text-danger">{err}</p>}
-      <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
+      <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
         {save.isPending ? "Ukládám…" : msg ?? "Uložit změny"}
       </button>
     </div>
@@ -269,8 +253,8 @@ function FoldersSection({ projectId }: { projectId: string }) {
             <input value={editing.purpose} onChange={(e) => setEditing({ ...editing, purpose: e.target.value })} placeholder="Účel (k čemu složka je)" className={inputCls} />
             <p className="mono truncate px-1 text-[11.5px] text-fg-subtle" title={m.hostPath}>{m.hostPath} (cestu nelze měnit — smaž a vytvoř znovu)</p>
             <div className="flex gap-2">
-              <button onClick={() => patch.mutate()} disabled={patch.isPending || !editing.name.trim()} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Uložit</button>
-              <button onClick={() => setEditing(null)} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
+              <button onClick={() => patch.mutate()} disabled={patch.isPending || !editing.name.trim()} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Uložit</button>
+              <button onClick={() => setEditing(null)} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
             </div>
           </div>
         ) : (
@@ -281,8 +265,8 @@ function FoldersSection({ projectId }: { projectId: string }) {
               <p className="mono truncate text-[12px] text-fg-muted">{m.hostPath}</p>
               {m.purpose && <p className="truncate text-[12px] text-fg-subtle">{m.purpose}</p>}
             </div>
-            <button onClick={() => setEditing({ id: m.id, name: m.name, purpose: m.purpose ?? "" })} title="Přejmenovat / popsat" className="rounded-full p-2 text-fg-subtle hover:bg-bg-sunken hover:text-fg"><Pencil size={14} /></button>
-            <button onClick={() => { if (window.confirm(`Opravdu smazat složku „${m.name}"? Agent ji přestane vidět (po restartu kontejneru).`)) remove.mutate(m.id); }} title="Smazat" className="rounded-full p-2 text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
+            <button onClick={() => setEditing({ id: m.id, name: m.name, purpose: m.purpose ?? "" })} title="Přejmenovat / popsat" className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-fg"><Pencil size={14} /></button>
+            <button onClick={() => { if (window.confirm(`Opravdu smazat složku „${m.name}"? Agent ji přestane vidět (po restartu kontejneru).`)) remove.mutate(m.id); }} title="Smazat" className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
           </div>
         ),
       )}
@@ -292,7 +276,7 @@ function FoldersSection({ projectId }: { projectId: string }) {
           <Field label="Složka na tvém počítači">
             <div className="flex gap-2">
               <input value={hostPath} readOnly placeholder="Vyber tlačítkem…" className={`${inputCls} mono`} />
-              <button onClick={() => setPickerOpen(true)} className="pressable shrink-0 rounded-full border border-border bg-bg-sunken px-4 text-[13px] font-[600] text-fg">Vybrat…</button>
+              <button onClick={() => setPickerOpen(true)} className="pressable inline-flex min-h-[44px] shrink-0 items-center rounded-full border border-border bg-bg-sunken px-4 text-[13px] font-[600] text-fg">Vybrat…</button>
             </div>
           </Field>
           <Field label="Název viditelný agentovi" hint="Krátký název bez mezer, např. fotky.">
@@ -302,12 +286,12 @@ function FoldersSection({ projectId }: { projectId: string }) {
             <input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="K čemu agent složku má" className={inputCls} />
           </Field>
           <div className="flex gap-2">
-            <button onClick={() => create.mutate()} disabled={create.isPending || !hostPath || !name.trim()} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Přidat složku</button>
-            <button onClick={() => setShowAdd(false)} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
+            <button onClick={() => create.mutate()} disabled={create.isPending || !hostPath || !name.trim()} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Přidat složku</button>
+            <button onClick={() => setShowAdd(false)} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
+        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex min-h-[44px] items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
           <Plus size={15} /> Přidat složku
         </button>
       )}
@@ -375,11 +359,11 @@ function ProvidersSection({ agent }: { agent: Agent }) {
             <p className="mono truncate text-[12px] text-fg-muted">{p.provider} · {p.keyHint} · {p.keyCount} {p.keyCount === 1 ? "klíč" : p.keyCount < 5 ? "klíče" : "klíčů"}{p.defaultModel ? ` · ${p.defaultModel}` : ""}</p>
           </div>
           {p.id !== agent.providerConfigId && (
-            <button onClick={() => useForAgent.mutate(p)} disabled={useForAgent.isPending} title="Použít pro agenta" className="pressable shrink-0 rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40">
+            <button onClick={() => useForAgent.mutate(p)} disabled={useForAgent.isPending} title="Použít pro agenta" className="pressable inline-flex min-h-[44px] shrink-0 items-center rounded-full border border-border bg-bg-sunken px-4 text-[12px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40">
               {useForAgent.isPending ? "Přepínám…" : "Použít"}
             </button>
           )}
-          <button onClick={() => { if (window.confirm(`Smazat poskytovatele „${p.label}"?`)) remove.mutate(p.id); }} title="Smazat" className="rounded-full p-2 text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
+          <button onClick={() => { if (window.confirm(`Smazat poskytovatele „${p.label}"?`)) remove.mutate(p.id); }} title="Smazat" className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
         </div>
       ))}
 
@@ -395,56 +379,11 @@ function ProvidersSection({ agent }: { agent: Agent }) {
           />
         </div>
       ) : (
-        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
+        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex min-h-[44px] items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
           <Plus size={15} /> Přidat poskytovatele
         </button>
       )}
     </div>
-  );
-}
-
-/* ── Oprávnění ──────────────────────────────────────────────────────── */
-
-function PermissionsSection({ onNavigate }: { onNavigate: (s: Section) => void }) {
-  const { data: approvalsData } = useQuery({
-    queryKey: ["approvals"],
-    queryFn: () => api.get<{ approvals: ApprovalItem[] }>("/approvals"),
-  });
-  const { data: mcpData } = useQuery({
-    queryKey: ["mcp-servers"],
-    queryFn: () => api.get<{ servers: McpServer[] }>("/mcp-servers"),
-  });
-  const approvals = approvalsData?.approvals ?? [];
-  const pending = approvals.filter((a) => a.status === "pending");
-
-  return (
-    <div className="max-w-[560px]">
-      <p className="mb-4 text-[13px] leading-relaxed text-fg-muted">
-        Agent se vždy zeptá, než udělá něco citlivého — napíše žádost a čeká na tvoje rozhodnutí. Zprávy z kanálů a naplánované úlohy běží samy.
-      </p>
-
-      {pending.length > 0 && (
-        <div className="mb-4 space-y-2.5">
-          <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">ČEKÁ NA ROZHODNUTÍ ({pending.length})</p>
-          {pending.map((a) => <ApprovalCard key={a.id} approval={a} compact />)}
-        </div>
-      )}
-
-      <p className="mb-2 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">SPRAVOVAT OPRÁVNĚNÍ</p>
-      <PermissionRow label="Konektory" count={mcpData?.servers.length ?? 0} onClick={() => onNavigate("connectors")} />
-      <PermissionRow label="Schválené žádosti" count={approvals.filter((a) => a.status === "approved").length} />
-      <PermissionRow label="Zamítnuté žádosti" count={approvals.filter((a) => a.status === "rejected").length} />
-    </div>
-  );
-}
-
-function PermissionRow({ label, count, onClick }: { label: string; count: number; onClick?: () => void }) {
-  return (
-    <button onClick={onClick} disabled={!onClick} className="mb-1.5 flex w-full items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-left disabled:cursor-default">
-      <span className="flex-1 text-[13.5px] font-[600] text-fg">{label}</span>
-      <span className="mono text-[13px] text-fg-muted">{count}</span>
-      {onClick && <ChevronRight size={16} className="text-fg-subtle" />}
-    </button>
   );
 }
 
@@ -535,12 +474,12 @@ function ChannelsSection({ agent }: { agent: Agent }) {
             <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="…" className={inputCls} />
           </Field>
           <div className="flex gap-2">
-            <button onClick={() => create.mutate()} disabled={create.isPending || !label.trim() || token.length < 10} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Připojit</button>
-            <button onClick={() => setShowAdd(false)} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
+            <button onClick={() => create.mutate()} disabled={create.isPending || !label.trim() || token.length < 10} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Připojit</button>
+            <button onClick={() => setShowAdd(false)} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
+        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex min-h-[44px] items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
           <Plus size={15} /> Připojit kanál
         </button>
       )}
@@ -584,14 +523,14 @@ function ChannelCard({
             {c.kind} · {c.botLabel ?? c.tokenHint} · {c.running ? "běží" : c.enabled ? "zapnuto" : "vypnuto"}
           </p>
         </div>
-        <button onClick={onToggle} className={`flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 ${c.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}>
+        <button onClick={onToggle} className={`relative flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 before:absolute before:-inset-3 before:content-[''] ${c.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}>
           <span className="h-5 w-5 rounded-full bg-white shadow" />
         </button>
       </div>
       <div className="mt-2 flex gap-2 pl-12">
-        <button onClick={onTest} disabled={testing} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg">Otestovat</button>
-        <button onClick={() => setListsOpen((v) => !v)} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg">Kdo smí psát</button>
-        <button onClick={onRemove} className="pressable rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-danger">Odpojit</button>
+        <button onClick={onTest} disabled={testing} className="pressable inline-flex min-h-[44px] items-center rounded-full border border-border bg-bg-sunken px-4 text-[12px] font-[600] text-fg">Otestovat</button>
+        <button onClick={() => setListsOpen((v) => !v)} className="pressable inline-flex min-h-[44px] items-center rounded-full border border-border bg-bg-sunken px-4 text-[12px] font-[600] text-fg">Kdo smí psát</button>
+        <button onClick={onRemove} className="pressable inline-flex min-h-[44px] items-center rounded-full border border-border bg-bg-sunken px-4 text-[12px] font-[600] text-danger">Odpojit</button>
       </div>
       {listsOpen && (
         <div className="mt-3 space-y-2.5 border-t border-border pl-12 pr-1 pt-3">
@@ -601,7 +540,7 @@ function ChannelCard({
           <Field label="Povolení odesílatelé (ID nebo @nick, čárkou; prázdné = všichni)" hint="Bot odpoví jen těmto lidem — ostatní dostanou zamítnutí.">
             <input value={senders} onChange={(e) => setSenders(e.target.value)} placeholder="@sefa, 123456789" className={inputCls} />
           </Field>
-          <button onClick={() => onSaveLists(parseList(chats), parseList(senders))} disabled={saving || !dirty} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+          <button onClick={() => onSaveLists(parseList(chats), parseList(senders))} disabled={saving || !dirty} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
             {saving ? "Ukládám…" : "Uložit seznamy"}
           </button>
         </div>
@@ -667,10 +606,10 @@ function ConnectorsSection({ agent }: { agent: Agent }) {
             <p className="truncate text-[13.5px] font-[600] text-fg">{s.name}</p>
             <p className="mono truncate text-[12px] text-fg-muted">{s.transport}{s.command ? ` · ${s.command}` : ""}{s.url ? ` · ${s.url}` : ""}</p>
           </div>
-          <button onClick={() => toggle.mutate(s)} className={`flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 ${s.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}>
+          <button onClick={() => toggle.mutate(s)} className={`relative flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 before:absolute before:-inset-3 before:content-[''] ${s.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}>
             <span className="h-5 w-5 rounded-full bg-white shadow" />
           </button>
-          <button onClick={() => { if (window.confirm(`Smazat konektor „${s.name}"?`)) remove.mutate(s.id); }} title="Smazat" className="rounded-full p-2 text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
+          <button onClick={() => { if (window.confirm(`Smazat konektor „${s.name}"?`)) remove.mutate(s.id); }} title="Smazat" className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
         </div>
       ))}
       {showAdd ? (
@@ -688,59 +627,15 @@ function ConnectorsSection({ agent }: { agent: Agent }) {
             <Field label="URL"><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className={inputCls} /></Field>
           )}
           <div className="flex gap-2">
-            <button onClick={() => create.mutate()} disabled={create.isPending || !name.trim() || (transport === "stdio" ? !command.trim() : !url.trim())} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Přidat</button>
-            <button onClick={() => setShowAdd(false)} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
+            <button onClick={() => create.mutate()} disabled={create.isPending || !name.trim() || (transport === "stdio" ? !command.trim() : !url.trim())} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Přidat</button>
+            <button onClick={() => setShowAdd(false)} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
+        <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex min-h-[44px] items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
           <Plus size={15} /> Přidat konektor
         </button>
       )}
-    </div>
-  );
-}
-
-/* ── Peněženka ──────────────────────────────────────────────────────── */
-
-function WalletSection() {
-  const { data: monthly } = useQuery({
-    queryKey: ["usage-monthly"],
-    queryFn: () => api.get<{ spend: number; budget: number | null; monthStart: string }>("/usage/monthly"),
-  });
-  const { data: usage } = useQuery({
-    queryKey: ["usage"],
-    queryFn: () => api.get<{ records: UsageRecord[]; totalCost: number }>("/usage"),
-  });
-
-  const pct = monthly?.budget ? Math.min(100, (monthly.spend / monthly.budget) * 100) : 0;
-
-  return (
-    <div className="max-w-[560px]">
-      <div className="mb-4 rounded-[16px] border border-border bg-bg-raised p-4">
-        <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">TENTO MĚSÍC</p>
-        <p className="mt-1 text-[22px] font-[700] text-fg">
-          ${monthly?.spend.toFixed(2) ?? "0.00"}
-          {monthly?.budget != null && <span className="text-[14px] font-[500] text-fg-muted"> / ${monthly.budget.toFixed(2)}</span>}
-        </p>
-        {monthly?.budget != null && (
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-bg-sunken">
-            <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
-          </div>
-        )}
-        {monthly?.budget == null && <p className="mt-1 text-[12.5px] text-fg-subtle">Bez měsíčního limitu.</p>}
-      </div>
-      <p className="mb-2 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">POSLEDNÍ ÚTRATY</p>
-      {(usage?.records ?? []).slice(0, 20).map((r) => (
-        <div key={r.id} className="mb-1.5 flex items-center gap-3 rounded-[14px] border border-border bg-bg-raised px-4 py-2.5">
-          <div className="min-w-0 flex-1">
-            <p className="mono truncate text-[12.5px] text-fg">{r.model}</p>
-            <p className="truncate text-[11.5px] text-fg-subtle">{r.purpose} · {relTime(r.at)}</p>
-          </div>
-          <span className="mono shrink-0 text-[12.5px] text-fg-muted">${r.cost.toFixed(4)}</span>
-        </div>
-      ))}
-      {(usage?.records.length ?? 0) === 0 && <p className="text-[13px] text-fg-subtle">Zatím žádná útrata.</p>}
     </div>
   );
 }
@@ -786,7 +681,7 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
         <button
           onClick={() => { if (window.confirm("Opravdu vymazat celou historii chatu?")) clearChat.mutate(); }}
           disabled={clearChat.isPending}
-          className="pressable mt-3 rounded-full border border-danger/40 bg-danger-wash px-5 py-2 text-[13px] font-[600] text-danger disabled:opacity-40"
+          className="pressable mt-3 inline-flex min-h-[44px] items-center justify-center rounded-full border border-danger/40 bg-danger-wash px-5 py-2 text-[13px] font-[600] text-danger disabled:opacity-40"
         >
           Vymazat historii
         </button>
@@ -795,12 +690,12 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
         <div className="mb-4 rounded-[16px] border border-danger/40 bg-danger-wash/40 p-4">
           <p className="text-[13.5px] font-[600] text-danger">Tovární nastavení</p>
           <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">
-            Smaže ÚPLNĚ všechno — chaty, paměť, skilly, klíče, projekty — a restartuje server do stavu jako po první instalaci. Nevratné.
+            Smaže ÚPLNĚ všechno — chaty, paměť, dovednosti, klíče, projekty — a restartuje server do stavu jako po první instalaci. Nevratné.
           </p>
           {!resetArmed ? (
             <button
               onClick={() => setResetArmed(true)}
-              className="pressable mt-3 rounded-full bg-danger px-5 py-2 text-[13px] font-[600] text-white"
+              className="pressable mt-3 inline-flex min-h-[44px] items-center justify-center rounded-full bg-danger px-5 py-2 text-[13px] font-[600] text-white"
             >
               Tovární nastavení…
             </button>
@@ -815,7 +710,7 @@ function DataSection({ agent, projectId }: { agent: Agent; projectId: string }) 
               <button
                 onClick={() => void factoryReset.mutate()}
                 disabled={factoryReset.isPending || resetText !== "RESET"}
-                className="pressable shrink-0 rounded-full bg-danger px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40"
+                className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-danger px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40"
               >
                 Smazat vše
               </button>
@@ -841,7 +736,7 @@ function HelpSection() {
         <li>Piš agentovi v hlavním chatu — pracuje ve svém vlastním počítači (kontejneru).</li>
         <li>Když potřebuje sáhnout mimo svůj počítač nebo udělat něco citlivého, přijde ti žádost o schválení.</li>
         <li>Živé dění sleduj v náhledu (tlačítko „Otevřít náhled") — a když se agent zasekne na přihlášení, obrazovku mu převezmi.</li>
-        <li>Trvalé složky přidáš v záložce Složky, opakované úkoly v panelu agenta → Rutiny.</li>
+        <li>Trvalé složky přidáš v záložce Složky, opakované úkoly v panelu agenta › Rutiny.</li>
         <li>Příkazy v chatu: <span className="mono text-fg">/compact</span> zhustí konverzaci, <span className="mono text-fg">/clear</span> vyčistí chat (paměť zůstane), <span className="mono text-fg">/export</span> stáhne přepis jako Markdown.</li>
       </ul>
     </div>

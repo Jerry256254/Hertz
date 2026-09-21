@@ -48,35 +48,35 @@ export function DirectoryPicker({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[28rem] max-h-[calc(100vh-3rem)] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-[20px] border border-border bg-bg-raised shadow-popover">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[28rem] max-h-[calc(100dvh-3rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-[20px] border border-border bg-bg-raised shadow-popover">
           <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-4">
             <Dialog.Title className="text-sm font-semibold text-fg">Vyber složku</Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="text-fg-muted hover:text-fg">
+<Dialog.Close asChild>
+              <button aria-label="Zavřít" className="flex h-10 w-10 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
                 <X size={16} />
               </button>
             </Dialog.Close>
           </div>
 
-          <div className="flex h-9 flex-shrink-0 items-center gap-1 border-b border-border px-2">
+          <div className="flex min-h-[48px] flex-shrink-0 items-center gap-1 border-b border-border px-2">
             <button
               onClick={() => data && setPath(data.home)}
               disabled={isLoading || !data}
-              className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-30"
+              className="flex min-h-[40px] items-center gap-1 rounded px-2 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-30"
             >
               <House size={12} /> Domů
             </button>
             <button
               onClick={() => data?.parent && setPath(data.parent)}
               disabled={isLoading || !data?.parent}
-              className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-30"
+              className="flex min-h-[40px] items-center gap-1 rounded px-2 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-30"
             >
               <ChevronUp size={12} /> Nahoru
             </button>
             <button
               onClick={() => setShowNewFolder((v) => !v)}
               disabled={!data}
-              className="ml-auto flex items-center gap-1 rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-hover disabled:opacity-30"
+              className="ml-auto flex min-h-[40px] items-center gap-1 rounded px-2 text-xs text-accent hover:bg-bg-hover disabled:opacity-30"
             >
               <FolderPlus size={12} /> Nová složka
             </button>
@@ -112,7 +112,7 @@ export function DirectoryPicker({
               <button
                 key={entry.path}
                 onClick={() => setPath(entry.path)}
-                className="flex w-full items-center gap-2 px-4 py-1.5 text-left text-sm text-fg hover:bg-bg-hover"
+                className="flex min-h-[44px] w-full items-center gap-2 px-4 py-2 text-left text-sm text-fg hover:bg-bg-hover"
               >
                 <Folder size={13} className="flex-shrink-0 text-fg-subtle" />
                 <span className="truncate">{entry.name}</span>

@@ -76,7 +76,7 @@ export function ComputerView({ agent, projectId, bare = false }: { agent: Agent;
 
 function ComputerTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <button onClick={onClick} className={`pressable flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>
+    <button onClick={onClick} className={`pressable flex min-h-[44px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${active ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>
       {icon}
       <span className="hidden sm:inline">{label}</span>
     </button>
