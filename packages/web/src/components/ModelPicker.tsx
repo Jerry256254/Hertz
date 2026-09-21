@@ -52,13 +52,13 @@ export function ModelPicker({
     return <p className="text-xs text-fg-subtle">Select a provider first.</p>;
   }
   if (modelsQuery.isLoading) {
-    return <p className="text-xs text-fg-muted">Scanning available models…</p>;
+    return <p className="text-xs text-fg-muted">Načítám dostupné modely…</p>;
   }
   if (modelsQuery.isError) {
     return <p className="text-xs text-danger">{(modelsQuery.error as Error).message}</p>;
   }
   if (filtered.length === 0 && !query) {
-    return <p className="text-xs text-fg-subtle">No models returned by this provider.</p>;
+    return <p className="text-xs text-fg-subtle">Poskytovatel nevrátil žádné modely.</p>;
   }
 
   return (
@@ -76,7 +76,7 @@ export function ModelPicker({
         <div className="relative min-w-0 flex-1">
           <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle" />
           <Input
-            placeholder="Filter models…"
+            placeholder="Filtrovat modely…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="h-8 pl-7 text-xs"
@@ -106,7 +106,7 @@ export function ModelPicker({
             {value === m.id && <Check size={12} className="flex-shrink-0" />}
           </button>
         ))}
-        {filtered.length === 0 && <p className="px-2.5 py-2 text-xs text-fg-subtle">No matches.</p>}
+        {filtered.length === 0 && <p className="px-2.5 py-2 text-xs text-fg-subtle">Žádné shody.</p>}
       </div>
     </div>
   );

@@ -62,19 +62,22 @@ export function MessageView({
     );
   }
 
-  const textBlocks = message.content.filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text");
+  const textBlocks = message.content.filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text" && b.text.trim().length > 0);
   const toolUses = message.content.filter((b): b is Extract<typeof b, { type: "tool_use" }> => b.type === "tool_use");
   const steps: ToolStep[] = toolUses.map((block) => ({ id: block.id, name: block.name, input: block.input, result: toolResultsById?.get(block.id) }));
+  // Nothing visible (e.g. image-only turn — artifacts render separately in ChatView): no empty bubble.
+  if (textBlocks.length === 0 && toolUses.length === 0) return null;
   return (
     <div className="mx-auto flex w-full max-w-[760px] gap-2 px-4 py-1.5 animate-fade-in">
       <div className="mt-0.5 shrink-0">
         <AgentAvatar seed={message.senderAgentId ?? agentId} size={24} />
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
-        <div className="rounded-[16px] rounded-tl-[6px] border border-border bg-bg-raised px-3.5 py-2.5">
-          {textBlocks.map((block, i) => <Markdown key={i}>{block.text}</Markdown>)}
-          {toolUses.length === 0 && textBlocks.length === 0 && <p className="text-[12px] italic text-fg-subtle">(bez výstupu)</p>}
-        </div>
+        {textBlocks.length > 0 && (
+          <div className="rounded-[16px] rounded-tl-[6px] border border-border bg-bg-raised px-3.5 py-2.5">
+            {textBlocks.map((block, i) => <Markdown key={i}>{block.text}</Markdown>)}
+          </div>
+        )}
         {steps.length > 0 && (collapsibleTools ? (
           <details className="group px-0.5 py-1">
             <summary className="cursor-pointer list-none text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">

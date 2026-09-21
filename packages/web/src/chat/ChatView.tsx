@@ -344,6 +344,15 @@ export function ChatView({
     return blocks;
   }, [data?.messages]);
 
+  /** Key of the last block that used browser/desktop tools — the "Prohlížeč" row renders only there, not after every message. */
+  const lastBrowserBlockKey = useMemo(() => {
+    let key: string | null = null;
+    for (const b of renderBlocks) {
+      if (b.messages.some(hasBrowserTools)) key = b.key;
+    }
+    return key;
+  }, [renderBlocks]);
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* top bar */}
@@ -379,11 +388,12 @@ export function ChatView({
               toolResultsById={toolResultsById}
               sessionTitle={data?.session.title ?? ""}
               onOpenPreview={onOpenPreview}
+              showBrowserCard={block.key === lastBrowserBlockKey}
             />
           ) : (
             <div key={block.key}>
               <MessageView message={block.messages[0]!} toolResultsById={toolResultsById} agentId={agent.id} />
-              {block.messages[0]!.role === "assistant" && hasBrowserTools(block.messages[0]!) && (
+              {block.messages[0]!.role === "assistant" && hasBrowserTools(block.messages[0]!) && block.key === lastBrowserBlockKey && (
                 <BrowserCard title={truncate(firstText(block.messages[0]!.content) || data?.session.title || "", 48)} onOpen={onOpenPreview} />
               )}
               {block.messages[0]!.role === "assistant" && messageImages(block.messages[0]!).map((img, i) => (
@@ -520,16 +530,22 @@ export function ChatView({
   );
 }
 
+export function BrowserCardRow({ title, onOpen }: { title: string; onOpen: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Globe size={13} className="shrink-0 text-fg-subtle" />
+      <span className="min-w-0 flex-1 truncate text-[12px] text-fg-muted">Prohlížeč · {title}</span>
+      <button onClick={onOpen} className="pressable shrink-0 text-[12px] font-[600] text-accent hover:underline">
+        Náhled
+      </button>
+    </div>
+  );
+}
+
 export function BrowserCard({ title, onOpen }: { title: string; onOpen: () => void }) {
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-1">
-      <div className="ml-[34px] flex items-center gap-2">
-        <Globe size={13} className="shrink-0 text-fg-subtle" />
-        <span className="min-w-0 flex-1 truncate text-[12px] text-fg-muted">Prohlížeč · {title}</span>
-        <button onClick={onOpen} className="pressable shrink-0 text-[12px] font-[600] text-accent hover:underline">
-          Náhled
-        </button>
-      </div>
+      <div className="ml-[34px]"><BrowserCardRow title={title} onOpen={onOpen} /></div>
     </div>
   );
 }
@@ -541,12 +557,14 @@ export function GroupedSteps({
   toolResultsById,
   sessionTitle,
   onOpenPreview,
+  showBrowserCard,
 }: {
   messages: PersistedMessage[];
   agentId: string;
   toolResultsById: Map<string, { content: string; isError?: boolean }>;
   sessionTitle: string;
   onOpenPreview: () => void;
+  showBrowserCard: boolean;
 }) {
   const steps: ToolStep[] = [];
   for (const m of messages) {
@@ -568,28 +586,34 @@ export function GroupedSteps({
           </summary>
           <div className="mt-1"><ToolStepChecklist steps={steps} /></div>
         </details>
-        {showBrowser && <BrowserCard title={truncate(sessionTitle, 48)} onOpen={onOpenPreview} />}
+        {showBrowser && showBrowserCard && (
+          <div className="px-0.5 py-1"><BrowserCardRow title={truncate(sessionTitle, 48)} onOpen={onOpenPreview} /></div>
+        )}
         {images.map((img, i) => (
-          <ArtifactCard key={i} image={img} title={truncate(sessionTitle || "Bez názvu", 40)} />
+          <ArtifactCard key={i} image={img} title={truncate(sessionTitle || "Bez názvu", 40)} bare />
         ))}
       </div>
     </div>
   );
 }
 
-export function ArtifactCard({ image, title }: { image: { mimeType: string; data: string }; title: string }) {
-  return (
-    <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
-      <div className="ml-[34px] overflow-hidden rounded-[16px] border border-border bg-bg-raised">
-        <img src={`data:${image.mimeType};base64,${image.data}`} alt={title} className="max-h-64 w-full object-cover" />
-        <div className="flex items-center gap-2.5 p-3.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-bg-sunken text-fg-muted"><ImageIcon size={16} /></span>
-          <div className="min-w-0">
-            <p className="truncate text-[13.5px] font-[600] text-fg">{title}</p>
-            <p className="text-[12px] text-fg-muted">Artefakt</p>
-          </div>
+export function ArtifactCard({ image, title, bare }: { image: { mimeType: string; data: string }; title: string; bare?: boolean }) {
+  const inner = (
+    <div className="overflow-hidden rounded-[16px] border border-border bg-bg-raised">
+      <img src={`data:${image.mimeType};base64,${image.data}`} alt={title} className="max-h-64 w-full object-cover" />
+      <div className="flex items-center gap-2.5 p-3.5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-bg-sunken text-fg-muted"><ImageIcon size={16} /></span>
+        <div className="min-w-0">
+          <p className="truncate text-[13.5px] font-[600] text-fg">{title}</p>
+          <p className="text-[12px] text-fg-muted">Artefakt</p>
         </div>
       </div>
+    </div>
+  );
+  if (bare) return <div className="py-1.5">{inner}</div>;
+  return (
+    <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
+      <div className="ml-[34px]">{inner}</div>
     </div>
   );
 }

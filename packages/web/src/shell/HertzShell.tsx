@@ -18,7 +18,7 @@ import { DirectoryPicker } from "../components/DirectoryPicker";
 export function HertzShell() {
   const queryClient = useQueryClient();
   const [module, setModule] = useState<Module>("chat");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [rightPanel, setRightPanel] = useState<"agent" | "browser" | null>(null);
   const [agentTab, setAgentTab] = useState<AgentTab>("activity");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
