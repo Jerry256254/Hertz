@@ -1,10 +1,18 @@
-import type { ProviderAdapter, ContentBlock } from "@kuclab-hertz/providers";
+import type { ProviderAdapter, ContentBlock, ModelResolution } from "@kuclab-hertz/providers";
 import type { ToolContext, ToolResult } from "@kuclab-hertz/tools";
 import type { ToolDefinition } from "@kuclab-hertz/providers";
 
 export interface ProviderPort {
   /** Resolves a stored ProviderConfig id (decrypting its key server-side) into a ready-to-use adapter. */
   getAdapter(providerConfigId: string): Promise<ProviderAdapter>;
+  /**
+   * Validates/normalizes a model id against what the provider actually serves,
+   * before any call goes out: known aliases are mapped, otherwise the
+   * provider's configured default (or first supported) model is used instead
+   * of failing at stream time. Optional — when absent the requested id is used
+   * as-is. Must never throw: on any failure the requested id passes through.
+   */
+  resolveModel?(providerConfigId: string, requestedModel: string): Promise<ModelResolution>;
 }
 
 export interface ToolPort {
@@ -15,6 +23,24 @@ export interface ToolPort {
 
 export type MessageRole = "system" | "user" | "assistant" | "tool";
 export type MessagePurpose = "agent_turn" | "summarization" | "routing" | "title_generation";
+
+/**
+ * A file the agent delivered to the user with the send_file tool.
+ * Served for download by id (never by path) — see server attachments route.
+ */
+export interface FileAttachmentInfo {
+  id: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  caption?: string | null;
+  createdAt: Date;
+}
+
+/** FileAttachmentInfo plus the guard-resolved server path (server-side only, never sent to clients). */
+export interface FileAttachment extends FileAttachmentInfo {
+  absolutePath: string;
+}
 
 export interface PersistedMessage {
   id: string;
@@ -29,6 +55,8 @@ export interface PersistedMessage {
   cost: number;
   purpose: MessagePurpose;
   createdAt: Date;
+  /** Files the agent attached to this message via the send_file tool. */
+  attachments?: FileAttachmentInfo[];
 }
 
 export interface UsageRecordInput {

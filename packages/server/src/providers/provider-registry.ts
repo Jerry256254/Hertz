@@ -2,10 +2,12 @@ import { asc, eq } from "drizzle-orm";
 import {
   createProviderAdapter,
   ProviderError,
+  resolveSupportedModel,
   type ChatRequest,
   type ChatResponse,
   type ModelInfo,
   type ModelPricing,
+  type ModelResolution,
   type ProviderAdapter,
   type StreamEvent,
   type SupportedProvider,
@@ -92,30 +94,68 @@ function createRotatingAdapter(adapters: ProviderAdapter[]): ProviderAdapter {
 
 /** Resolves a stored, encrypted ProviderConfig row (plus its key pool) into a ready-to-use, rotating adapter. Adapters are cheap to construct, so no caching beyond this call. */
 export function createProviderRegistry(db: Database, masterKey: Buffer): ProviderPort {
-  return {
-    async getAdapter(providerConfigId: string): Promise<ProviderAdapter> {
-      const rows = await db
-        .select()
+  /** Per providerConfigId → scanned model list; providers are asked at most once a minute. */
+  const modelListCache = new Map<string, { at: number; models: ModelInfo[] }>();
+
+  async function getAdapter(providerConfigId: string): Promise<ProviderAdapter> {
+    const rows = await db
+      .select()
+      .from(providerConfigs)
+      .where(eq(providerConfigs.id, providerConfigId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new Error(`Unknown provider config: ${providerConfigId}`);
+
+    const poolRows = await db
+      .select()
+      .from(providerConfigKeys)
+      .where(eq(providerConfigKeys.providerConfigId, providerConfigId))
+      .orderBy(asc(providerConfigKeys.createdAt));
+
+    const encryptedKeys = [row.encryptedKey, ...poolRows.map((r) => r.encryptedKey)];
+    const adapters = encryptedKeys.map((encryptedKey) =>
+      createProviderAdapter(row.provider as SupportedProvider, {
+        apiKey: decryptSecret(masterKey, encryptedKey),
+        baseUrl: row.baseUrl ?? undefined,
+      }),
+    );
+    return createRotatingAdapter(adapters);
+  }
+
+  /**
+   * Validates a model id against the provider's live /models list BEFORE any
+   * call goes out. Unknown ids are mapped through known aliases (e.g.
+   * "deepseek-v4.1-flash" → "deepseek-flash" on endpoints that only serve the
+   * first-party name) and otherwise fall back to the config's default model
+   * instead of failing at stream time. A scan failure never blocks the run —
+   * the requested id passes through unchanged ("unverified").
+   */
+  async function resolveModel(providerConfigId: string, requestedModel: string): Promise<ModelResolution> {
+    try {
+      const cached = modelListCache.get(providerConfigId);
+      const models =
+        cached && Date.now() - cached.at < 60_000
+          ? cached.models
+          : await getAdapter(providerConfigId).then(async (adapter) => {
+              const list = await adapter.listModels();
+              modelListCache.set(providerConfigId, { at: Date.now(), models: list });
+              return list;
+            });
+      const cfgRows = await db
+        .select({ defaultModel: providerConfigs.defaultModel })
         .from(providerConfigs)
         .where(eq(providerConfigs.id, providerConfigId))
         .limit(1);
-      const row = rows[0];
-      if (!row) throw new Error(`Unknown provider config: ${providerConfigId}`);
-
-      const poolRows = await db
-        .select()
-        .from(providerConfigKeys)
-        .where(eq(providerConfigKeys.providerConfigId, providerConfigId))
-        .orderBy(asc(providerConfigKeys.createdAt));
-
-      const encryptedKeys = [row.encryptedKey, ...poolRows.map((r) => r.encryptedKey)];
-      const adapters = encryptedKeys.map((encryptedKey) =>
-        createProviderAdapter(row.provider as SupportedProvider, {
-          apiKey: decryptSecret(masterKey, encryptedKey),
-          baseUrl: row.baseUrl ?? undefined,
-        }),
+      const defaultModel = cfgRows[0]?.defaultModel ?? undefined;
+      return resolveSupportedModel(
+        requestedModel,
+        models.map((m) => m.id),
+        defaultModel ?? undefined,
       );
-      return createRotatingAdapter(adapters);
-    },
-  };
+    } catch {
+      return { model: requestedModel, changed: false, via: "unverified" as const };
+    }
+  }
+
+  return { getAdapter, resolveModel };
 }

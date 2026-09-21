@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
-import { ProviderError, type ChatMessage, type ChatRequest, type ContentBlock, type ModelPricing, type StopReason, type UsageInfo } from "@kuclab-hertz/providers";
-import type { ArtifactStore, ToolContext } from "@kuclab-hertz/tools";
+import { ProviderError, friendlyChatError, type ChatMessage, type ChatRequest, type ContentBlock, type ModelPricing, type StopReason, type UsageInfo } from "@kuclab-hertz/providers";
+import type { ArtifactStore, FileAttachmentPayload, ToolContext } from "@kuclab-hertz/tools";
 import type { ActorContext, AuditSink, PathGuard, ShellPolicy } from "@kuclab-hertz/sandbox";
 import type { PersistedMessage, PersistencePort, ProviderPort, ToolPort } from "../ports.js";
 import { planCachePrefix } from "../context/cache-planner.js";
@@ -74,6 +74,7 @@ export type AgentLoopEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; id: string; name: string; summary: string; isError?: boolean }
+  | { type: "file_sent"; attachment: FileAttachmentPayload }
   | { type: "message_saved"; message: PersistedMessage }
   | { type: "status"; status: "running" | "idle" | "error" | "paused" }
   | { type: "awaiting_input"; question: string }
@@ -386,6 +387,40 @@ export class AgentLoopManager {
   }
 
   /**
+   * Validates the configured model id against what the provider actually
+   * serves, before any call goes out. A stale/renamed id would otherwise die
+   * at stream time with a cryptic provider error. On fallback the user gets a
+   * discreet Czech notice (not an error); the raw detail is logged
+   * server-side. Never throws — worst case the provider rejects the id itself
+   * and the friendly-error path takes over.
+   */
+  private async resolveRunModel(
+    sessionId: string,
+    providerConfigId: string,
+    requestedModel: string,
+  ): Promise<string> {
+    const resolve = this.deps.providers.resolveModel;
+    if (typeof resolve !== "function") return requestedModel;
+    let resolution;
+    try {
+      resolution = await resolve(providerConfigId, requestedModel);
+    } catch (err) {
+      console.warn(`[hertz] model resolution failed: ${(err as Error).message}`);
+      return requestedModel;
+    }
+    if (!resolution.changed || !resolution.model) return resolution.model || requestedModel;
+    this.emit(sessionId, {
+      type: "notice",
+      message:
+        resolution.via === "alias"
+          ? `Pozn.: model „${requestedModel}" poskytovatel nezná, používám jeho ekvivalent „${resolution.model}".`
+          : `Pozn.: model „${requestedModel}" už poskytovatel nenabízí, přepínám na „${resolution.model}".`,
+    });
+    console.warn(`[hertz] model fallback: "${requestedModel}" → "${resolution.model}" (via ${resolution.via})`);
+    return resolution.model;
+  }
+
+  /**
    * Replaces everything before this point in the session with a single dense
    * summary message (marked `purpose: 'summarization'`), so future turns' history
    * is cheap again. Nothing is deleted from the DB — toChatMessages() just starts
@@ -408,8 +443,9 @@ export class AgentLoopManager {
     }
 
     const adapter = await providers.getAdapter(config.providerConfigId);
+    const model = await this.resolveRunModel(config.sessionId, config.providerConfigId, config.model);
     const res = await adapter.chat({
-      model: config.model,
+      model,
       system: COMPACT_SYSTEM_PROMPT,
       messages: chatMessages,
       maxTokens: 2048,
@@ -421,7 +457,7 @@ export class AgentLoopManager {
         .join("\n")
         .trim() || "(summary came back empty)";
 
-    const cost = computeCost(res.usage, adapter.pricing(config.model));
+    const cost = computeCost(res.usage, adapter.pricing(model));
     const saved = await persistence.appendMessage({
       sessionId: config.sessionId,
       role: "user",
@@ -436,7 +472,7 @@ export class AgentLoopManager {
       sessionId: config.sessionId,
       userId: config.userId,
       provider: adapter.id,
-      model: config.model,
+      model,
       purpose: "summarization",
       tokensIn: res.usage.inputTokens,
       tokensOut: res.usage.outputTokens,
@@ -479,7 +515,11 @@ export class AgentLoopManager {
         await this.deps.persistence.appendMemoryNote(config.agentId, "Run stopped by the user mid-task.");
         this.emit(config.sessionId, { type: "notice", message: "Run stopped by the user." });
       } else {
-        this.emit(config.sessionId, { type: "error", message: (err as Error).message });
+        // Never leak raw provider/LLM errors (JSON bodies, stack traces) to
+        // the user — they reach web chat and Telegram verbatim. The technical
+        // detail is logged server-side; the user sees a friendly Czech note.
+        console.error(`[hertz] agent run failed (session ${config.sessionId}):`, err);
+        this.emit(config.sessionId, { type: "error", message: friendlyChatError(err) });
         await this.deps.persistence.updateSessionStatus(config.sessionId, "error");
         throw err;
       }
@@ -524,6 +564,11 @@ export class AgentLoopManager {
     }
 
     const adapter = await providers.getAdapter(config.providerConfigId);
+    // Validate the model id against what the provider actually serves before
+    // any call goes out — a stale/renamed id (e.g. "deepseek-v4.1-flash" on an
+    // endpoint that only knows "deepseek-flash") is mapped to a known alias
+    // or the configured default instead of failing at stream time.
+    const model = await this.resolveRunModel(config.sessionId, config.providerConfigId, config.model);
     let toolDefs = await tools.listDefinitions(config.agentId);
     if (config.excludeTools?.length) {
       toolDefs = toolDefs.filter((def) => !config.excludeTools!.includes(def.name));
@@ -557,17 +602,20 @@ export class AgentLoopManager {
       if (history.length > 12) {
         const budget = computeBudget(history);
         if (needsSummarization(budget, 85)) {
-          this.emit(config.sessionId, { type: "notice", message: "Context window nearly full — auto-compacting the conversation." });
+          this.emit(config.sessionId, { type: "notice", message: "Kontext se plní — automaticky shrnuji starší část konverzace." });
           try {
             await this.compact({
               sessionId: config.sessionId,
               userId,
               providerConfigId: config.providerConfigId,
-              model: config.model,
+              model,
             });
             history = await persistence.listMessages(config.sessionId);
           } catch (err) {
-            this.emit(config.sessionId, { type: "notice", message: `Auto-compact failed (${(err as Error).message}) — continuing with full history.` });
+            // Never surface the raw error (it may contain provider JSON) —
+            // log it server-side and continue with full history.
+            console.warn(`[hertz] auto-compact failed (session ${config.sessionId}):`, err);
+            this.emit(config.sessionId, { type: "notice", message: "Automatické shrnutí kontextu se nezdařilo — pokračuji s plnou historií." });
           }
         }
       }
@@ -576,7 +624,7 @@ export class AgentLoopManager {
       const snapshotId = history.length > 0 ? history[history.length - 1]!.id : null;
 
       const req: ChatRequest = {
-        model: config.model,
+        model,
         system: config.systemPrompt,
         messages: chatMessages,
         tools: toolDefs,
@@ -620,9 +668,7 @@ export class AgentLoopManager {
               break;
             case "error":
               throw new Error(
-                config.model
-                  ? `Provider stream error (model: ${config.model}): ${evt.message}. If this is a free/gateway model, it may not support tool calling — try a different model in the bot's settings.`
-                  : evt.message,
+                `Provider stream error (model: ${model}): ${evt.message}. If this is a free/gateway model, it may not support tool calling — try a different model in the bot's settings.`,
               );
           }
         }
@@ -632,9 +678,12 @@ export class AgentLoopManager {
       const { assistantText, toolUses, usage, stopReason } = await retryTransient(
         () => consumeStream(),
         (attempt, err) => {
+          // The raw error may contain provider JSON — log it server-side and
+          // show the user only a discreet Czech note.
+          console.warn(`[hertz] provider call failed, retrying (attempt ${attempt}):`, err);
           this.emit(config.sessionId, {
             type: "notice",
-            message: `Provider call failed (${(err as Error).message}) — retrying in a moment (attempt ${attempt}).`,
+            message: `Spojení s AI zadrhlo — zkouším znovu (pokus ${attempt}).`,
           });
         },
         signal,
@@ -648,7 +697,7 @@ export class AgentLoopManager {
         assistantBlocks.push({ type: "tool_use", id: t.id, name: t.name, input: safeJsonParse(t.inputRaw) });
       }
 
-      const pricing = adapter.pricing(config.model);
+      const pricing = adapter.pricing(model);
       const cost = computeCost(usage, pricing);
 
       const savedAssistantMsg = await persistence.appendMessage({
@@ -666,7 +715,7 @@ export class AgentLoopManager {
         sessionId: config.sessionId,
         userId,
         provider: adapter.id,
-        model: config.model,
+        model,
         purpose: "agent_turn",
         tokensIn: usage.inputTokens,
         tokensOut: usage.outputTokens,
@@ -791,6 +840,11 @@ export class AgentLoopManager {
           summary: result.summary,
           isError: result.isError,
         });
+        if (result.fileAttachment) {
+          // send_file: the agent handed a file to the user — channels deliver
+          // the bytes (Telegram sendDocument), the WebUI renders the card.
+          this.emit(config.sessionId, { type: "file_sent", attachment: result.fileAttachment });
+        }
         if (result.awaitUser && !pendingAwait) {
           pendingAwait = { question: result.awaitUser.question };
         }
