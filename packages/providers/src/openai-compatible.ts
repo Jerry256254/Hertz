@@ -127,7 +127,15 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
     }
     const body = (await res.json()) as { data: Array<{ id: string }> };
     const scanned = body.data.map((m) => ({ id: m.id, displayName: m.id, supportsTools: true }));
-    // Union with curated ids — /models lags releases on some first-party endpoints.
+    if (scanned.length > 0) {
+      // A successful non-empty /models response is authoritative: the endpoint
+      // decides which ids it serves. Injecting curated ids on top produced
+      // picker entries the endpoint then rejected at chat time
+      // (invalid_request_error), so never merge here.
+      return scanned;
+    }
+    // Empty list (some local runners expose /models but list nothing) — fall
+    // back to curated ids so the picker is not useless.
     return mergeModelLists(scanned, knownModelsForEndpoint(opts.baseUrl));
   }
 

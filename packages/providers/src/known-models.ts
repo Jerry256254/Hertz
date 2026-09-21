@@ -1,10 +1,12 @@
 import type { ModelInfo } from "./types.js";
 
 /**
- * Curated model ids merged UNDER live /models results (scan wins on conflict).
- * Some first-party endpoints lag behind releases or hide new ids from /models
- * for weeks — without this the picker silently misses models the API already
- * serves. Keep entries minimal and factual: id + rough capabilities.
+ * Curated model ids used as a FALLBACK when a live /models scan returns an
+ * empty list (some local runners expose the endpoint but list nothing).
+ * Never merged on top of a successful scan — the endpoint's own list is
+ * authoritative, and injecting extra ids produced picker entries the endpoint
+ * then rejected at chat time. Keep entries minimal and factual: id + rough
+ * capabilities.
  */
 const KNOWN_BY_HOST: Record<string, ModelInfo[]> = {
   "api.deepseek.com": [
