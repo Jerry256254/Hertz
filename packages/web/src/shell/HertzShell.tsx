@@ -106,8 +106,10 @@ export function HertzShell() {
       />
 
       {showSidebar && (
-        <aside className="flex w-[300px] shrink-0 flex-col border-r border-border bg-bg-sidebar max-md:hidden">
-          <SideBar
+        <>
+          <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
+          <aside className="fixed inset-y-0 left-0 z-40 flex w-[300px] max-w-[85vw] flex-col border-r border-border bg-bg-sidebar md:static md:z-auto md:shrink-0">
+            <SideBar
             agent={agent}
             projectId={projectId}
             mainChatId={mainChatId}
@@ -118,7 +120,8 @@ export function HertzShell() {
             onOpenSearch={() => setSearchOpen(true)}
             onClose={() => setSidebarOpen(false)}
           />
-        </aside>
+          </aside>
+        </>
       )}
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -151,8 +154,10 @@ export function HertzShell() {
       </main>
 
       {rightPanel && (
-        <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-bg-sidebar max-lg:hidden">
-          {rightPanel === "agent" ? (
+        <>
+          <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setRightPanel(null)} />
+          <aside className="fixed inset-y-0 right-0 z-40 flex w-[360px] max-w-[92vw] flex-col border-l border-border bg-bg-sidebar lg:static lg:z-auto lg:shrink-0">
+            {rightPanel === "agent" ? (
             <AgentPanel
               agent={agent}
               projectId={projectId}
@@ -166,7 +171,8 @@ export function HertzShell() {
           ) : (
             <BrowserPanel agent={agent} onClose={() => setRightPanel(null)} />
           )}
-        </aside>
+          </aside>
+        </>
       )}
 
       {searchOpen && (

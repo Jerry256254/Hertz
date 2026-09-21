@@ -5,6 +5,7 @@ import type { AuditSink } from "@kuclab-hertz/sandbox";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { Database } from "../db/client.js";
 import { agents, projectRoots, sessions } from "../db/schema.js";
+import { resolveEffectiveModel, scannedModels } from "./resolve-model.js";
 import { mountsFor } from "../mounts/mounts.js";
 import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
@@ -66,8 +67,7 @@ async function modelSupportsVision(deps: RunJobsDeps, providerConfigId: string, 
   if (cached !== undefined) return cached;
   let value = false;
   try {
-    const adapter = await deps.providers.getAdapter(providerConfigId);
-    const models = await adapter.listModels();
+    const models = await scannedModels(deps, providerConfigId);
     value = models.find((m) => m.id === model)?.supportsVision ?? false;
   } catch {
     value = false;
@@ -149,6 +149,10 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
     const agent = agentRows[0];
     if (!agent) return;
 
+    // Stale model ids are corrected here (persisted), so the run never dies
+    // at stream time with "unsupported model name".
+    const model = await resolveEffectiveModel(deps, agent);
+
     const mode = payload.mode ?? normalizeSessionMode(session.mode);
     const excludeTools = [...(payload.excludeTools ?? [])];
 
@@ -218,7 +222,7 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
         projectId: session.projectId,
         userId: payload.userId ?? (await deps.fallbackUserId()),
         rootId: mainRoot.rootId,
-        model: agent.model,
+        model,
         providerConfigId: agent.providerConfigId,
         systemPrompt: await buildSystemPrompt(deps.db, agent, {
           mode,
@@ -227,13 +231,13 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
           sessionId: session.id,
           mounts: mountRows,
           conversationContext: await extractLastUserText(deps, session.id),
-          visionSupport: await modelSupportsVision(deps, agent.providerConfigId, agent.model),
+          visionSupport: await modelSupportsVision(deps, agent.providerConfigId, model),
         }),
         mode,
         excludeTools: excludeTools.length > 0 ? excludeTools : undefined,
         prePersisted: prePersisted || !payload.userMessage,
         suppressAutoMemory: payload.suppressAutoMemory,
-        supportsVision: await modelSupportsVision(deps, agent.providerConfigId, agent.model),
+        supportsVision: await modelSupportsVision(deps, agent.providerConfigId, model),
       },
       payload.userMessage ?? [],
     );

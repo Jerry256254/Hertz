@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, RefreshCw, Search } from "lucide-react";
+import { Check, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { api } from "../lib/api";
 import type { ModelInfo } from "../lib/types";
 import { Input } from "./ui";
@@ -25,15 +25,28 @@ export function ModelPicker({
     retry: false,
   });
 
+  const scanned = useMemo(() => {
+    return (modelsQuery.data?.models ?? []).slice().sort((a, b) => a.id.localeCompare(b.id));
+  }, [modelsQuery.data]);
+
+  // The stored value may be stale (renamed/retired by the provider, or typed
+  // by hand) — surface it loudly instead of letting the run die at stream time.
+  const currentMissing =
+    !!value &&
+    !modelsQuery.isLoading &&
+    !modelsQuery.isError &&
+    scanned.length > 0 &&
+    !scanned.some((m) => m.id === value);
+
   const filtered = useMemo(() => {
-    const models = (modelsQuery.data?.models ?? []).slice().sort((a, b) => a.id.localeCompare(b.id));
+    const models = scanned.slice();
     // The current value never disappears — even when the scan lags behind it.
     if (value && !models.some((m) => m.id === value)) {
       models.unshift({ id: value, displayName: `${value} (aktuální)` });
     }
     const q = query.trim().toLowerCase();
     return q ? models.filter((m) => m.id.toLowerCase().includes(q)) : models;
-  }, [modelsQuery.data, query, value]);
+  }, [scanned, query, value]);
 
   if (!providerConfigId) {
     return <p className="text-xs text-fg-subtle">Select a provider first.</p>;
@@ -50,6 +63,15 @@ export function ModelPicker({
 
   return (
     <div>
+      {currentMissing && (
+        <div className="mb-2 flex items-start gap-2 rounded-[12px] border border-warning/30 bg-warning-wash px-3 py-2">
+          <TriangleAlert size={13} className="mt-0.5 shrink-0 text-warning" />
+          <p className="text-[12px] leading-snug text-fg">
+            Model <span className="mono font-[600]">{value}</span> provider aktuálně nenabízí — s ním chat selže.
+            Vyber jiný ze seznamu níže.
+          </p>
+        </div>
+      )}
       <div className="mb-2 flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle" />

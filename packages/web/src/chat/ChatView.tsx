@@ -326,8 +326,6 @@ export function ChatView({
   }, [data?.messages]);
 
   const mood = isRunning ? "working" : data?.session.status === "awaiting_input" ? "thinking" : "idle";
-  // The counter shows what the user actually sees — hidden tool-result plumbing excluded.
-  const messageCount = (data?.messages ?? []).filter(isVisibleMessage).length;
 
   /** Consecutive tool-only assistant turns merge into one steps block (no more "N kroků" spam). Hidden tool-result messages are transparent to grouping. */
   const renderBlocks = useMemo(() => {
@@ -396,7 +394,7 @@ export function ChatView({
         )}
         {streamingText && (
           <div className="mx-auto flex w-full max-w-[760px] gap-2.5 px-4 py-2">
-            <div className="mt-0.5 shrink-0"><AgentAvatar seed={agent.id} mood="speaking" size={30} /></div>
+            <div className="mt-0.5 shrink-0"><AgentAvatar seed={agent.id} mood="speaking" size={24} /></div>
             <div className="min-w-0 flex-1 rounded-[20px] rounded-tl-[8px] border border-border bg-bg-raised px-4 py-3">
               <Markdown>{streamingText}</Markdown>
             </div>
@@ -439,7 +437,7 @@ export function ChatView({
       </div>
 
       {/* run controls + pending states */}
-      <div className="shrink-0 px-3 pb-3 md:px-5">
+      <div className="shrink-0 px-3 pb-4 pt-1 md:px-5">
         <div className="mx-auto w-full max-w-[760px]">
           {data?.pendingTakeover && (
             <div className="mb-2 rounded-[16px] border border-warning/30 bg-warning-wash p-3.5">
@@ -470,20 +468,15 @@ export function ChatView({
               onSubmit={onSubmit}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); void onFiles(e.dataTransfer.files); }}
-              className="relative rounded-[24px] border border-border bg-bg-raised p-2 shadow-sm focus-within:border-border-strong"
+              className="relative rounded-[28px] border border-border bg-bg-raised shadow-[0_12px_40px_rgba(0,0,0,0.35)] transition-colors focus-within:border-accent/50"
             >
               {showJumpToBottom && (
-                <button type="button" onClick={jumpToBottom} title="Skočit dolů" className="absolute -top-12 right-3 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted shadow-md hover:text-fg">
-                  <ArrowDown size={15} />
-                </button>
-              )}
-              {messageCount > 0 && (
-                <button type="button" onClick={jumpToBottom} title="Počet zpráv — skočit dolů" className="absolute -top-8 left-1/2 -translate-x-1/2 rounded-full bg-bg-sunken/90 px-2.5 py-0.5 text-[11px] font-[600] text-fg-muted hover:text-fg">
-                  {messageCount} {messageCount === 1 ? "zpráva" : messageCount < 5 ? "zprávy" : "zpráv"} ⌄
+                <button type="button" onClick={jumpToBottom} title="Skočit dolů" className="absolute -top-14 right-2 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-bg-raised text-fg-muted shadow-lg hover:text-fg">
+                  <ArrowDown size={16} />
                 </button>
               )}
               {images.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-2 pt-1">
+                <div className="flex flex-wrap gap-2 px-4 pt-3">
                   {images.map((img, i) => (
                     <div key={i} className="group relative">
                       <img src={`data:${img.mimeType};base64,${img.data}`} className="h-14 w-14 rounded-[12px] border border-border object-cover" />
@@ -493,7 +486,7 @@ export function ChatView({
                 </div>
               )}
               {docFiles.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-2 pt-1">
+                <div className="flex flex-wrap gap-2 px-4 pt-3">
                   {docFiles.map((f, i) => (
                     <span key={i} className="mono flex items-center gap-1.5 rounded-full border border-border bg-bg-sunken px-3 py-1 text-[11px] text-fg-muted">
                       <Paperclip size={11} /> {f.name}
@@ -502,20 +495,22 @@ export function ChatView({
                   ))}
                 </div>
               )}
-              <div className="flex items-end gap-1.5">
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={onKeyDown}
+                onPaste={(e) => void onFiles(e.clipboardData.files)}
+                placeholder={title ? `Napiš ${agent.name}…` : "Napiš zprávu…"}
+                rows={1}
+                className="max-h-[160px] min-h-[48px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[14px] leading-6 text-fg placeholder:text-fg-subtle outline-none"
+              />
+              <div className="flex items-center gap-1 px-2.5 pb-2.5">
                 <input type="file" accept="image/*,.txt,.md,.markdown,.csv,.json,.log,.ts,.js,.py" multiple onChange={(e) => void onFiles(e.target.files)} className="hidden" id={`file-input-${sessionId}`} />
-                <IconButton type="button" title="Přiložit soubor" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()} className="mb-0.5"><Paperclip size={16} /></IconButton>
-                <textarea
-                  ref={textareaRef}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  onPaste={(e) => void onFiles(e.clipboardData.files)}
-                  placeholder={title ? `Zpráva — ${title}` : "Zpráva"}
-                  rows={1}
-                  className="max-h-[140px] min-h-[40px] w-full resize-none bg-transparent px-2 py-2.5 text-[14px] leading-6 text-fg placeholder:text-fg-subtle outline-none"
-                />
-                <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white disabled:opacity-30"><ArrowUp size={16} strokeWidth={2.2} /></button>
+                <IconButton type="button" title="Přiložit soubor" onClick={() => document.getElementById(`file-input-${sessionId}`)?.click()}><Paperclip size={16} /></IconButton>
+                <span className="flex-1" />
+                <span className="hidden select-none text-[11px] text-fg-faint sm:block">Enter ↵ odešle · Shift+Enter nový řádek</span>
+                <button type="submit" disabled={!text && images.length === 0 && docFiles.length === 0} title="Odeslat" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"><ArrowUp size={16} strokeWidth={2.2} /></button>
               </div>
             </form>
           )}
