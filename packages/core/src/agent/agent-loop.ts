@@ -32,7 +32,8 @@ export interface AgentLoopConfig {
    * agent is still mid-work (a tool call came back, or new inbound mail is
    * pending), the loop extends itself by another chunk instead of dying — up
    * to maxAutoContinuations times, so long autonomous runs can genuinely run
-   * for hours rather than silently stalling at an arbitrary 25-turn wall.
+   * for hours rather than silently stalling at an arbitrary turn wall.
+   * Effective ceiling: maxTurns * (maxAutoContinuations + 1) model calls.
    */
   maxTurns?: number;
   /** Output-token cap per single model call (providers clamp to their own maximums). */
@@ -55,7 +56,7 @@ export interface AgentLoopConfig {
   supportsVision?: boolean;
 }
 
-export const DEFAULT_MAX_TURNS = 50;
+export const DEFAULT_MAX_TURNS = 100;
 export const DEFAULT_MAX_TOKENS = 8192;
 export const DEFAULT_MAX_AUTO_CONTINUATIONS = 20;
 
@@ -136,6 +137,76 @@ export function consecutiveRepeatCount(sigs: string[]): number {
   for (let i = sigs.length - 1; i >= 0 && sigs[i] === last; i--) n++;
   return n;
 }
+
+/**
+ * Completion guard: word patterns (Czech + English) indicating the agent
+ * promised the user a file artifact — a presentation, document, download…
+ * When the loop would otherwise terminate on a text-only turn while such a
+ * promise is outstanding and no file was delivered via send_file, it must
+ * NOT end: it nudges the agent back to work instead.
+ */
+export const ARTIFACT_PROMISE_RE =
+  /(prezentac|pptx?|keynote|slid(e|es)|soubor|příloh|priloh|dokument(?!ac[ei])|report|tabulk|xlsx|pdf|stránk|strank|webov|obrázek|obrazek|video|audio|zip|archiv|pošlu|poslu|posílám|posilam|přiložím|prilozim|přikládám|nahrávám|nahraju|vytvořím|vytvorim|připravím|pripravim|ke stažení|ke stazeni|\bdownload\b|\battachment\b)/i;
+
+/** The agent explicitly denying it promised anything — suppresses the guard so a denial can't trigger another nudge. */
+export const ARTIFACT_DENIAL_RE =
+  /(nesl[ií]bil|neslibuji|žádn\w+ soubor\w* (jsem )?(ne|nikdy)|nemám co (odeslat|poslat|přiložit)|neodesílám nic)/i;
+
+/** True when the given text promises the user a file artifact. */
+export function textPromisesArtifact(text: string): boolean {
+  return ARTIFACT_PROMISE_RE.test(text);
+}
+
+/** True when the session history shows at least one file delivered via send_file. */
+export function sessionHasDeliveredFiles(history: PersistedMessage[]): boolean {
+  return history.some((m) => (m.attachments?.length ?? 0) > 0);
+}
+
+/** Full plain text of text blocks (untruncated) — used by the completion guard. */
+export function blocksText(blocks: ContentBlock[]): string {
+  return blocks
+    .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * True when the run must NOT terminate yet: a file artifact was promised
+ * (in the triggering user message or in the agent's recent texts) but nothing
+ * was delivered — neither via send_file in this run nor earlier in the
+ * session's history.
+ */
+export function isArtifactDeliveryPending(opts: {
+  userText: string;
+  assistantTexts: string[];
+  filesSentThisRun: number;
+  history: PersistedMessage[];
+}): boolean {
+  if (opts.filesSentThisRun > 0 || sessionHasDeliveredFiles(opts.history)) return false;
+  const recent = opts.assistantTexts.slice(-3);
+  // The agent explicitly said it promised no file — believe it, don't nag.
+  if (recent.length > 0 && ARTIFACT_DENIAL_RE.test(recent[recent.length - 1]!)) return false;
+  const haystacks = [opts.userText, ...recent];
+  return haystacks.some((t) => textPromisesArtifact(t));
+}
+
+/** Max "you promised a file but never sent it" nudges per run before the loop gives up honestly. */
+export const MAX_ARTIFACT_NUDGES = 3;
+
+/** System nudge (Czech) appended as a user message when the completion guard fires. */
+export const ARTIFACT_NUDGE_TEXT =
+  "[Systémová kontrola dokončení — tato zpráva není od uživatele] " +
+  "Slíbil jsi uživateli soubor (prezentaci, dokument, …), ale zatím jsi žádný neodeslal nástrojem send_file. " +
+  "Úkol proto NENÍ hotový a nesmíš skončit. Dokonči práci: soubor vytvoř (nebo ho najdi ve svém pracovním prostoru) " +
+  "a odešli ho uživateli nástrojem send_file — teprve pak je úkol splněný. " +
+  "Pokud soubor vytvořit či odeslat opravdu nejde, řekni uživateli přesně a konkrétně proč.";
+
+/** Honest user-visible message persisted when even repeated nudges didn't produce the promised file. No emoji — it's system/UI text. */
+export const ARTIFACT_GIVEUP_TEXT =
+  "Slíbil jsem ti soubor (prezentaci / dokument), ale nepodařilo se mi ho dokončit a odeslat, takže ho v chatu nemáš. " +
+  "Mrzí mě to — napiš mi prosím, jak mám pokračovat, nebo zkus úkol zadat jinak.";
 
 function isTransientProviderError(err: unknown): boolean {
   if (isAbortError(err)) return false;
@@ -587,6 +658,11 @@ export class AgentLoopManager {
     // Spin guard: signatures of recently executed tool calls (this run only).
     const recentToolSigs: string[] = [];
     const nudgedSigs = new Set<string>();
+    // Completion guard state: assistant texts (for artifact-promise detection),
+    // files delivered via send_file, and how many times the guard already nudged.
+    const assistantTextsThisRun: string[] = [];
+    let filesSentThisRun = 0;
+    let artifactNudges = 0;
 
     while (true) {
       // Pause takes effect between turns: the current model call / tool finishes first.
@@ -688,6 +764,12 @@ export class AgentLoopManager {
         },
         signal,
       );
+      // Completion guard: remember what the agent said this run so the
+      // termination check can spot a promised-but-undelivered file artifact.
+      if (assistantText.trim()) {
+        assistantTextsThisRun.push(assistantText);
+        if (assistantTextsThisRun.length > 5) assistantTextsThisRun.shift();
+      }
       let pendingAwait: { question: string } | undefined;
       const visionAttachments: Array<{ tool: string; mimeType: string; data: string }> = [];
 
@@ -729,6 +811,63 @@ export class AgentLoopManager {
       // sent while working must be answered rather than silently left for the next run.
       const hasInbound = await this.hasNewInboundMessage(config.sessionId, snapshotId);
       if ((stopReason !== "tool_use" || toolUses.length === 0) && !hasInbound) {
+        // Completion guard: never "finish" while a promised file artifact is
+        // undelivered. The classic failure: the agent writes "teď ta hlavní
+        // prezentace" as plain text with no tool calls and the run silently
+        // ends — no file, no attachment, task half-done.
+        if (
+          isArtifactDeliveryPending({
+            userText: blocksText(userMessage),
+            assistantTexts: assistantTextsThisRun,
+            filesSentThisRun,
+            history,
+          })
+        ) {
+          if (artifactNudges < MAX_ARTIFACT_NUDGES) {
+            artifactNudges++;
+            await persistence.appendMessage({
+              sessionId: config.sessionId,
+              role: "user",
+              content: [{ type: "text", text: ARTIFACT_NUDGE_TEXT }],
+              senderAgentId: null,
+              tokensIn: 0,
+              tokensOut: 0,
+              cachedTokensIn: 0,
+              cost: 0,
+              purpose: "agent_turn",
+            });
+            this.emit(config.sessionId, {
+              type: "notice",
+              message: "Systémová kontrola: agent slíbil soubor, ale neodeslal ho — vracím ho do práce.",
+            });
+            continue;
+          }
+          // Even repeated nudges didn't produce the file — end honestly instead
+          // of pretending success: the user sees what happened, memory records it.
+          const giveUpMsg = await persistence.appendMessage({
+            sessionId: config.sessionId,
+            role: "assistant",
+            content: [{ type: "text", text: ARTIFACT_GIVEUP_TEXT }],
+            senderAgentId: config.agentId,
+            tokensIn: 0,
+            tokensOut: 0,
+            cachedTokensIn: 0,
+            cost: 0,
+            purpose: "agent_turn",
+          });
+          this.emit(config.sessionId, { type: "message_saved", message: giveUpMsg });
+          this.emit(config.sessionId, {
+            type: "notice",
+            message: "Nedokončeno: slíbený soubor se nepodařilo doručit ani na několikátý pokus.",
+          });
+          await persistence.updateSessionStatus(config.sessionId, "completed");
+          await persistence.appendMemoryNote(
+            config.agentId,
+            `Slíbený soubor se nepodařilo doručit ani po ${MAX_ARTIFACT_NUDGES} systémových výzvách — úkol zůstal nedokončený: ${extractTextSummary(userMessage, 200)}`,
+            { kind: "episode", importance: 2 },
+          );
+          return;
+        }
         await persistence.updateSessionStatus(config.sessionId, "completed");
         const statusLine = deriveStatusLine(assistantText);
         await persistence.updateAgentLastStatus(config.agentId, statusLine);
@@ -788,6 +927,10 @@ export class AgentLoopManager {
           });
           await persistence.updateSessionStatus(config.sessionId, "awaiting_input");
           this.emit(config.sessionId, { type: "awaiting_input", question });
+          this.emit(config.sessionId, {
+            type: "notice",
+            message: `Čekám na tvoji odpověď („${question}") — běh je zaparkovaný a po odpovědi pokračuje automaticky.`,
+          });
           return;
         }
 
@@ -843,6 +986,9 @@ export class AgentLoopManager {
         if (result.fileAttachment) {
           // send_file: the agent handed a file to the user — channels deliver
           // the bytes (Telegram sendDocument), the WebUI renders the card.
+          // Tracked for the completion guard: a promised artifact counts as
+          // delivered only once it actually left via send_file.
+          filesSentThisRun++;
           this.emit(config.sessionId, { type: "file_sent", attachment: result.fileAttachment });
         }
         if (result.awaitUser && !pendingAwait) {
@@ -918,11 +1064,18 @@ export class AgentLoopManager {
 
       // A human-in-the-loop gate (request_approval): park the session until the
       // decision arrives via the approvals inbox, a chat answer, or a channel.
+      // Parking is never silent: the awaiting_input event plus a Czech notice
+      // go out on the stream, and the question is persisted in the session
+      // metadata so every client can show it.
       if (pendingAwait) {
         const meta = (await persistence.getSessionMetadata(config.sessionId)) ?? {};
         await persistence.setSessionMetadata(config.sessionId, { ...meta, pendingQuestion: pendingAwait.question, pendingQuestionAgentId: config.agentId });
         await persistence.updateSessionStatus(config.sessionId, "awaiting_input");
         this.emit(config.sessionId, { type: "awaiting_input", question: pendingAwait.question });
+        this.emit(config.sessionId, {
+          type: "notice",
+          message: `Čekám na schválení („${pendingAwait.question}") — běh je zaparkovaný a po rozhodnutí pokračuje automaticky.`,
+        });
         return;
       }
 

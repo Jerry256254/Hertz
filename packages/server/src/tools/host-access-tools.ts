@@ -259,7 +259,7 @@ export function createHostAccessTools(db: Database): AgentToolDef[] {
 
       return {
         summary: `Host-access request filed ("${summary}") and shown to the user. Waiting for their decision.`,
-        awaitUser: { question: `Host access needed: ${summary}` },
+        awaitUser: { question: `Přístup k hostiteli potřeba: ${summary}` },
       };
     },
   };

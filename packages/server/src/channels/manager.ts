@@ -512,12 +512,22 @@ export class ChannelManager {
             kind: approval.kind,
             payload: approval.payload,
           });
+          let cardDelivered = false;
           for (const [chatId, driver] of tap.targets) {
-            await driver.sendApproval(chatId, approval.id, card).catch((err) =>
-              console.warn(`[hertz] channel send failed: ${(err as Error).message}`),
-            );
+            const ok = await driver
+              .sendApproval(chatId, approval.id, card)
+              .then(() => true)
+              .catch((err) => {
+                console.warn(`[hertz] channel sendApproval failed: ${(err as Error).message}`);
+                return false;
+              });
+            cardDelivered = cardDelivered || ok;
           }
-          return;
+          if (cardDelivered) return;
+          // The approval card never reached the user — never park silently.
+          // Fall back to the plain question text so they at least learn a
+          // decision is expected from them (the approvals inbox has the card).
+          console.warn(`[hertz] approval card for ${approval.id} reached no channel target — falling back to text`);
         }
       }
       if (event.question) await this.broadcast(tap, event.question);

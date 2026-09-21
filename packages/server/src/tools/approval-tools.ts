@@ -89,7 +89,7 @@ export function createApprovalTools(db: Database): AgentToolDef[] {
         .set({
           metadata: JSON.stringify({
             ...meta,
-            pendingQuestion: `Approval needed: ${input.summary}`,
+            pendingQuestion: `Schválení potřeba: ${input.summary}`,
             pendingApprovalId: id,
           }),
           updatedAt: new Date(),
@@ -98,7 +98,7 @@ export function createApprovalTools(db: Database): AgentToolDef[] {
 
       return {
         summary: `Approval request filed ("${input.summary}") and shown to the user. Waiting for their decision.`,
-        awaitUser: { question: `Approval needed: ${input.summary}` },
+        awaitUser: { question: `Schválení potřeba: ${input.summary}` },
       };
     },
   };
