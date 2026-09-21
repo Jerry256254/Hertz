@@ -26,6 +26,17 @@ export function HertzShell() {
   const [activeBinding, setActiveBinding] = useState<ChannelBinding | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"general" | "connectors">("general");
+
+  // OAuth round-trip: the provider redirects back to /?connected= / ?oauthError= —
+  // open Nastavení → Konektory so the user sees the result immediately.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.has("connected") || q.has("oauthError")) {
+      setSettingsSection("connectors");
+      setSettingsOpen(true);
+    }
+  }, []);
 
   const agentQuery = useQuery({
     queryKey: ["agent"],
@@ -180,7 +191,7 @@ export function HertzShell() {
         <SearchOverlay agent={agent} onClose={() => setSearchOpen(false)} onSelect={selectChat} />
       )}
       {settingsOpen && (
-        <SettingsModal agent={agent} projectId={projectId} onClose={() => setSettingsOpen(false)} />
+        <SettingsModal agent={agent} projectId={projectId} initialSection={settingsSection} onClose={() => { setSettingsOpen(false); setSettingsSection("general"); }} />
       )}
     </div>
   );

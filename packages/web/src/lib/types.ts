@@ -238,6 +238,31 @@ export interface McpToolsForAgent {
   error?: string;
 }
 
+export interface IntegrationConnectorServer {
+  id: string;
+  name: string;
+  enabled: boolean;
+  tools: string[];
+  error: string | null;
+}
+
+export interface IntegrationConnector {
+  id: "google" | "notion" | "github";
+  service: "google" | "notion" | "github";
+  name: string;
+  tagline: string;
+  description: string;
+  capabilities: string[];
+  setupUrl: string;
+  setupUrlLabel: string;
+  setupHelp: string;
+  appConfigured: boolean;
+  clientId: string | null;
+  secretHint: string | null;
+  connected: boolean;
+  servers: IntegrationConnectorServer[];
+}
+
 export interface FileEntry {
   name: string;
   type: "file" | "directory" | "symlink";

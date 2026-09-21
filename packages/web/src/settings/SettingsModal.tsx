@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import type { Agent, ChannelConfig, McpServer, MountList, ProviderConfig, Routine } from "../lib/types";
+import type { Agent, ChannelConfig, IntegrationConnector, McpServer, MountList, ProviderConfig, Routine } from "../lib/types";
 import { DirectoryPicker } from "../components/DirectoryPicker";
 import { ModelFields } from "../components/ModelFields";
 import { ProviderCreateForm } from "../components/ProviderCreateForm";
@@ -552,6 +552,199 @@ function ChannelCard({
 
 function ConnectorsSection({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
+  const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // OAuth round-trip results land here as ?connected= / ?oauthError= query
+  // params (the provider redirects back to the app root). Show them once,
+  // then strip them from the URL.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const connected = q.get("connected");
+    const oauthError = q.get("oauthError");
+    if (connected || oauthError) {
+      setNotice(
+        connected
+          ? { kind: "ok", text: `„${connected}“ je připojeno. Agent nové nástroje umí hned použít.` }
+          : { kind: "err", text: oauthError ?? "Připojení se nezdařilo." },
+      );
+      q.delete("connected");
+      q.delete("oauthError");
+      const rest = q.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+    }
+  }, [queryClient]);
+
+  return (
+    <div className="max-w-[560px]">
+      {notice && (
+        <p className={`mb-3 rounded-[14px] border px-4 py-2.5 text-[13px] ${notice.kind === "ok" ? "border-live/25 bg-live/10 text-fg" : "border-danger/25 bg-danger-wash text-danger"}`}>
+          {notice.text}
+        </p>
+      )}
+      <OneClickConnectors />
+      <ManualMcpServers agent={agent} />
+    </div>
+  );
+}
+
+/* ── One-click integrace (OAuth) ─────────────────────────────────────────── */
+
+function OneClickConnectors() {
+  const queryClient = useQueryClient();
+  const [setupFor, setSetupFor] = useState<string | null>(null);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["integrations"],
+    queryFn: () => api.get<{ connectors: IntegrationConnector[] }>("/integrations"),
+  });
+  const connectors = data?.connectors ?? [];
+
+  const saveApp = useMutation({
+    mutationFn: (c: IntegrationConnector) =>
+      api.post("/oauth/apps", { service: c.service, clientId: clientId.trim(), clientSecret: clientSecret.trim() }),
+    onSuccess: (_res, c) => {
+      setSetupFor(null);
+      setClientId("");
+      setClientSecret("");
+      setSaveErr(null);
+      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
+      // One-click UX: po uložení OAuth aplikace rovnou na souhlas poskytovatele.
+      window.location.href = `/api/oauth/${c.service}/start?catalogId=${c.id}`;
+    },
+    onError: (e) => setSaveErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
+  });
+
+  const disconnect = useMutation({
+    mutationFn: (id: string) => api.post(`/integrations/${id}/disconnect`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+    },
+  });
+
+  function startSetup(c: IntegrationConnector) {
+    setSetupFor(c.id);
+    setClientId(c.clientId ?? "");
+    setClientSecret("");
+    setSaveErr(null);
+  }
+
+  return (
+    <div className="mb-6">
+      <p className="mb-1 text-[14px] font-[700] text-fg">Jedním kliknutím</p>
+      <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">
+        Připojte službu a agent ji hned umí používat — žádné ruční nastavování. Přihlášení probíhá bezpečně přes OAuth u poskytovatele, tokeny se ukládají šifrovaně.
+      </p>
+      {isLoading && <p className="text-[13px] text-fg-muted">Načítám…</p>}
+      {isError && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">Stav připojení se nepodařilo načíst.</p>}
+      {connectors.map((c) => {
+        const failed = c.servers.find((s) => s.error);
+        return (
+          <div key={c.id} className="mb-2 rounded-[16px] border border-border bg-bg-raised px-4 py-3">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 text-[13.5px] font-[600] text-fg">
+                  {c.name}
+                  {c.connected && !failed && (
+                    <span className="rounded-full bg-live/15 px-2 py-0.5 text-[11px] font-[700] text-live">Připojeno</span>
+                  )}
+                  {c.connected && failed && (
+                    <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-[700] text-danger">Chyba spojení</span>
+                  )}
+                  {!c.connected && (
+                    <span className="rounded-full bg-bg-sunken px-2 py-0.5 text-[11px] font-[700] text-fg-muted">Nepřipojeno</span>
+                  )}
+                </p>
+                <p className="mt-0.5 text-[12.5px] text-fg-muted">{c.tagline}</p>
+              </div>
+              {c.connected ? (
+                <button
+                  onClick={() => { if (window.confirm(`Odpojit „${c.name}“? Agent přestane jeho nástroje vidět.`)) disconnect.mutate(c.id); }}
+                  disabled={disconnect.isPending}
+                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg disabled:opacity-40"
+                >
+                  Odpojit
+                </button>
+              ) : c.appConfigured ? (
+                <a
+                  href={`/api/oauth/${c.service}/start?catalogId=${c.id}`}
+                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
+                >
+                  Připojit {c.name}
+                </a>
+              ) : (
+                <button
+                  onClick={() => startSetup(c)}
+                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
+                >
+                  Připojit {c.name}
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-fg-muted">{c.description}</p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-fg-subtle">{c.capabilities.join(" · ")}</p>
+            {failed && (
+              <p className="mt-2 rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">
+                Spojení nefunguje: {failed.error} Zkuste konektor odpojit a připojit znovu.
+              </p>
+            )}
+            {c.connected && c.servers.some((s) => s.tools.length > 0) && (
+              <p className="mono mt-2 text-[11.5px] leading-relaxed text-fg-subtle">
+                Nástroje: {c.servers.flatMap((s) => s.tools).join(", ")}
+              </p>
+            )}
+            {setupFor === c.id || (!c.appConfigured && !c.connected) ? (
+              <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
+                <p className="text-[13px] font-[600] text-fg">Nejprve přidejte OAuth aplikaci</p>
+                <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
+                <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
+                  {c.setupUrlLabel}
+                </a>
+                {saveErr && <p className="rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{saveErr}</p>}
+                <Field label="Client ID">
+                  <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="např. 123….apps.googleusercontent.com" className={`${inputCls} mono`} />
+                </Field>
+                <Field label="Client secret" hint={c.secretHint ? `Uloženo (…${c.secretHint}) — vyplňte jen pro změnu.` : undefined}>
+                  <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} type="password" placeholder="••••••••" className={`${inputCls} mono`} autoComplete="new-password" />
+                </Field>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => saveApp.mutate(c)}
+                    disabled={saveApp.isPending || !clientId.trim()}
+                    className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40"
+                  >
+                    Uložit a pokračovat
+                  </button>
+                  {c.appConfigured && (
+                    <button onClick={() => setSetupFor(null)} className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg">
+                      Zrušit
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              !c.connected && (
+                <button onClick={() => startSetup(c)} className="mt-2 text-[12.5px] font-[600] text-accent underline">
+                  {c.appConfigured ? "Změnit Client ID / secret" : "Kde vezmu Client ID a secret?"}
+                </button>
+              )
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Ruční MCP servery ───────────────────────────────────────────────────── */
+
+function ManualMcpServers({ agent }: { agent: Agent }) {
+  const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<"stdio" | "sse">("stdio");
@@ -593,9 +786,10 @@ function ConnectorsSection({ agent }: { agent: Agent }) {
   });
 
   return (
-    <div className="max-w-[560px]">
-      <p className="mb-4 text-[13px] leading-relaxed text-fg-muted">
-        Nástroje, které agent umí použít (MCP servery). Přidej jednou — agent je hned umí.
+    <div>
+      <p className="mb-1 text-[14px] font-[700] text-fg">Ruční MCP servery</p>
+      <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">
+        Pro pokročilé: vlastní MCP server z příkazu nebo URL. Agent jeho nástroje umí hned použít.
       </p>
       {err && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{err}</p>}
       {servers.map((s) => (
@@ -608,12 +802,12 @@ function ConnectorsSection({ agent }: { agent: Agent }) {
           <button onClick={() => toggle.mutate(s)} className={`relative flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 before:absolute before:-inset-3 before:content-[''] ${s.enabled ? "justify-end bg-live" : "justify-start bg-bg-sunken"}`}>
             <span className="h-5 w-5 rounded-full bg-white shadow" />
           </button>
-          <button onClick={() => { if (window.confirm(`Smazat konektor „${s.name}"?`)) remove.mutate(s.id); }} title="Smazat" className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
+          <button onClick={() => { if (window.confirm(`Smazat konektor „${s.name}“?`)) remove.mutate(s.id); }} title="Smazat" className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>
         </div>
       ))}
       {showAdd ? (
         <div className="mt-3 space-y-2.5 rounded-[16px] border border-accent/40 bg-bg-raised p-4">
-          <Field label="Název"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="např. GitHub" className={inputCls} /></Field>
+          <Field label="Název"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="např. Vlastní server" className={inputCls} /></Field>
           <Field label="Typ">
             <select value={transport} onChange={(e) => setTransport(e.target.value as "stdio" | "sse")} className={inputCls}>
               <option value="stdio">Příkaz (stdio)</option>

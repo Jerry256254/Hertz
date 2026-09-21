@@ -419,7 +419,7 @@ export const employeeShellGrants = sqliteTable("employee_shell_grants", {
  */
 export const oauthApps = sqliteTable("oauth_apps", {
   id: text("id").primaryKey(),
-  service: text("service", { enum: ["google", "slack", "mistral"] }).notNull().unique(),
+  service: text("service", { enum: ["google", "slack", "mistral", "notion", "github"] }).notNull().unique(),
   clientId: text("client_id").notNull(),
   encryptedClientSecret: text("encrypted_client_secret").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

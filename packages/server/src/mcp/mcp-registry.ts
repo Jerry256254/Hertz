@@ -5,6 +5,7 @@ import type { ToolResult } from "@kuclab-hertz/tools";
 import type { Database } from "../db/client.js";
 import { mcpServers } from "../db/schema.js";
 import { decryptSecret } from "../secrets/key-encryption.js";
+import { CONNECTOR_CATALOG, connectorForServerArgs, type ConnectorId } from "./catalog.js";
 
 type McpServerRow = typeof mcpServers.$inferSelect;
 
@@ -20,6 +21,25 @@ function slugify(name: string): string {
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
   return slug || "server";
+}
+
+/**
+ * The on-demand catalog tool: always present, even with zero servers
+ * connected. Lets the agent discover which one-click integrations exist
+ * (Google, Notion, GitHub), which are already connected, and what each one
+ * unlocks — so it only asks the user to connect what the task needs.
+ * Connecting itself always happens in the user's browser (OAuth consent),
+ * never by the agent.
+ */
+function catalogToolDefinition(): ToolDefinition {
+  return {
+    name: "mcp__catalog",
+    description:
+      "List available one-click integrations (Google = Gmail + Calendar + Drive, Notion, GitHub): what each one does and whether it is currently connected. " +
+      "If a task needs a capability from a disconnected integration, tell the user (in Czech) to open Nastavení → Konektory and click Připojit — the OAuth consent must happen in their browser, you cannot connect it yourself. " +
+      "Never invent tool names from this catalog: only call the concrete mcp__<server>__<tool> tools listed as connected.",
+    inputSchema: { type: "object", properties: {} },
+  };
 }
 
 /**
@@ -85,7 +105,7 @@ export class McpRegistry {
 
   async listToolDefinitions(agentId: string): Promise<ToolDefinition[]> {
     const rows = await this.rowsForAgent(agentId);
-    const defs: ToolDefinition[] = [];
+    const defs: ToolDefinition[] = [catalogToolDefinition()];
     for (const row of rows) {
       const slug = slugify(row.name);
       const server = await this.getOrConnect(row);
@@ -106,6 +126,44 @@ export class McpRegistry {
     return defs;
   }
 
+  /** For the Integrations UI: every MCP server row with its live tool list, without exposing them to the model. */
+  async listAllForDisplay(): Promise<
+    Array<{ serverId: string; serverName: string; connectorId: ConnectorId | null; enabled: boolean; tools: string[]; error?: string }>
+  > {
+    const rows = await this.db.select().from(mcpServers);
+    return Promise.all(
+      rows.map(async (row) => {
+        const args = row.argsJson ? (JSON.parse(row.argsJson) as string[]) : [];
+        const connectorId = connectorForServerArgs(args)?.id ?? null;
+        if (!row.enabled) {
+          return { serverId: row.id, serverName: row.name, connectorId, enabled: false, tools: [] as string[] };
+        }
+        const server = await this.getOrConnect(row);
+        return {
+          serverId: row.id,
+          serverName: row.name,
+          connectorId,
+          enabled: true,
+          tools: server.tools.map((t) => t.name),
+          error: server.error,
+        };
+      }),
+    );
+  }
+
+  /** Live connection status of every catalog connector (for the `mcp__catalog` tool and the Integrations UI). */
+  async catalogStatus(): Promise<
+    Array<{ id: ConnectorId; name: string; tagline: string; connected: boolean; tools: string[]; error?: string }>
+  > {
+    const display = await this.listAllForDisplay();
+    return CONNECTOR_CATALOG.map((def) => {
+      const servers = display.filter((s) => s.connectorId === def.id && s.enabled);
+      const tools = servers.flatMap((s) => s.tools.map((t) => `mcp__${slugify(s.serverName)}__${t}`));
+      const error = servers.map((s) => s.error).find(Boolean);
+      return { id: def.id, name: def.name, tagline: def.tagline, connected: servers.length > 0, tools, error };
+    });
+  }
+
   /** For the Integrations UI: which MCP tools a given agent currently has, without exposing them to the model. */
   async listForDisplay(agentId: string): Promise<Array<{ serverId: string; serverName: string; tools: string[]; error?: string }>> {
     const rows = await this.rowsForAgent(agentId);
@@ -122,6 +180,20 @@ export class McpRegistry {
   }
 
   async run(name: string, input: unknown): Promise<ToolResult> {
+    if (name === "mcp__catalog") {
+      const status = await this.catalogStatus();
+      const lines = status.map((c) => {
+        const head = `- ${c.id}: ${c.name} — ${c.tagline} [${c.connected ? "connected" : "not connected"}]`;
+        const tools = c.connected && c.tools.length > 0 ? `\n  tools: ${c.tools.join(", ")}` : "";
+        const err = c.error ? `\n  WARNING: connection error: ${c.error}` : "";
+        return head + tools + err;
+      });
+      return {
+        summary:
+          `Available one-click integrations (user connects them in Nastavení → Konektory):\n${lines.join("\n")}\n` +
+          `To use a disconnected integration, ask the user (in Czech) to connect it there first.`,
+      };
+    }
     if (name.endsWith("__unavailable")) {
       return { summary: "This MCP server is unavailable.", isError: true };
     }

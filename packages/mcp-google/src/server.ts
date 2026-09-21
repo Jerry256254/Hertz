@@ -8,7 +8,7 @@ const clientId = process.env.GOOGLE_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const accessToken = process.env.GOOGLE_ACCESS_TOKEN;
 const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-const enabledApis = new Set((process.env.GOOGLE_ENABLED_APIS ?? "gmail,drive").split(","));
+const enabledApis = new Set((process.env.GOOGLE_ENABLED_APIS ?? "gmail,drive,calendar").split(","));
 
 if (!clientId || !clientSecret || !refreshToken) {
   console.error("mcp-google: missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN");
@@ -25,6 +25,7 @@ auth.setCredentials({ access_token: accessToken, refresh_token: refreshToken });
 
 const gmail = google.gmail({ version: "v1", auth });
 const drive = google.drive({ version: "v3", auth });
+const calendar = google.calendar({ version: "v3", auth });
 
 function decodeBase64Url(data: string): string {
   return Buffer.from(data, "base64url").toString("utf8");
@@ -131,6 +132,91 @@ if (enabledApis.has("drive")) {
         ? await drive.files.export({ fileId, mimeType: "text/plain" }, { responseType: "text" })
         : await drive.files.get({ fileId, alt: "media" }, { responseType: "text" });
       return { content: [{ type: "text", text: String(res.data).slice(0, 100_000) }] };
+    },
+  );
+}
+
+if (enabledApis.has("calendar")) {
+  server.registerTool(
+    "calendar_list_calendars",
+    { description: "List the Google calendars available to the connected account.", inputSchema: {} },
+    async () => {
+      const res = await calendar.calendarList.list();
+      const items = res.data.items ?? [];
+      const text =
+        items.length === 0
+          ? "No calendars found."
+          : items.map((c) => `[${c.id}] ${c.summary}${c.primary ? " (primary)" : ""} — ${c.accessRole}`).join("\n");
+      return { content: [{ type: "text", text }] };
+    },
+  );
+
+  server.registerTool(
+    "calendar_list_events",
+    {
+      description: "List upcoming events on a calendar.",
+      inputSchema: {
+        calendarId: z.string().optional().default("primary").describe("Calendar id (see calendar_list_calendars)"),
+        timeMin: z.string().optional().describe("Start of the window, ISO 8601 (defaults to now)"),
+        timeMax: z.string().optional().describe("End of the window, ISO 8601"),
+        query: z.string().optional().describe("Free-text search in event titles/descriptions"),
+        maxResults: z.number().int().positive().max(50).optional().default(10),
+      },
+    },
+    async ({ calendarId, timeMin, timeMax, query, maxResults }) => {
+      const res = await calendar.events.list({
+        calendarId,
+        timeMin: timeMin ?? new Date().toISOString(),
+        timeMax,
+        q: query,
+        maxResults,
+        singleEvents: true,
+        orderBy: "startTime",
+      });
+      const items = res.data.items ?? [];
+      if (items.length === 0) return { content: [{ type: "text", text: "No events found." }] };
+      const text = items
+        .map((e) => {
+          const start = e.start?.dateTime ?? e.start?.date ?? "?";
+          const end = e.end?.dateTime ?? e.end?.date ?? "?";
+          return `[${e.id}] ${start} → ${end} — ${e.summary ?? "(no title)"}${e.location ? ` @ ${e.location}` : ""}`;
+        })
+        .join("\n");
+      return { content: [{ type: "text", text }] };
+    },
+  );
+
+  server.registerTool(
+    "calendar_create_event",
+    {
+      description: "Create a calendar event.",
+      inputSchema: {
+        calendarId: z.string().optional().default("primary"),
+        summary: z.string().describe("Event title"),
+        start: z.string().describe("Start, ISO 8601 with timezone offset, e.g. 2026-09-22T10:00:00+02:00"),
+        end: z.string().describe("End, ISO 8601 with timezone offset"),
+        description: z.string().optional(),
+        location: z.string().optional(),
+      },
+    },
+    async ({ calendarId, summary, start, end, description, location }) => {
+      const res = await calendar.events.insert({
+        calendarId,
+        requestBody: { summary, description, location, start: { dateTime: start }, end: { dateTime: end } },
+      });
+      return { content: [{ type: "text", text: `Created event "${res.data.summary}" (id ${res.data.id}). ${res.data.htmlLink ?? ""}` }] };
+    },
+  );
+
+  server.registerTool(
+    "calendar_delete_event",
+    {
+      description: "Delete a calendar event by id.",
+      inputSchema: { calendarId: z.string().optional().default("primary"), eventId: z.string() },
+    },
+    async ({ calendarId, eventId }) => {
+      await calendar.events.delete({ calendarId, eventId });
+      return { content: [{ type: "text", text: `Deleted event ${eventId}.` }] };
     },
   );
 }

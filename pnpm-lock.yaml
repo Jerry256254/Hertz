@@ -81,6 +81,22 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/mcp-github:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@3.25.76)
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/mcp-google:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -89,6 +105,22 @@ importers:
       googleapis:
         specifier: ^174.0.1
         version: 174.0.1
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/mcp-notion:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@3.25.76)
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -142,9 +174,15 @@ importers:
       '@kuclab-hertz/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@kuclab-hertz/mcp-github':
+        specifier: workspace:*
+        version: link:../mcp-github
       '@kuclab-hertz/mcp-google':
         specifier: workspace:*
         version: link:../mcp-google
+      '@kuclab-hertz/mcp-notion':
+        specifier: workspace:*
+        version: link:../mcp-notion
       '@kuclab-hertz/providers':
         specifier: workspace:*
         version: link:../providers

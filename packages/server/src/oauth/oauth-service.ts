@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-export type OAuthService = "google" | "slack" | "mistral";
+export type OAuthService = "google" | "slack" | "mistral" | "notion" | "github";
 
 export interface OAuthStatePayload {
   service: OAuthService;
@@ -16,7 +16,16 @@ export interface OAuthStatePayload {
 const GOOGLE_SCOPES: Record<string, string[]> = {
   gmail: ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"],
   "google-drive": ["https://www.googleapis.com/auth/drive.readonly"],
+  "google-calendar": ["https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/calendar.events"],
 };
+// One-click "Připojit Google": a single consent screen covering Gmail, Kalendář i Disk.
+GOOGLE_SCOPES["google"] = [
+  ...(GOOGLE_SCOPES["gmail"] ?? []),
+  ...(GOOGLE_SCOPES["google-drive"] ?? []),
+  ...(GOOGLE_SCOPES["google-calendar"] ?? []),
+];
+
+const GITHUB_SCOPES = ["repo", "read:user"];
 
 const SLACK_BOT_SCOPES = ["channels:history", "channels:read", "chat:write", "groups:read", "im:read", "mpim:read", "users:read"];
 
@@ -64,7 +73,36 @@ export function googleAuthUrl(opts: { clientId: string; redirectUri: string; cat
     scope: googleScopesFor(opts.catalogId).join(" "),
     state: opts.state,
   });
-  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  return `${googleAuthorizeUrl()}?${params.toString()}`;
+}
+
+/**
+ * OAuth endpoint URLs are overridable via env so the whole connect flow can
+ * be exercised end-to-end against a local mock provider in tests/QA.
+ * Production defaults are the real provider URLs.
+ */
+export function googleAuthorizeUrl(): string {
+  return process.env.HERTZ_OAUTH_GOOGLE_AUTHORIZE_URL ?? "https://accounts.google.com/o/oauth2/v2/auth";
+}
+
+export function googleTokenUrl(): string {
+  return process.env.HERTZ_OAUTH_GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token";
+}
+
+export function notionAuthorizeUrl(): string {
+  return process.env.HERTZ_OAUTH_NOTION_AUTHORIZE_URL ?? "https://api.notion.com/v1/oauth/authorize";
+}
+
+export function notionTokenUrl(): string {
+  return process.env.HERTZ_OAUTH_NOTION_TOKEN_URL ?? "https://api.notion.com/v1/oauth/token";
+}
+
+export function githubAuthorizeUrl(): string {
+  return process.env.HERTZ_OAUTH_GITHUB_AUTHORIZE_URL ?? "https://github.com/login/oauth/authorize";
+}
+
+export function githubTokenUrl(): string {
+  return process.env.HERTZ_OAUTH_GITHUB_TOKEN_URL ?? "https://github.com/login/oauth/access_token";
 }
 
 export async function exchangeGoogleCode(opts: {
@@ -73,7 +111,7 @@ export async function exchangeGoogleCode(opts: {
   redirectUri: string;
   code: string;
 }): Promise<{ accessToken: string; refreshToken: string; expiresIn: number; scope: string }> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetch(googleTokenUrl(), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -87,7 +125,7 @@ export async function exchangeGoogleCode(opts: {
   if (!res.ok) throw new Error(`Google token exchange failed: ${await res.text()}`);
   const body = (await res.json()) as { access_token: string; refresh_token?: string; expires_in: number; scope: string };
   if (!body.refresh_token) {
-    throw new Error("Google didn't return a refresh token — revoke this app's access at https://myaccount.google.com/permissions and try connecting again so it re-prompts for consent.");
+    throw new Error("Google nevrátil refresh token — odeberte přístup aplikace na https://myaccount.google.com/permissions a připojte se znovu, aby se znovu zobrazil souhlas.");
   }
   return { accessToken: body.access_token, refreshToken: body.refresh_token, expiresIn: body.expires_in, scope: body.scope };
 }
@@ -188,4 +226,85 @@ export async function refreshMistralToken(opts: {
   if (!res.ok) throw new Error(`Mistral refresh failed: ${await res.text()}`);
   const body = (await res.json()) as { access_token: string; refresh_token?: string };
   return { accessToken: body.access_token, refreshToken: body.refresh_token };
+}
+
+// --- Notion (public integration, OAuth2 Authorization Code) -----------------
+// Notion access tokens don't expire, so no refresh flow is needed — the token
+// is stored encrypted alongside the MCP server row and used until disconnect.
+
+export function notionAuthUrl(opts: { clientId: string; redirectUri: string; state: string }): string {
+  const params = new URLSearchParams({
+    client_id: opts.clientId,
+    response_type: "code",
+    owner: "user",
+    redirect_uri: opts.redirectUri,
+    state: opts.state,
+  });
+  return `${notionAuthorizeUrl()}?${params.toString()}`;
+}
+
+export async function exchangeNotionCode(opts: {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  code: string;
+}): Promise<{ accessToken: string; workspaceName: string; workspaceId: string; botId: string }> {
+  const credentials = Buffer.from(`${opts.clientId}:${opts.clientSecret}`).toString("base64");
+  const res = await fetch(notionTokenUrl(), {
+    method: "POST",
+    headers: { Authorization: `Basic ${credentials}`, "content-type": "application/json" },
+    body: JSON.stringify({ grant_type: "authorization_code", code: opts.code, redirect_uri: opts.redirectUri }),
+  });
+  if (!res.ok) throw new Error(`Notion token exchange failed: ${await res.text()}`);
+  const body = (await res.json()) as {
+    access_token?: string;
+    workspace_name?: string;
+    workspace_id?: string;
+    bot_id?: string;
+  };
+  if (!body.access_token) throw new Error("Notion nevrátilo přístupový token — zkuste připojení zopakovat.");
+  return {
+    accessToken: body.access_token,
+    workspaceName: body.workspace_name ?? "",
+    workspaceId: body.workspace_id ?? "",
+    botId: body.bot_id ?? "",
+  };
+}
+
+// --- GitHub (OAuth App, Authorization Code) ----------------------------------
+// Classic GitHub OAuth App tokens don't expire; the token is stored encrypted
+// alongside the MCP server row and used until disconnect.
+
+export function githubAuthUrl(opts: { clientId: string; redirectUri: string; state: string }): string {
+  const params = new URLSearchParams({
+    client_id: opts.clientId,
+    redirect_uri: opts.redirectUri,
+    scope: GITHUB_SCOPES.join(" "),
+    state: opts.state,
+  });
+  return `${githubAuthorizeUrl()}?${params.toString()}`;
+}
+
+export async function exchangeGithubCode(opts: {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  code: string;
+}): Promise<{ accessToken: string; scope: string }> {
+  const res = await fetch(githubTokenUrl(), {
+    method: "POST",
+    headers: { Accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({
+      client_id: opts.clientId,
+      client_secret: opts.clientSecret,
+      code: opts.code,
+      redirect_uri: opts.redirectUri,
+    }),
+  });
+  if (!res.ok) throw new Error(`GitHub token exchange failed: ${await res.text()}`);
+  const body = (await res.json()) as { access_token?: string; scope?: string; error_description?: string };
+  if (!body.access_token) {
+    throw new Error(`GitHub nevrátil přístupový token — ${body.error_description ?? "zkuste připojení zopakovat."}`);
+  }
+  return { accessToken: body.access_token, scope: body.scope ?? "" };
 }

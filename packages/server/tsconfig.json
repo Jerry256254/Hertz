@@ -9,6 +9,8 @@
     { "path": "../core" },
     { "path": "../mcp" },
     { "path": "../mcp-google" },
+    { "path": "../mcp-notion" },
+    { "path": "../mcp-github" },
     { "path": "../providers" },
     { "path": "../sandbox" },
     { "path": "../standard" },

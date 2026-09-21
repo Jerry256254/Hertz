@@ -19,6 +19,7 @@ import { registerMcpRoutes } from "./routes/mcp.js";
 import { registerRoutineRoutes } from "./routes/routines.js";
 import { registerShellRoutes } from "./routes/shells.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
+import { registerIntegrationRoutes } from "./routes/integrations.js";
 import { registerUserRoutes } from "./routes/users.js";
 import { registerApprovalRoutes } from "./routes/approvals.js";
 import { registerVaultRoutes } from "./routes/vault.js";
@@ -60,6 +61,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerRoutineRoutes(app, ctx);
   registerShellRoutes(app, ctx);
   registerOAuthRoutes(app, ctx);
+  registerIntegrationRoutes(app, ctx);
   registerUserRoutes(app, ctx);
   registerApprovalRoutes(app, ctx);
   registerVaultRoutes(app, ctx);
