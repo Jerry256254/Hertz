@@ -50,7 +50,7 @@ const SENSITIVE_TOOLS = new Set([
 ]);
 
 /** Heuristika pro zápisové operace (názvy nástrojů ve stylu sloveso_podstatné). */
-const WRITE_PATTERN = /(^|_)(create|add|insert|update|edit|append|write|upload|share|trash|archive|rename|move)($|_)/;
+const WRITE_PATTERN = /(^|_)(create|add|insert|update|edit|append|write|upload|share|trash|archive|rename|move|complete|close)($|_)/;
 /** Heuristika pro citlivé operace — platí i pro cizí/ruční MCP servery. */
 const SENSITIVE_PATTERN = /(^|_)(delete|remove|destroy|send|publish|unpublish|revoke)($|_)/;
 

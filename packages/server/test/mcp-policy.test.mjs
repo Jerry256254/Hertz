@@ -43,6 +43,12 @@ describe("tool-policy: klasifikace a vynucení", () => {
     assert.equal(classifyTool("presentation_add_slide"), "write");
     assert.equal(classifyTool("sheets_append_values"), "write");
     assert.equal(classifyTool("github_create_issue"), "write");
+    assert.equal(classifyTool("gitlab_create_issue"), "write");
+    assert.equal(classifyTool("todoist_create_task"), "write");
+    assert.equal(classifyTool("todoist_complete_task"), "write");
+    assert.equal(classifyTool("slides_create_presentation"), "write");
+    assert.equal(classifyTool("slides_add_slide"), "write");
+    assert.equal(classifyTool("docs_append_text"), "write");
   });
 
   it("klasifikuje čtení", () => {
@@ -50,6 +56,13 @@ describe("tool-policy: klasifikace a vynucení", () => {
     assert.equal(classifyTool("presentation_list"), "read");
     assert.equal(classifyTool("calendar_list_events"), "read");
     assert.equal(classifyTool("drive_list_files"), "read");
+    assert.equal(classifyTool("gitlab_list_projects"), "read");
+    assert.equal(classifyTool("gitlab_get_file"), "read");
+    assert.equal(classifyTool("todoist_list_tasks"), "read");
+    assert.equal(classifyTool("weather_current"), "read");
+    assert.equal(classifyTool("weather_forecast"), "read");
+    assert.equal(classifyTool("rss_read_feed"), "read");
+    assert.equal(classifyTool("slides_get_presentation"), "read");
     assert.equal(classifyTool("unknown_tool_xyz"), "read");
   });
 

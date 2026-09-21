@@ -8,7 +8,7 @@ const clientId = process.env.GOOGLE_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const accessToken = process.env.GOOGLE_ACCESS_TOKEN;
 const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-const enabledApis = new Set((process.env.GOOGLE_ENABLED_APIS ?? "gmail,drive,calendar,sheets,docs").split(","));
+const enabledApis = new Set((process.env.GOOGLE_ENABLED_APIS ?? "gmail,drive,calendar,sheets,docs,slides").split(","));
 
 if (!clientId || !clientSecret || !refreshToken) {
   console.error("mcp-google: missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN");
@@ -32,6 +32,7 @@ const calendar = google.calendar({ version: "v3", auth });
 const apiRootUrl = process.env.GOOGLE_API_ROOT_URL || undefined;
 const sheets = google.sheets({ version: "v4", auth, ...(apiRootUrl ? { rootUrl: apiRootUrl } : {}) });
 const docs = google.docs({ version: "v1", auth, ...(apiRootUrl ? { rootUrl: apiRootUrl } : {}) });
+const slides = google.slides({ version: "v1", auth, ...(apiRootUrl ? { rootUrl: apiRootUrl } : {}) });
 
 function decodeBase64Url(data: string): string {
   return Buffer.from(data, "base64url").toString("utf8");
@@ -379,6 +380,84 @@ if (enabledApis.has("docs")) {
         requestBody: { requests: [{ insertText: { location: { index: Math.max(endIndex - 1, 1) }, text: body } }] },
       });
       return { content: [{ type: "text", text: `Appended ${body.length} characters to the document.` }] };
+    },
+  );
+}
+
+/** Vytáhne prostý text ze všech textových prvků slidu. */
+function extractSlideText(pageElements: any[] | undefined): string {
+  if (!pageElements) return "";
+  let out = "";
+  for (const el of pageElements) {
+    for (const te of el.shape?.text?.textElements ?? []) {
+      if (te.textRun?.content) out += te.textRun.content;
+    }
+    for (const cell of el.table?.tableRows?.flatMap((r: any) => r.tableCells ?? []) ?? []) {
+      out += extractSlideText(cell.text?.textElements ? [{ shape: { text: cell.text } }] : []);
+    }
+  }
+  return out.trim();
+}
+
+if (enabledApis.has("slides")) {
+  server.registerTool(
+    "slides_create_presentation",
+    {
+      description: "Create a new empty Google Slides presentation with the given title.",
+      inputSchema: { title: z.string().describe("Presentation title") },
+    },
+    async ({ title }) => {
+      const res = await slides.presentations.create({ requestBody: { title } });
+      return { content: [{ type: "text", text: `Created presentation "${res.data.title}" (id ${res.data.presentationId}).` }] };
+    },
+  );
+
+  server.registerTool(
+    "slides_get_presentation",
+    {
+      description: "Read a Google Slides presentation: slide count and the text content of every slide.",
+      inputSchema: {
+        presentationId: z.string().describe("Presentation id (from the URL between /d/ and /edit)"),
+        maxChars: z.number().int().positive().max(200_000).optional().default(50_000),
+      },
+    },
+    async ({ presentationId, maxChars }) => {
+      const res = await slides.presentations.get({ presentationId });
+      const all = res.data.slides ?? [];
+      const parts = all.map((s: any, i: number) => `--- Slide ${i + 1} ---\n${extractSlideText(s.pageElements) || "(empty slide)"}`);
+      return { content: [{ type: "text", text: `Presentation: ${res.data.title ?? "(no title)"} (${all.length} slides)\n\n${parts.join("\n\n")}`.slice(0, maxChars) }] };
+    },
+  );
+
+  server.registerTool(
+    "slides_add_slide",
+    {
+      description: "Append a new slide with a title and body text to a Google Slides presentation (TITLE_AND_BODY layout).",
+      inputSchema: {
+        presentationId: z.string(),
+        title: z.string().max(500).optional().describe("Slide title (heading)"),
+        body: z.string().max(50_000).optional().describe("Slide body text"),
+      },
+    },
+    async ({ presentationId, title, body }) => {
+      const created = await slides.presentations.batchUpdate({
+        presentationId,
+        requestBody: { requests: [{ createSlide: { slideLayoutReference: { predefinedLayout: "TITLE_AND_BODY" } } }] },
+      });
+      const slideId = (created.data.replies?.[0] as any)?.createSlide?.objectId;
+      if (!slideId) throw new Error("Google did not return the new slide's id.");
+      const got = await slides.presentations.get({ presentationId, fields: "slides(objectId,pageElements(objectId,shape(placeholder)))" });
+      const slide = (got.data.slides ?? []).find((s: any) => s.objectId === slideId);
+      const requests: any[] = [];
+      for (const el of slide?.pageElements ?? []) {
+        const kind = el.shape?.placeholder?.type;
+        if (kind === "TITLE" && title) requests.push({ insertText: { objectId: el.objectId, text: title } });
+        if (kind === "BODY" && body) requests.push({ insertText: { objectId: el.objectId, text: body } });
+      }
+      if (requests.length > 0) {
+        await slides.presentations.batchUpdate({ presentationId, requestBody: { requests } });
+      }
+      return { content: [{ type: "text", text: `Added slide (id ${slideId})${requests.length > 0 ? " with text." : " — placeholder shapes not found, slide left blank."}` }] };
     },
   );
 }

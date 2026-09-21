@@ -259,11 +259,23 @@ export interface IntegrationConnectorServer {
   };
 }
 
+export interface IntegrationCredentialField {
+  env: string;
+  label: string;
+  hint: string;
+  secret: boolean;
+  required?: boolean;
+}
+
 export interface IntegrationConnector {
-  id: "google" | "notion" | "github" | "presentation";
+  id: "google" | "notion" | "github" | "presentation" | "gitlab" | "todoist" | "openweather" | "rss";
   service: "google" | "notion" | "github" | "local";
   /** Lokální konektor bez OAuth — zapíná se jedním kliknutím. */
   local: boolean;
+  /** Jak se konektor přihlašuje: OAuth, API klíč zadaný uživatelem, nebo vůbec. */
+  credentialKind: "oauth" | "apiKey" | "none";
+  /** Pole formuláře pro credentialKind === "apiKey". */
+  credentialFields: IntegrationCredentialField[] | null;
   name: string;
   tagline: string;
   description: string;

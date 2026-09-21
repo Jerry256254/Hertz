@@ -597,6 +597,9 @@ function OneClickConnectors() {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [keyFor, setKeyFor] = useState<string | null>(null);
+  const [keyValues, setKeyValues] = useState<Record<string, string>>({});
+  const [keyErr, setKeyErr] = useState<string | null>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["integrations"],
@@ -635,6 +638,22 @@ function OneClickConnectors() {
     },
   });
 
+  const saveKey = useMutation({
+    mutationFn: (c: IntegrationConnector) => {
+      const values: Record<string, string> = {};
+      for (const f of c.credentialFields ?? []) values[f.env] = (keyValues[f.env] ?? "").trim();
+      return api.post(`/integrations/${c.id}/credentials`, { values });
+    },
+    onSuccess: () => {
+      setKeyFor(null);
+      setKeyValues({});
+      setKeyErr(null);
+      void queryClient.invalidateQueries({ queryKey: ["integrations"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+    },
+    onError: (e) => setKeyErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
+  });
+
   function startSetup(c: IntegrationConnector) {
     setSetupFor(c.id);
     setClientId(c.clientId ?? "");
@@ -642,11 +661,17 @@ function OneClickConnectors() {
     setSaveErr(null);
   }
 
+  function startKeySetup(c: IntegrationConnector) {
+    setKeyFor(c.id);
+    setKeyValues({});
+    setKeyErr(null);
+  }
+
   return (
     <div className="mb-6">
       <p className="mb-1 text-[14px] font-[700] text-fg">Jedním kliknutím</p>
       <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">
-        Připojte službu a agent ji hned umí používat — žádné ruční nastavování. Přihlášení probíhá bezpečně přes OAuth u poskytovatele, tokeny se ukládají šifrovaně.
+        Připojte službu a agent ji hned umí používat — žádné ruční nastavování. Přihlášení probíhá bezpečně přes OAuth u poskytovatele nebo vložením API klíče, údaje se ukládají šifrovaně.
       </p>
       {isLoading && <p className="text-[13px] text-fg-muted">Načítám…</p>}
       {isError && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">Stav připojení se nepodařilo načíst.</p>}
@@ -686,6 +711,13 @@ function OneClickConnectors() {
                 >
                   Zapnout
                 </button>
+              ) : c.credentialKind === "apiKey" ? (
+                <button
+                  onClick={() => startKeySetup(c)}
+                  className="pressable inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
+                >
+                  Připojit {c.name}
+                </button>
               ) : c.appConfigured ? (
                 <a
                   href={`/api/oauth/${c.service}/start?catalogId=${c.id}`}
@@ -716,7 +748,7 @@ function OneClickConnectors() {
             )}
             {c.id === "google" && c.connected && (
               <p className="mt-2 text-[12.5px] text-fg-muted">
-                Nově umí i Tabulky a Dokumenty.{" "}
+                Nově umí i Tabulky, Dokumenty a Prezentace.{" "}
                 <a href={`/api/oauth/${c.service}/start?catalogId=${c.id}`} className="font-[600] text-accent underline">
                   Znovu připojit
                 </a>{" "}
@@ -724,7 +756,7 @@ function OneClickConnectors() {
               </p>
             )}
             {c.connected && <ConnectorPolicy c={c} />}
-            {!c.local && (setupFor === c.id || (!c.appConfigured && !c.connected)) ? (
+            {c.credentialKind === "oauth" && (setupFor === c.id || (!c.appConfigured && !c.connected)) ? (
               <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
                 <p className="text-[13px] font-[600] text-fg">Nejprve přidejte OAuth aplikaci</p>
                 <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
@@ -761,6 +793,46 @@ function OneClickConnectors() {
                   {c.appConfigured ? "Změnit Client ID / secret" : "Kde vezmu Client ID a secret?"}
                 </button>
               )
+            )}
+            {c.credentialKind === "apiKey" && !c.connected && keyFor === c.id && (
+              <div className="mt-3 space-y-2.5 rounded-[12px] border border-border bg-bg px-4 py-3">
+                <p className="text-[13px] font-[600] text-fg">Vložte API klíč</p>
+                <p className="text-[12.5px] leading-relaxed text-fg-muted">{c.setupHelp}</p>
+                {c.setupUrl && (
+                  <a href={c.setupUrl} target="_blank" rel="noreferrer" className="inline-block text-[12.5px] font-[600] text-accent underline">
+                    {c.setupUrlLabel}
+                  </a>
+                )}
+                {keyErr && <p className="rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{keyErr}</p>}
+                {(c.credentialFields ?? []).map((f) => (
+                  <Field key={f.env} label={f.required === false ? `${f.label} (nepovinné)` : f.label} hint={f.hint}>
+                    <input
+                      type={f.secret ? "password" : "text"}
+                      value={keyValues[f.env] ?? ""}
+                      onChange={(e) => setKeyValues((v) => ({ ...v, [f.env]: e.target.value }))}
+                      placeholder={f.secret ? "••••••••" : ""}
+                      className={`${inputCls} mono`}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                ))}
+                <p className="text-[12px] leading-relaxed text-fg-subtle">Klíč se uloží šifrovaně na tento server a nikdy se nikomu nezobrazí.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => saveKey.mutate(c)}
+                    disabled={saveKey.isPending || (c.credentialFields ?? []).some((f) => f.required !== false && !(keyValues[f.env] ?? "").trim())}
+                    className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white disabled:opacity-40"
+                  >
+                    Uložit a připojit
+                  </button>
+                  <button
+                    onClick={() => { setKeyFor(null); setKeyErr(null); }}
+                    className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg"
+                  >
+                    Zrušit
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         );

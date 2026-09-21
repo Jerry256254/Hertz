@@ -19,15 +19,17 @@ const GOOGLE_SCOPES: Record<string, string[]> = {
   "google-calendar": ["https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/calendar.events"],
   "google-sheets": ["https://www.googleapis.com/auth/spreadsheets"],
   "google-docs": ["https://www.googleapis.com/auth/documents"],
+  "google-slides": ["https://www.googleapis.com/auth/presentations"],
 };
-// One-click "Připojit Google": a single consent screen covering Gmail, Kalendář,
-// Disk, Tabulky i Dokumenty.
+// One-click „Připojit Google": a single consent screen covering Gmail, Kalendář,
+// Disk, Tabulky, Dokumenty i Prezentace.
 GOOGLE_SCOPES["google"] = [
   ...(GOOGLE_SCOPES["gmail"] ?? []),
   ...(GOOGLE_SCOPES["google-drive"] ?? []),
   ...(GOOGLE_SCOPES["google-calendar"] ?? []),
   ...(GOOGLE_SCOPES["google-sheets"] ?? []),
   ...(GOOGLE_SCOPES["google-docs"] ?? []),
+  ...(GOOGLE_SCOPES["google-slides"] ?? []),
 ];
 
 const GITHUB_SCOPES = ["repo", "read:user"];

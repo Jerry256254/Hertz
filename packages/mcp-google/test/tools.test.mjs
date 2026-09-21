@@ -18,7 +18,7 @@ before(async () => {
       GOOGLE_CLIENT_ID: "cid",
       GOOGLE_CLIENT_SECRET: "sec",
       GOOGLE_REFRESH_TOKEN: "refresh",
-      GOOGLE_ENABLED_APIS: "gmail,calendar,drive,sheets,docs",
+      GOOGLE_ENABLED_APIS: "gmail,calendar,drive,sheets,docs,slides",
     },
   });
   client = new Client({ name: "test", version: "0.0.0" }, { capabilities: {} });
@@ -50,6 +50,9 @@ describe("mcp-google tool surface", () => {
       "docs_read",
       "docs_create_document",
       "docs_append_text",
+      "slides_create_presentation",
+      "slides_get_presentation",
+      "slides_add_slide",
     ]) {
       assert.ok(names.includes(expected), `missing tool ${expected}; got: ${names.join(",")}`);
     }
@@ -76,6 +79,7 @@ describe("mcp-google tool surface", () => {
       assert.ok(!names.some((n) => n.startsWith("drive_")), "drive tools must be hidden");
       assert.ok(!names.some((n) => n.startsWith("sheets_")), "sheets tools must be hidden");
       assert.ok(!names.some((n) => n.startsWith("docs_")), "docs tools must be hidden");
+      assert.ok(!names.some((n) => n.startsWith("slides_")), "slides tools must be hidden");
     } finally {
       await c2.close().catch(() => {});
     }

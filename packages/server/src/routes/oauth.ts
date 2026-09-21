@@ -67,7 +67,7 @@ function googleEnabledApis(catalogId: string): string {
   if (catalogId === "gmail") return "gmail";
   if (catalogId === "google-drive") return "drive";
   if (catalogId === "google-calendar") return "calendar";
-  return "gmail,calendar,drive,sheets,docs";
+  return "gmail,calendar,drive,sheets,docs,slides";
 }
 
 const SERVICE_CZ: Record<OAuthService, string> = {

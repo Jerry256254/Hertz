@@ -198,22 +198,29 @@ describe("connector catalog", () => {
     catalog = await import("../dist/mcp/catalog.js");
   });
 
-  it("contains google, notion and github with unique ids", () => {
+  it("contains all eight connectors with unique ids", () => {
     const ids = catalog.CONNECTOR_CATALOG.map((c) => c.id).sort();
-    assert.deepEqual(ids, ["github", "google", "notion", "presentation"]);
+    assert.deepEqual(ids, ["github", "gitlab", "google", "notion", "openweather", "presentation", "rss", "todoist"]);
   });
 
-  it("every entry has Czech copy, setup docs and a distinct server binary", () => {
+  it("every entry has Czech copy, setup docs, a distinct server binary and a credential kind", () => {
     const suffixes = new Set();
     for (const c of catalog.CONNECTOR_CATALOG) {
       assert.ok(c.name && c.name.length > 0, `${c.id}.name must be non-empty`);
+      assert.ok(["oauth", "apiKey", "none"].includes(c.credentialKind), `${c.id}.credentialKind must be oauth|apiKey|none`);
       const fields = ["tagline", "description"];
-      // Lokální konektory (bez OAuth) nemají setup návod.
-      if (!c.local) fields.push("setupUrl", "setupUrlLabel", "setupHelp");
+      // OAuth a apiKey konektory mají návod na zřízení; lokální bez přihlášení ne.
+      if (c.credentialKind !== "none") fields.push("setupUrl", "setupUrlLabel", "setupHelp");
       for (const field of fields) {
         assert.ok(c[field] && c[field].length > 10, `${c.id}.${field} must be non-empty Czech copy`);
       }
-      if (!c.local) assert.ok(c.setupUrl.startsWith("https://"));
+      if (c.credentialKind !== "none") assert.ok(c.setupUrl.startsWith("https://"));
+      if (c.credentialKind === "apiKey") {
+        assert.ok(Array.isArray(c.credentialFields) && c.credentialFields.length > 0, `${c.id} needs credentialFields`);
+        for (const f of c.credentialFields) {
+          assert.ok(f.env && f.label && f.hint, `${c.id}: credential field must have env, label and hint`);
+        }
+      }
       assert.ok(Array.isArray(c.capabilities) && c.capabilities.length > 0);
       assert.ok(!suffixes.has(c.serverDistSuffix), "serverDistSuffix must be unique");
       suffixes.add(c.serverDistSuffix);
@@ -525,5 +532,125 @@ describe("oauth routes: one-click connect/disconnect end-to-end", () => {
     const res = await app.inject({ method: "GET", url: "/api/oauth/notion/callback?error=access_denied", headers: auth });
     assert.equal(res.statusCode, 302);
     assert.ok(decodeURIComponent(res.headers.location).includes("zrušeno"), res.headers.location);
+  });
+});
+
+// --- Route-level: API-key connectors (GitLab/Todoist/OpenWeather) ----------
+
+describe("apiKey connectors: credentials route end-to-end", () => {
+  let dir, db, client, registry, app, masterKey, auth;
+  let openDatabase, runMigrations, McpRegistry, mcpServers, users, encryptSecret, decryptSecret, eq;
+
+  before(async () => {
+    ({ openDatabase } = await import("../dist/db/client.js"));
+    ({ runMigrations } = await import("../dist/db/migrate.js"));
+    ({ mcpServers, users } = await import("../dist/db/schema.js"));
+    ({ McpRegistry } = await import("../dist/mcp/mcp-registry.js"));
+    ({ encryptSecret, decryptSecret } = await import("../dist/secrets/key-encryption.js"));
+    ({ eq } = await import("drizzle-orm"));
+    const { buildApp } = await import("../dist/app.js");
+    const { createSessionToken } = await import("../dist/auth/session-tokens.js");
+
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-apikey-e2e-"));
+    ({ client, db } = openDatabase(path.join(dir, "app.db")));
+    await runMigrations(client);
+    masterKey = crypto.randomBytes(32);
+    registry = new McpRegistry(db, masterKey);
+    app = await buildApp({ db, masterKey, mcpRegistry: registry });
+
+    const userId = "user-1";
+    await db.insert(users).values({ id: userId, email: "qa@example.com", passwordHash: "x", role: "admin", createdAt: new Date() });
+    auth = { authorization: `Bearer ${await createSessionToken(db, userId)}` };
+  });
+
+  after(async () => {
+    try { await app.close(); } catch {}
+    try { await client.close(); } catch {}
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  const post = (url, payload) =>
+    app.inject({ method: "POST", url, headers: { ...auth, "content-type": "application/json" }, payload });
+
+  it("GET /api/integrations exposes credentialKind and fields, never secret values", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/integrations", headers: auth });
+    assert.equal(res.statusCode, 200);
+    const connectors = JSON.parse(res.body).connectors;
+    const gitlab = connectors.find((c) => c.id === "gitlab");
+    assert.equal(gitlab.credentialKind, "apiKey");
+    assert.ok(gitlab.credentialFields.some((f) => f.env === "GITLAB_TOKEN" && f.secret === true));
+    const rss = connectors.find((c) => c.id === "rss");
+    assert.equal(rss.credentialKind, "none");
+    assert.equal(rss.local, true);
+    const google = connectors.find((c) => c.id === "google");
+    assert.equal(google.credentialKind, "oauth");
+  });
+
+  it("saving gitlab credentials creates an encrypted row and registers real tools", async () => {
+    const res = await post("/api/integrations/gitlab/credentials", { values: { GITLAB_TOKEN: "gl-secret-123" } });
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).ok, true);
+
+    const rows = await db.select().from(mcpServers);
+    const row = rows.find((r) => r.name === "GitLab");
+    assert.ok(row, "mcp_servers row must be created");
+    assert.ok(row.encryptedEnv && !row.encryptedEnv.includes("gl-secret-123"), "token must be encrypted at rest");
+    assert.equal(JSON.parse(decryptSecret(masterKey, row.encryptedEnv)).GITLAB_TOKEN, "gl-secret-123");
+    assert.equal(row.policyMode, "read-only", "default policy is least privilege");
+
+    // Token never leaks through the API.
+    const intRes = await app.inject({ method: "GET", url: "/api/integrations", headers: auth });
+    assert.ok(!intRes.body.includes("gl-secret-123"), "token must not leak via /api/integrations");
+    const gitlab = JSON.parse(intRes.body).connectors.find((c) => c.id === "gitlab");
+    assert.equal(gitlab.connected, true);
+
+    // The real MCP server binary spawns and its tools are registered.
+    const defs = await registry.listToolDefinitions("agent-1");
+    const names = defs.map((d) => d.name);
+    assert.ok(names.includes("mcp__gitlab__gitlab_list_projects"), `got: ${names.join(",")}`);
+    assert.ok(names.includes("mcp__gitlab__gitlab_create_issue"));
+  });
+
+  it("re-saving the key overwrites the row instead of duplicating it", async () => {
+    await post("/api/integrations/gitlab/credentials", { values: { GITLAB_TOKEN: "gl-secret-456" } });
+    const rows = await db.select().from(mcpServers);
+    assert.equal(rows.filter((r) => r.name === "GitLab").length, 1, "re-save must upsert, not duplicate");
+    const row = rows.find((r) => r.name === "GitLab");
+    assert.equal(JSON.parse(decryptSecret(masterKey, row.encryptedEnv)).GITLAB_TOKEN, "gl-secret-456");
+  });
+
+  it("missing required field is a 400 with a Czech message", async () => {
+    const res = await post("/api/integrations/todoist/credentials", { values: {} });
+    assert.equal(res.statusCode, 400);
+    assert.ok(JSON.parse(res.body).error.includes("Chybí"), res.body);
+  });
+
+  it("oauth connectors reject the credentials endpoint", async () => {
+    const res = await post("/api/integrations/google/credentials", { values: { X: "y" } });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it("unknown connector is a 400", async () => {
+    const res = await post("/api/integrations/slack/credentials", { values: {} });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it("rss enables with one click like other local connectors", async () => {
+    const res = await post("/api/integrations/rss/enable", {});
+    assert.equal(res.statusCode, 200);
+    const intRes = await app.inject({ method: "GET", url: "/api/integrations", headers: auth });
+    const rss = JSON.parse(intRes.body).connectors.find((c) => c.id === "rss");
+    assert.equal(rss.connected, true);
+    const defs = await registry.listToolDefinitions("agent-1");
+    assert.ok(defs.some((d) => d.name === "mcp__rss__rss_read_feed"), "rss tool must be registered");
+  });
+
+  it("disconnect removes the apiKey row and unregisters its tools", async () => {
+    const res = await post("/api/integrations/gitlab/disconnect", {});
+    assert.equal(res.statusCode, 200);
+    const rows = await db.select().from(mcpServers);
+    assert.ok(!rows.some((r) => r.name === "GitLab"), "row (and its encrypted token) must be deleted");
+    const defs = await registry.listToolDefinitions("agent-1");
+    assert.ok(!defs.some((d) => d.name.startsWith("mcp__gitlab__")), "gitlab tools must be unregistered");
   });
 });
