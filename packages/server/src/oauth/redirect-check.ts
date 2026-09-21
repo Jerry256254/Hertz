@@ -8,7 +8,14 @@ import type { OAuthService } from "./oauth-service.js";
  * with a cryptic "Error 400: invalid_request / device_id and device_name
  * are required for private IP". Instead of sending the user to the provider
  * to fail there, we detect the situation up front and show a plain-Czech
- * explanation with two concrete fixes (SSH tunnel or a public https domain).
+ * explanation.
+ *
+ * For Google the primary offer is the code-based login (device flow, RFC
+ * 8628): it needs no redirect URI at all, so the private address doesn't
+ * matter — only the TV client credentials have to be configured. SSH tunnel
+ * and a public https domain remain as marginal alternatives for the classic
+ * browser-based web flow. Notion has no device flow, so it keeps the
+ * tunnel / public domain pair.
  *
  * Accepted redirect targets (what Google/Notion accept):
  *   - https on a public host (domain or public IP)
@@ -134,14 +141,40 @@ const SERVICE_CZ: Record<OAuthService, string> = {
  * error card) when the flow cannot start because of a private-network
  * address. No unexplained jargon: "lokální síťová adresa" instead of
  * "private IP", "zabezpečené spojení" instead of bare "https".
+ *
+ * For Google the primary offer is "Přihlásit kódem — bez veřejné adresy"
+ * (device flow: a code is shown, the user enters it at google.com/device,
+ * the server address plays no role); the tunnel and the public domain are
+ * offered only as marginal alternatives for the classic browser-based flow.
+ * Notion has no device flow, so it keeps the tunnel / public domain pair
+ * as the two options.
  */
 export function localNetworkOAuthBlockedMessage(opts: { service: OAuthService; redirectUri: string }): string {
   const serviceCz = SERVICE_CZ[opts.service] ?? opts.service;
   const callbackPath = `/api/oauth/${opts.service}/callback`;
-  return (
+  const intro =
     `Přihlášení přes ${serviceCz} teď nejde spustit. Důvod je prostý: ${serviceCz} nepřijímá návratovou adresu z lokální sítě — ` +
     `tento Hertz běží na adrese, kterou ${serviceCz} pro přihlašování odmítá. Fungují jen veřejné adresy se zabezpečeným spojením (https) ` +
-    `nebo adresa přímo na tomto počítači (localhost).\n\n` +
+    `nebo adresa přímo na tomto počítači (localhost).\n\n`;
+  if (opts.service === "google") {
+    return (
+      intro +
+      `Nejjednodušší cesta — Přihlásit kódem (bez veřejné adresy):\n` +
+      `Hertzi se ukáže krátký kód. Otevři na svém telefonu nebo počítači stránku google.com/device, kód tam zadej a přihlas se Googlem. ` +
+      `Hotovo — adresa tohoto serveru při tom nehraje žádnou roli. ` +
+      `Vyžaduje jen, aby správce v nastavení konektoru Google jednou zadal údaje klienta typu „TV“ (návod najde v Nastavení → Konektory → Google).\n\n` +
+      `Klasické přihlášení přes prohlížeč je tu jen jako krajní možnost (vyber si jednu z nich):\n` +
+      `1. SSH tunel: na svém počítači spusť příkaz\n` +
+      `   ssh -L 4173:localhost:4173 uživatel@server\n` +
+      `   pak v prohlížeči otevři http://localhost:4173 a v nastavení OAuth klienta u Googlu přidej návratovou adresu\n` +
+      `   http://localhost:4173${callbackPath}\n` +
+      `2. Veřejná adresa: zprovozni pro Hertz veřejnou adresu se zabezpečeným spojením (například přes Cloudflare Tunnel) ` +
+      `a v nastavení OAuth klienta u Googlu přidej návratovou adresu\n` +
+      `   https://vase-domena${callbackPath}`
+    );
+  }
+  return (
+    intro +
     `Co s tím (vyber si jednu možnost):\n` +
     `1. SSH tunel: na svém počítači spusť příkaz\n` +
     `   ssh -L 4173:localhost:4173 uživatel@server\n` +

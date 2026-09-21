@@ -282,6 +282,36 @@ describe("connector catalog", () => {
     assert.match(other, /odpojit a připojit znovu/);
     assert.match(h(null), /Neznámá chyba/);
   });
+
+  it("google: návod vede primárně na přihlášení kódem (device flow)", () => {
+    const google = catalog.getConnector("google");
+    assert.ok(google, "google must exist");
+    // Návod pro uživatele: primární cesta „Přihlásit kódem“, bez zmínek o SSH tunelu.
+    assert.match(google.setupHelp, /Přihlásit kódem/);
+    assert.match(google.setupHelp, /google\.com\/device/);
+    assert.ok(!/SSH tunel/.test(google.setupHelp), "device flow nepotřebuje tunel");
+    // Návod pro správce: krok za krokem TV klient, důraz na to, že TV klient nepotřebuje návratovou adresu.
+    assert.match(google.adminSetupHelp, /TVs and Limited Input devices/);
+    assert.match(google.adminSetupHelp, /Client ID a Client secret/);
+    assert.match(google.adminSetupHelp, /NEPOTŘEBUJE žádnou návratovou/);
+    assert.match(google.adminSetupHelp, /HERTZ_OAUTH_GOOGLE_CLIENT_ID/);
+    assert.match(google.adminSetupHelp, /HERTZ_OAUTH_GOOGLE_CLIENT_SECRET/);
+    // Web/relay flow zůstává jako záložní možnost.
+    assert.match(google.adminSetupHelp, /Záložní možnost/);
+    assert.match(google.adminSetupHelp, /Webová aplikace/);
+    assert.match(google.relaySetupHelp, /Přihlásit kódem/);
+    assert.match(google.relayAdminSetupHelp, /TVs and Limited Input devices/);
+    assert.match(google.relayAdminSetupHelp, /\{bounce\}/);
+  });
+
+  it("copyableDeviceFlowUrlsFor vrací ověřovací adresu Google s tlačítkem pro zkopírování", () => {
+    const google = catalog.getConnector("google");
+    assert.deepEqual(catalog.copyableDeviceFlowUrlsFor(google), [
+      { label: "Stránka pro zadání přihlašovacího kódu", url: "https://www.google.com/device" },
+    ]);
+    assert.deepEqual(catalog.copyableDeviceFlowUrlsFor(catalog.getConnector("notion")), []);
+    assert.deepEqual(catalog.copyableDeviceFlowUrlsFor(catalog.getConnector("github")), []);
+  });
 });
 
 // --- Tool registry: connect/disconnect with a fake stdio MCP server --------

@@ -224,7 +224,8 @@ describe("katalog: relay texty", () => {
     assert.ok(google);
     const help = setupHelpFor(google);
     assert.ok(help);
-    assert.match(help, /Klikni na „Připojit“, přihlas se Googlem a potvrď souhlas — propojení proběhne samo\./);
+    assert.match(help, /Přihlásit kódem/);
+    assert.match(help, /google\.com\/device/);
     assert.doesNotMatch(help, /SSH tunel/);
     const notion = getConnector("notion");
     assert.ok(notion);
@@ -257,11 +258,14 @@ describe("katalog: relay texty", () => {
     assert.deepEqual(copyableRelayUrlsFor(getConnector("github")), []);
   });
 
-  it("bez relay env zůstávají původní texty s SSH tunelem a bounce URL je null", () => {
+  it("bez relay env zůstávají původní texty a bounce URL je null", () => {
     delete process.env.HERTZ_OAUTH_RELAY_URL;
     const google = getConnector("google");
     assert.ok(google);
-    assert.match(setupHelpFor(google), /SSH tunel/);
+    // Bez relay je primární návod přihlášení kódem (device flow); SSH tunel
+    // zůstává jen v návodu pro správce jako krajní možnost klasického přihlášení.
+    assert.match(setupHelpFor(google), /Přihlásit kódem/);
+    assert.match(adminSetupHelpFor(google), /SSH tunel/);
     assert.equal(relayBounceUrlFor(google), null);
   });
 });

@@ -108,12 +108,18 @@ describe("PROVIDERS_REQUIRING_PUBLIC_REDIRECT", () => {
 });
 
 describe("localNetworkOAuthBlockedMessage", () => {
-  it("česká zpráva obsahuje klíčové prvky (lokální síť, SSH tunel, veřejná adresa)", () => {
+  it("google: primární nabídka je Přihlásit kódem (device flow), tunel/doména jen jako krajní možnosti", () => {
     const msg = localNetworkOAuthBlockedMessage({
       service: "google",
       redirectUri: "http://192.168.100.161:4173/api/oauth/google/callback",
     });
     assert.match(msg, /lokální sít/i);
+    assert.match(msg, /Přihlásit kódem/);
+    assert.match(msg, /google\.com\/device/);
+    assert.match(msg, /bez veřejné adresy/);
+    // Device flow je primární: „Přihlásit kódem“ stojí před SSH tunelem.
+    assert.ok(msg.indexOf("Přihlásit kódem") < msg.indexOf("SSH tunel"), "device flow má být primární nabídka");
+    // Klasické přihlášení zůstává jako okrajová alternativa.
     assert.match(msg, /SSH tunel/);
     assert.match(msg, /ssh -L 4173:localhost:4173/);
     assert.match(msg, /veřejn/);
@@ -122,13 +128,17 @@ describe("localNetworkOAuthBlockedMessage", () => {
     assert.match(msg, /Google/);
   });
 
-  it("pojmenuje službu a cestu callbacku podle služby", () => {
+  it("notion: nemá device flow, zůstává dvojice SSH tunel / veřejná adresa", () => {
     const msg = localNetworkOAuthBlockedMessage({
       service: "notion",
       redirectUri: "http://192.168.1.5:4173/api/oauth/notion/callback",
     });
     assert.match(msg, /Notion/);
     assert.match(msg, /\/api\/oauth\/notion\/callback/);
+    assert.match(msg, /SSH tunel/);
+    assert.match(msg, /veřejn/);
+    assert.ok(!/google\.com\/device/.test(msg), "notion neumí device flow");
+    assert.ok(!/Přihlásit kódem/.test(msg), "notion neumí Přihlásit kódem");
   });
 
   it("neobsahuje emoji ani technický žargon bez vysvětlení", () => {

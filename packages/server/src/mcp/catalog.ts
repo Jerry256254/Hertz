@@ -63,8 +63,10 @@ export interface ConnectorDefinition {
   setupHelp?: string;
   /**
    * Varianta setupHelp pro případ, že je zapnutý OAuth relay
-   * (HERTZ_OAUTH_RELAY_URL): krátký návod bez zmínek o SSH tunelu —
-   * přihlášení přes relay prostě projde jedním kliknutím.
+   * (HERTZ_OAUTH_RELAY_URL): zkrácený návod na přihlášení kódem (device
+   * flow). Device flow nepotřebuje žádnou návratovou adresu, takže na
+   * relay vůbec nezáleží; klasické přihlášení přes prohlížeč jde
+   * přes relay jedním kliknutím bez SSH tunelu.
    */
   relaySetupHelp?: string;
   /**
@@ -74,9 +76,12 @@ export interface ConnectorDefinition {
    */
   adminSetupHelp?: string;
   /**
-   * Varianta adminSetupHelp pro OAuth relay: návod pro správce, kam patří
-   * bounce URL relay jako redirect URI u poskytovatele. Může obsahovat
-   * zástupný text `{bounce}`, který se nahradí skutečnou bounce URL.
+   * Varianta adminSetupHelp pro OAuth relay: návod pro správce, jak zapnout
+   * přihlašování kódem (device flow, doporučeno — žádná návratová adresa
+   * se nikam nezadává) a záložně klasické přihlášení přes prohlížeč, kam
+   * patří bounce URL relay jako redirect URI u poskytovatele. Může
+   * obsahovat zástupný text `{bounce}`, který se nahradí skutečnou
+   * bounce URL.
    */
   relayAdminSetupHelp?: string;
   /** Matches the MCP server package this connector spawns (…/dist/server.js suffix). */
@@ -111,28 +116,30 @@ export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
     setupUrl: "https://console.cloud.google.com/apis/credentials",
     setupUrlLabel: "Otevřít Google Cloud Console",
     setupHelp:
-      "Klikni na „Připojit“, přihlas se svým Googlem a potvrď souhlas. " +
-      "Pozor: jedním kliknutím to projde jen tehdy, když Hertz otevíráš přes localhost nebo přes veřejnou adresu. " +
-      "Když se k Hertzi připojuješ přes lokální síť (adresa jako 192.168.x.x), Google takové přihlášení odmítne — " +
-      "pak pomůže SSH tunel (otevři Hertz na http://localhost:4173) nebo veřejná adresa se zabezpečeným spojením (https); " +
-      "návratovou adresu pak přidej v Google Cloud Console.",
+      "Klikni na „Přihlásit kódem“ — ukáže se ti krátký kód. Otevři na svém telefonu nebo počítači stránku google.com/device, " +
+      "kód tam zadej a přihlas se Googlem. Hotovo — funguje i tehdy, když Hertz otevíráš přes lokální síť (adresa jako 192.168.x.x), " +
+      "a nic se kvůli tomu nemusí nastavovat.",
     relaySetupHelp:
-      "Klikni na „Připojit“, přihlas se Googlem a potvrď souhlas — propojení proběhne samo.",
+      "Klikni na „Přihlásit kódem“ — ukáže se ti krátký kód. Otevři na svém telefonu nebo počítači stránku google.com/device, " +
+      "kód tam zadej a přihlas se Googlem. Hotovo.",
     relayAdminSetupHelp:
-      "Jednorázové nastavení pro správce serveru: " +
-      "1. V Google Cloud Console vytvoř projekt a OAuth klienta typu „Webová aplikace“. " +
-      "2. Jako autorizovanou adresu pro návrat přidej {bounce} — přihlášení probíhá přes OAuth relay, protože tento Hertz běží na lokální síti (přímou adresu serveru by Google odmítl). " +
-      "3. Povol API: Gmail, Calendar, Drive, Sheets, Docs a Slides. " +
-      "4. Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_GOOGLE_CLIENT_ID a HERTZ_OAUTH_GOOGLE_CLIENT_SECRET. " +
-      "5. Na serveru musí být nastavené HERTZ_OAUTH_RELAY_URL a HERTZ_OAUTH_STATE_SECRET (stejný klíč jako na relay serveru).",
+      "Jednorázové nastavení pro správce serveru — přihlašování kódem (doporučená cesta): " +
+      "1. V Google Cloud Console vytvoř OAuth klienta typu „TVs and Limited Input devices“ (pojmenuj ho třeba „Hertz“). " +
+      "TV klient NEPOTŘEBUJE žádnou návratovou adresu — přihlašování kódem proto funguje i na privátní síti a relay se na něj nevztahuje. " +
+      "2. Povol API: Gmail, Calendar, Drive, Sheets, Docs a Slides. " +
+      "3. Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_GOOGLE_CLIENT_ID a HERTZ_OAUTH_GOOGLE_CLIENT_SECRET. " +
+      "Záložní možnost (klasické přihlášení přes prohlížeč přes OAuth relay): vytvoř klienta typu „Webová aplikace“, jako návratovou adresu přidej {bounce} " +
+      "a na serveru nastav HERTZ_OAUTH_RELAY_URL a HERTZ_OAUTH_STATE_SECRET (stejný klíč jako na relay serveru).",
     adminSetupHelp:
-      "Jednorázové nastavení pro správce serveru: " +
-      "1. V Google Cloud Console vytvoř projekt a OAuth klienta typu „Webová aplikace“. " +
-      "2. Jako autorizovanou adresu pro návrat přidej adresu tohoto serveru + /api/oauth/google/callback (např. https://vase-domena/api/oauth/google/callback). " +
-      "Google přijímá jen veřejné adresy se zabezpečeným spojením (https) nebo http://localhost — adresy z lokální sítě (např. 192.168.x.x) odmítá, " +
-      "pak je potřeba SSH tunel (návratová adresa http://localhost:4173/api/oauth/google/callback) nebo veřejná doména. " +
+      "Jednorázové nastavení pro správce serveru — přihlašování kódem (device flow): " +
+      "1. V Google Cloud Console vytvoř projekt (nebo vyber existující), otevři APIs & Services → Credentials a zvol Create Credentials → OAuth client ID. " +
+      "2. Jako typ aplikace vyber „TVs and Limited Input devices“ a klienta pojmenuj třeba „Hertz“. " +
+      "TV klient NEPOTŘEBUJE žádnou návratovou (redirect) adresu — proto přihlašování kódem funguje i na privátní síti (např. 192.168.x.x). " +
       "3. Povol API: Gmail, Calendar, Drive, Sheets, Docs a Slides. " +
-      "4. Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_GOOGLE_CLIENT_ID a HERTZ_OAUTH_GOOGLE_CLIENT_SECRET.",
+      "4. Zkopírované Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_GOOGLE_CLIENT_ID a HERTZ_OAUTH_GOOGLE_CLIENT_SECRET. " +
+      "Záložní možnost (klasické přihlášení přes prohlížeč): vytvoř klienta typu „Webová aplikace“ a jako návratovou adresu přidej adresu tohoto serveru + /api/oauth/google/callback. " +
+      "Google přijímá jen veřejné adresy se zabezpečeným spojením (https) nebo http://localhost — adresy z lokální sítě (např. 192.168.x.x) odmítá, " +
+      "pak je potřeba SSH tunel (návratová adresa http://localhost:4173/api/oauth/google/callback) nebo veřejná doména.",
     serverDistSuffix: "mcp-google/dist/server.js",
     catalogId: "google",
   },
@@ -347,8 +354,9 @@ export function resolveConnectorServerPath(def: { id: string }): string | null {
 /**
  * Návod pro běžného uživatele s ohledem na OAuth relay: když je relay
  * zapnutý (HERTZ_OAUTH_RELAY_URL) a konektor má relay variantu textu
- * (google/notion), použije se zkrácený návod bez SSH tunelu — přihlášení
- * přes relay prostě projde jedním kliknutím. Jinak původní text.
+ * (google/notion), použije se zkrácený návod — pro Google přihlášení
+ * kódem (device flow), pro Notion klasické přihlášení přes relay jedním
+ * kliknutím bez SSH tunelu. Jinak původní text.
  */
 export function setupHelpFor(def: ConnectorDefinition): string | undefined {
   if (oauthRelayBounceUrl() && def.relaySetupHelp) return def.relaySetupHelp;
@@ -396,6 +404,20 @@ export function copyableRelayUrlsFor(def: ConnectorDefinition): CopyableConnecto
   const label =
     def.service === "notion" ? "Redirect URI pro Notion integraci" : "Redirect URI pro Google Cloud Console";
   return [{ label, url: bounce }];
+}
+
+/**
+ * Ověřovací adresa Google pro přihlašování kódem (device flow, RFC 8628)
+ * — uživatel ji otevře na telefonu či počítači a zadá tam kód zobrazený
+ * Hertzem. Statická hodnota, proto patří do copyableUrls: v Nastavení →
+ * Konektory se zobrazí s tlačítkem pro zkopírování (stejný mechanismus
+ * jako bounce URL relay). Jen Google umí device flow, jinak prázdné pole.
+ */
+export const GOOGLE_DEVICE_VERIFICATION_URL = "https://www.google.com/device";
+
+export function copyableDeviceFlowUrlsFor(def: ConnectorDefinition): CopyableConnectorUrl[] {
+  if (def.service !== "google") return [];
+  return [{ label: "Stránka pro zadání přihlašovacího kódu", url: GOOGLE_DEVICE_VERIFICATION_URL }];
 }
 
 /**
