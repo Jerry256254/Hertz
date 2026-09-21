@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import type { OAuthService } from "../oauth/oauth-service.js";
 import { oauthRelayBounceUrl } from "../oauth/relay-state.js";
 
@@ -86,10 +87,12 @@ export interface ConnectorDefinition {
 
 /**
  * The on-demand catalog: connectors the agent (and the user, in
- * Nastavení → Konektory) can see and connect one by one. Nothing here is
- * wired up until the user clicks "Připojit" (or "Zapnout" for local
- * connectors) — that's the whole point: the agent lists this catalog via the
- * `mcp__catalog` tool and only asks for what the current task actually needs.
+ * Nastavení → Konektory) can see and connect one by one. Connectors that
+ * need a login stay unwired until the user clicks "Připojit"; connectors
+ * without any login (credentialKind "none", see authlessConnectors) are
+ * enabled by default at server startup and can be turned off — that's the
+ * whole point: the agent lists this catalog via the `mcp__catalog` tool
+ * and only asks for what the current task actually needs.
  *
  * Rule: every entry must be fully functional end-to-end (OAuth → token
  * storage → working MCP tools, or a working local server for local entries).
@@ -305,6 +308,40 @@ export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
 
 export function getConnector(id: string): ConnectorDefinition | undefined {
   return CONNECTOR_CATALOG.find((c) => c.id === id);
+}
+
+/**
+ * Konektory, které nepotřebují žádný klíč ani přihlášení (credentialKind
+ * "none"): jsou pro nového uživatele / po instalaci rovnou aktivní, bez
+ * nutnosti cokoliv zapínat. Server je při startu automaticky zapne
+ * (viz backfillAuthlessConnectors v db/migrate.ts), pokud je uživatel
+ * explicitně nevypnul.
+ */
+export function authlessConnectors(): ConnectorDefinition[] {
+  return CONNECTOR_CATALOG.filter((c) => c.credentialKind === "none");
+}
+
+const require = createRequire(import.meta.url);
+
+/**
+ * Absolutní cesta ke spustitelnému MCP serveru konektoru. Líně, až když je
+ * potřeba: chybějící balíček nesmí rozbít volající modul.
+ */
+export function resolveConnectorServerPath(def: { id: string }): string | null {
+  const pkgs: Record<string, string> = {
+    presentation: "@kuclab-hertz/mcp-presentation/dist/server.js",
+    gitlab: "@kuclab-hertz/mcp-gitlab/dist/server.js",
+    todoist: "@kuclab-hertz/mcp-todoist/dist/server.js",
+    openweather: "@kuclab-hertz/mcp-openweather/dist/server.js",
+    rss: "@kuclab-hertz/mcp-rss/dist/server.js",
+  };
+  const pkg = pkgs[def.id];
+  if (!pkg) return null;
+  try {
+    return require.resolve(pkg);
+  } catch {
+    return null;
+  }
 }
 
 /**

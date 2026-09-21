@@ -1,37 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { createRequire } from "node:module";
 import path from "node:path";
 import type { AppContext } from "../context.js";
-import { mcpServers, oauthApps } from "../db/schema.js";
+import { connectorOptOuts, mcpServers, oauthApps } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { decryptSecret, encryptSecret, maskKey } from "../secrets/key-encryption.js";
-import { CONNECTOR_CATALOG, getConnector, humanizeConnectorError, setupHelpFor, adminSetupHelpFor, copyableRelayUrlsFor, type ConnectorId } from "../mcp/catalog.js";
+import { CONNECTOR_CATALOG, getConnector, humanizeConnectorError, resolveConnectorServerPath, setupHelpFor, adminSetupHelpFor, copyableRelayUrlsFor, type ConnectorId } from "../mcp/catalog.js";
 import { serverOAuthApp } from "../oauth/oauth-service.js";
 import type { OAuthService } from "../oauth/oauth-service.js";
 import { POLICY_MODE_CZ, TOOL_CLASS_CZ } from "../mcp/tool-policy.js";
-
-const require = createRequire(import.meta.url);
-
-/** Líně, až když je potřeba: chybějící balíček nesmí rozbít celý routes modul. */
-function resolveConnectorServerPath(def: { id: string }): string | null {
-  const pkgs: Record<string, string> = {
-    presentation: "@kuclab-hertz/mcp-presentation/dist/server.js",
-    gitlab: "@kuclab-hertz/mcp-gitlab/dist/server.js",
-    todoist: "@kuclab-hertz/mcp-todoist/dist/server.js",
-    openweather: "@kuclab-hertz/mcp-openweather/dist/server.js",
-    rss: "@kuclab-hertz/mcp-rss/dist/server.js",
-  };
-  const pkg = pkgs[def.id];
-  if (!pkg) return null;
-  try {
-    return require.resolve(pkg);
-  } catch {
-    return null;
-  }
-}
 
 const CONNECTOR_IDS = CONNECTOR_CATALOG.map((d) => d.id) as [ConnectorId, ...ConnectorId[]];
 
@@ -125,7 +104,9 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
 
     // One-click disconnect: removes every MCP server row belonging to the
     // connector (deleting the encrypted tokens with it) and unregisters
-    // its tools from the agent's toolset.
+    // its tools from the agent's toolset. For auth-less connectors (enabled
+    // by default at startup) the disconnect is also recorded as an explicit
+    // opt-out, so the startup backfill doesn't silently re-enable them.
     instance.post("/api/integrations/:id/disconnect", async (request, reply) => {
       const parsed = z.enum(CONNECTOR_IDS).safeParse((request.params as { id: string }).id);
       if (!parsed.success) return reply.code(400).send({ error: "Neznámý konektor" });
@@ -141,6 +122,12 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
         await ctx.db.delete(mcpServers).where(eq(mcpServers.id, row.id));
         ctx.mcpRegistry.invalidate(row.id);
       }
+      if (def.credentialKind === "none") {
+        await ctx.db
+          .insert(connectorOptOuts)
+          .values({ connectorId: parsed.data, createdAt: new Date() })
+          .onConflictDoNothing();
+      }
       return { ok: true, removed: matching.length };
     });
 
@@ -155,6 +142,9 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
 
       const serverBin = resolveConnectorServerPath(def);
       if (!serverBin) return reply.code(500).send({ error: `Konektor ${def.name} není nainstalovaný (chybí jeho balíček).` });
+
+      // Opětovné zapnutí ruší dřívější explicitní vypnutí.
+      await ctx.db.delete(connectorOptOuts).where(eq(connectorOptOuts.connectorId, parsed.data));
 
       const env: Record<string, string> = {};
       // Výstupní adresář prezentací patří pod datový adresář aplikace.

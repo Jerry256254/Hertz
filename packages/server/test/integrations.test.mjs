@@ -749,3 +749,129 @@ describe("apiKey connectors: credentials route end-to-end", () => {
     assert.ok(!defs.some((d) => d.name.startsWith("mcp__gitlab__")), "gitlab tools must be unregistered");
   });
 });
+
+// --- Konektory bez přihlášení zapnuté defaultně --------------------------------
+
+describe("auth-less connectors enabled by default", () => {
+  let dir, db, client, registry, app, masterKey, auth;
+  let openDatabase, runMigrations, McpRegistry, mcpServers, users, connectorOptOuts, eq, get, authlessConnectors;
+
+  before(async () => {
+    ({ openDatabase } = await import("../dist/db/client.js"));
+    ({ runMigrations } = await import("../dist/db/migrate.js"));
+    ({ mcpServers, users, connectorOptOuts } = await import("../dist/db/schema.js"));
+    ({ McpRegistry } = await import("../dist/mcp/mcp-registry.js"));
+    ({ eq } = await import("drizzle-orm"));
+    const { buildApp } = await import("../dist/app.js");
+    const { createSessionToken } = await import("../dist/auth/session-tokens.js");
+    ({ authlessConnectors } = await import("../dist/mcp/catalog.js"));
+
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-authless-"));
+    ({ client, db } = openDatabase(path.join(dir, "app.db")));
+    await runMigrations(client);
+    masterKey = crypto.randomBytes(32);
+    registry = new McpRegistry(db, masterKey);
+    app = await buildApp({ db, masterKey, mcpRegistry: registry });
+
+    const userId = "user-1";
+    await db.insert(users).values({ id: userId, email: "qa@example.com", passwordHash: "x", role: "admin", createdAt: new Date() });
+    auth = { authorization: `Bearer ${await createSessionToken(db, userId)}` };
+  });
+
+  after(async () => {
+    await registry.shutdown();
+    try { await app.close(); } catch {}
+    try { await client.close(); } catch {}
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  const post = (url, payload = {}) =>
+    app.inject({ method: "POST", url, headers: { ...auth, "content-type": "application/json" }, payload });
+  get = (url) => app.inject({ method: "GET", url, headers: auth });
+
+  async function rowsFor(suffix) {
+    const rows = await db.select().from(mcpServers);
+    return rows.filter((r) => (r.argsJson ? JSON.parse(r.argsJson)[0] ?? "" : "").endsWith(suffix));
+  }
+
+  it("authlessConnectors() lists exactly the no-login connectors", async () => {
+    const { CONNECTOR_CATALOG } = await import("../dist/mcp/catalog.js");
+    const ids = authlessConnectors().map((c) => c.id).sort();
+    assert.deepEqual(ids, ["presentation", "rss"]);
+    for (const c of authlessConnectors()) {
+      assert.equal(c.credentialKind, "none", `${c.id} must need no credentials`);
+      assert.equal(c.local, true, `${c.id} must be a local connector`);
+    }
+    const openweather = CONNECTOR_CATALOG.find((c) => c.id === "openweather");
+    assert.equal(openweather.credentialKind, "apiKey", "OpenWeather needs a free API key — must stay off by default");
+  });
+
+  it("fresh install: rss and presentation rows exist and are enabled", async () => {
+    const rss = await rowsFor("mcp-rss/dist/server.js");
+    const presentation = await rowsFor("mcp-presentation/dist/server.js");
+    assert.equal(rss.length, 1, "rss row must be auto-created");
+    assert.equal(presentation.length, 1, "presentation row must be auto-created");
+    assert.equal(rss[0].enabled, true);
+    assert.equal(presentation[0].enabled, true);
+    assert.equal(rss[0].policyMode, "read-only", "least privilege by default");
+  });
+
+  it("fresh install: connectors needing a key or login stay off", async () => {
+    const rows = await db.select().from(mcpServers);
+    for (const suffix of ["mcp-openweather/dist/server.js", "mcp-gitlab/dist/server.js", "mcp-todoist/dist/server.js"]) {
+      assert.ok(!rows.some((r) => (r.argsJson ?? "").includes(suffix)), `${suffix} must not be auto-enabled`);
+    }
+    assert.ok(!rows.some((r) => (r.argsJson ?? "").includes("mcp-google/dist/server.js")));
+    assert.ok(!rows.some((r) => (r.argsJson ?? "").includes("mcp-notion/dist/server.js")));
+    assert.ok(!rows.some((r) => (r.argsJson ?? "").includes("mcp-github/dist/server.js")));
+  });
+
+  it("GET /api/integrations reports rss and presentation as connected", async () => {
+    const res = await get("/api/integrations");
+    assert.equal(res.statusCode, 200);
+    const connectors = JSON.parse(res.body).connectors;
+    const rss = connectors.find((c) => c.id === "rss");
+    const presentation = connectors.find((c) => c.id === "presentation");
+    const openweather = connectors.find((c) => c.id === "openweather");
+    assert.equal(rss.connected, true);
+    assert.equal(rss.local, true);
+    assert.equal(presentation.connected, true);
+    assert.equal(openweather.connected, false);
+  });
+
+  it("disconnecting rss records an explicit opt-out and survives a restart", async () => {
+    const res = await post("/api/integrations/rss/disconnect");
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual((await rowsFor("mcp-rss/dist/server.js")).length, 0, "rss row must be deleted");
+
+    const optOuts = await db.select().from(connectorOptOuts).where(eq(connectorOptOuts.connectorId, "rss"));
+    assert.equal(optOuts.length, 1, "explicit opt-out must be recorded");
+
+    // Simulated server restart: migrations run again.
+    await runMigrations(client);
+    assert.deepEqual((await rowsFor("mcp-rss/dist/server.js")).length, 0, "rss must NOT be re-enabled after explicit opt-out");
+    assert.deepEqual((await rowsFor("mcp-presentation/dist/server.js")).length, 1, "presentation stays enabled");
+
+    const intRes = await get("/api/integrations");
+    const rss = JSON.parse(intRes.body).connectors.find((c) => c.id === "rss");
+    assert.equal(rss.connected, false, "UI must read the state from the backend");
+  });
+
+  it("re-enabling rss clears the opt-out and does not duplicate rows", async () => {
+    const res = await post("/api/integrations/rss/enable");
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).ok, true);
+
+    const optOuts = await db.select().from(connectorOptOuts).where(eq(connectorOptOuts.connectorId, "rss"));
+    assert.equal(optOuts.length, 0, "opt-out must be cleared on re-enable");
+
+    // Simulated restarts: backfill must stay idempotent.
+    await runMigrations(client);
+    await runMigrations(client);
+    assert.deepEqual((await rowsFor("mcp-rss/dist/server.js")).length, 1, "no duplicate rows after restarts");
+
+    const intRes = await get("/api/integrations");
+    const rss = JSON.parse(intRes.body).connectors.find((c) => c.id === "rss");
+    assert.equal(rss.connected, true);
+  });
+});

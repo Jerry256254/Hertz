@@ -409,6 +409,18 @@ export const mcpServers = sqliteTable("mcp_servers", {
 });
 
 /**
+ * Explicitní vypnutí konektoru bez přihlášení (credentialKind "none").
+ * Takové konektory server při startu automaticky zapíná (backfill v
+ * db/migrate.ts) — záznam v této tabulce znamená „uživatel si ho vědomě
+ * vypnul“, takže se při dalším startu znovu nezapne. Opětovné zapnutí
+ * záznam maže.
+ */
+export const connectorOptOuts = sqliteTable("connector_opt_outs", {
+  connectorId: text("connector_id").primaryKey(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
  * Recurring work: same idea as a Task, but re-briefed on a schedule instead of
  * once. The scheduler (routines/routine-scheduler.ts) reads nextRunAt from here
  * rather than keeping timers in memory, so a server restart doesn't drop a run.

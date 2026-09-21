@@ -56,15 +56,17 @@ interface ToolIndexEntry {
  * (Google, Notion, GitHub, Prezentace), which are already connected, and what
  * each one unlocks — so it only asks the user to connect what the task needs.
  * Connecting itself always happens in the user's browser (OAuth consent),
- * never by the agent. The local Prezentace connector is enabled with one
- * click in Nastavení → Konektory, no login needed.
+ * never by the agent. The local no-login connectors (Prezentace, RSS) are
+ * enabled by default at server startup and can be turned off in
+ * Nastavení → Konektory.
  */
 function catalogToolDefinition(): ToolDefinition {
   return {
     name: "mcp__catalog",
     description:
-      "List available one-click integrations (Google = Gmail + Calendar + Drive + Sheets + Docs, Notion, GitHub, Prezentace = local presentation builder): what each one does and whether it is currently connected. " +
-      "If a task needs a capability from a disconnected integration, tell the user (in Czech) to open Nastavení → Konektory and click Připojit (or Zapnout for Prezentace) — the OAuth consent must happen in their browser, you cannot connect it yourself. " +
+      "List available one-click integrations (Google = Gmail + Calendar + Drive + Sheets + Docs, Notion, GitHub, Prezentace = local presentation builder, RSS = local feed reader): what each one does and whether it is currently connected. " +
+      "Prezentace and RSS need no login and are enabled by default — if the user doesn't want them, they can turn them off in Nastavení → Konektory. " +
+      "If a task needs a capability from a disconnected integration, tell the user (in Czech) to open Nastavení → Konektory and click Připojit — the OAuth consent must happen in their browser, you cannot connect it yourself. " +
       "Never invent tool names from this catalog: only call the concrete mcp__<server>__<tool> tools listed as connected.",
     inputSchema: { type: "object", properties: {} },
   };

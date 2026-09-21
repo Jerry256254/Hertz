@@ -1,6 +1,8 @@
 import type { Client } from "@libsql/client";
 import { defaultAgentPrompt, seedSoul } from "../agents/persona.js";
 import { generateAvatarSpec, parseAvatarSpec } from "../agents/avatar.js";
+import { authlessConnectors, resolveConnectorServerPath } from "../mcp/catalog.js";
+import { newId } from "./client.js";
 
 /**
  * Hand-written, idempotent (CREATE TABLE IF NOT EXISTS) bootstrap SQL mirroring
@@ -227,6 +229,11 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_agent ON mcp_servers(agent_id);
+
+CREATE TABLE IF NOT EXISTS connector_opt_outs (
+  connector_id TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS routines (
   id TEXT PRIMARY KEY,
@@ -515,6 +522,58 @@ export async function runMigrations(client: Client): Promise<void> {
   // user-written souls are never clobbered), everyone else gets a soul
   // generated from their name, character and vibe.
   await backfillSouls(client);
+
+  // Konektory bez přihlášení (RSS, Prezentace) jsou pro nového uživatele
+  // rovnou aktivní — bez nutnosti cokoliv zapínat. Backfill je idempotentní
+  // a respektuje explicitní vypnutí uživatelem.
+  await backfillAuthlessConnectors(client);
+}
+
+/**
+ * Idempotentní zapnutí konektorů bez přihlášení (credentialKind "none",
+ * např. RSS a Prezentace): nový uživatel je má aktivní hned po instalaci,
+ * bez jediného kliknutí. Běží při každém startu serveru:
+ * - konektor se zapne, jen když pro něj neexistuje žádný mcp_servers řádek
+ *   (existující řádky — i vypnuté — se nikdy nepřepisují),
+ * - kdo si konektor explicitně vypnul (záznam v connector_opt_outs), tomu
+ *   se znovu nezapne.
+ */
+async function backfillAuthlessConnectors(client: Client): Promise<void> {
+  let enabled = 0;
+  for (const def of authlessConnectors()) {
+    const optedOut = await client.execute({
+      sql: "SELECT 1 FROM connector_opt_outs WHERE connector_id = ?",
+      args: [def.id],
+    });
+    if (optedOut.rows.length > 0) continue;
+
+    const rows = await client.execute("SELECT args_json FROM mcp_servers");
+    const hasRow = rows.rows.some((row) => {
+      const argsJson = (row as unknown as { args_json: string | null }).args_json;
+      let args: string[] = [];
+      try {
+        args = argsJson ? (JSON.parse(argsJson) as string[]) : [];
+      } catch {
+        args = [];
+      }
+      return (args[0] ?? "").endsWith(def.serverDistSuffix);
+    });
+    if (hasRow) continue;
+
+    const serverBin = resolveConnectorServerPath(def);
+    if (!serverBin) {
+      console.log(`[migrate] konektor ${def.id} se nepodařilo zapnout: chybí jeho balíček`);
+      continue;
+    }
+    await client.execute({
+      sql: "INSERT INTO mcp_servers (id, agent_id, name, transport, command, args_json, encrypted_env, url, enabled, policy_mode, policy_tools_json, created_at) VALUES (?, NULL, ?, 'stdio', 'node', ?, NULL, NULL, 1, 'read-only', NULL, ?)",
+      args: [newId(), def.name, JSON.stringify([serverBin]), Date.now()],
+    });
+    enabled++;
+  }
+  if (enabled > 0) {
+    console.log(`[migrate] automaticky zapnuto ${enabled} konektoru bez přihlášení`);
+  }
 }
 
 /**

@@ -780,7 +780,7 @@ function OneClickConnectors() {
                   {failed ? (
                     <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-[700] text-danger">Nefunguje</span>
                   ) : c.connected ? (
-                    <span className="rounded-full bg-live/15 px-2 py-0.5 text-[11px] font-[700] text-live">Připojeno</span>
+                    <span className="rounded-full bg-live/15 px-2 py-0.5 text-[11px] font-[700] text-live">{c.local ? "Zapnuto" : "Připojeno"}</span>
                   ) : (
                     <span className="rounded-full bg-bg-sunken px-2 py-0.5 text-[11px] font-[700] text-fg-muted">Nepřipojeno</span>
                   )}
