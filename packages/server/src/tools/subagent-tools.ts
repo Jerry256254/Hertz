@@ -45,7 +45,7 @@ export function createSubagentTools(getManager: () => SubagentManager): AgentToo
   const spawnSubagent: AgentToolDef = {
     name: "spawn_subagent",
     description:
-      "Spusť podagenta na pozadí se samostatným úkolem. Okamžitě se vrátí s jeho id — zatímco pracuje (paralelně s ostatními podagenty), ty normálně pokračuješ v konverzaci s uživatelem. Jakmile skončí, jeho výsledek ti doručím do této konverzace a ty ho shrneš uživateli. Vhodné pro nezávislé dílčí úkoly (rešerše, analýzy, přípravy). Podagent dědí tvá oprávnění a projekt, ale nemůže je rozšířit.",
+      "Spusť podagenta na pozadí se samostatným úkolem. Okamžitě se vrátí s jeho id — zatímco pracuje (paralelně s ostatními podagenty), ty normálně pokračuješ v konverzaci s uživatelem. Jakmile skončí, jeho výsledek ti doručím do této konverzace a ty ho shrneš uživateli. Vhodné pro nezávislé dílčí úkoly (rešerše, analýzy, přípravy). Podagent dědí tvá oprávnění i tvůj pracovní kontext, ale nemůže je rozšířit.",
     inputSchema: spawnSchema,
     async execute(rawInput, ctx) {
       const input = spawnSchema.parse(rawInput);

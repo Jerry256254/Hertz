@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
+import { friendlyChatError } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
 import type { AppContext } from "../context.js";
 import { agents, approvals, channelBindings, messages, projects, sessions } from "../db/schema.js";
@@ -11,6 +12,21 @@ import { createPersistenceAdapter } from "../persistence/persistence-adapter.js"
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import { accessibleProjectIds, hasProjectAccess } from "../auth/project-access.js";
 import { checkBudget } from "../usage/quota.js";
+import { stripEmoji } from "../text/strip-emoji.js";
+
+/**
+ * Scrub emoji from assistant-produced text blocks on the way out to the web
+ * client. The persona hard-bans emoji; this is the safety net for history
+ * loaded from the database (the live stream is scrubbed in ws/session-hub.ts).
+ * User messages and tool results are never touched.
+ */
+function scrubAssistantMessage<T extends { role: string; content: ContentBlock[] }>(message: T): T {
+  if (message.role !== "assistant") return message;
+  const content = message.content.map((block) =>
+    block.type === "text" ? { ...block, text: stripEmoji(block.text) } : block,
+  );
+  return { ...message, content };
+}
 
 function clearPendingMetadata(raw: string | null): string | null {
   if (!raw) return null;
@@ -169,7 +185,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (!(await hasProjectAccess(ctx.db, request.user!, session.projectId))) return reply.code(403).send({ error: "No access to this project" });
 
     const adapter = createPersistenceAdapter(ctx.db);
-    const messages = await adapter.listMessages(id);
+    const messages = (await adapter.listMessages(id)).map(scrubAssistantMessage);
     const budget = computeBudget(messages);
 
     const agent = session.agentId
@@ -182,7 +198,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       budget,
       running: ctx.agentLoop.isRunning(id),
       paused: ctx.agentLoop.isPaused(id),
-      pendingQuestion: (() => { try { return session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null; } catch { return null; } })(),
+      pendingQuestion: (() => { try { const q = session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null; return q ? stripEmoji(q) : null; } catch { return null; } })(),
       pendingQuestionAgentId: (() => { try { return session.metadata ? (JSON.parse(session.metadata).pendingQuestionAgentId as string | undefined) ?? null : null; } catch { return null; } })(),
       pendingTakeover: (() => { try { return session.metadata ? ((JSON.parse(session.metadata).pendingTakeover as { reason?: string } | undefined) ?? null) : null; } catch { return null; } })(),
       // Background subagents spawned from this session — drives the "pracují podagenti" indicator in the chat UI.
@@ -309,7 +325,10 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       });
       return { message: summary };
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message });
+      // Never leak raw provider errors to the web client — log the detail
+      // server-side and answer with a friendly Czech message.
+      console.error(`[hertz] manual compact failed (session ${id}):`, err);
+      return reply.code(400).send({ error: friendlyChatError(err) });
     }
   });
 
