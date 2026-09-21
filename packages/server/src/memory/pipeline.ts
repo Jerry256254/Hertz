@@ -49,7 +49,10 @@ export async function runMemoryPipeline(deps: MemoryPipelineDeps, agentId: strin
   running.add(agentId);
   try {
     return await runPipelineInner(deps, agentId, sessionId);
-  } catch {
+  } catch (err) {
+    // Memory must never break work — but it must never fail silently either:
+    // every swallowed error here used to look exactly like "memory doesn't work".
+    console.warn(`[hertz] memory: pipeline run failed for agent ${agentId}:`, err instanceof Error ? err.message : err);
     return false;
   } finally {
     running.delete(agentId);
@@ -62,7 +65,10 @@ async function runPipelineInner(deps: MemoryPipelineDeps, agentId: string, sessi
   const agent = agentRows[0];
   if (!agent) return false;
 
-  await backfillLegacyMemory(deps.db, deps.paths, agent.projectId, agentId).catch(() => 0);
+  await backfillLegacyMemory(deps.db, deps.paths, agent.projectId, agentId).catch((err) => {
+    console.warn(`[hertz] memory: legacy backfill failed for agent ${agentId}:`, err instanceof Error ? err.message : err);
+    return 0;
+  });
   const state = await loadMemoryState(deps.paths, agent.projectId, agentId);
 
   const history = await deps.db
@@ -92,22 +98,41 @@ async function runPipelineInner(deps: MemoryPipelineDeps, agentId: string, sessi
   // ── L0 → L1 ──────────────────────────────────────────────────────────
   if (freshTurns.length >= requiredTurns) {
     const transcript = buildTranscript(fresh);
-    if (transcript.trim()) {
-      const existing = await deps.db
-        .select({ text: agentMemoryAtoms.text })
-        .from(agentMemoryAtoms)
-        .where(eq(agentMemoryAtoms.agentId, agentId))
-        .orderBy(desc(agentMemoryAtoms.createdAt))
-        .limit(40);
-      const newAtoms = await distillAtoms(deps, agent, transcript, existing.map((e) => e.text), config.maxAtomsPerPass);
-      const stored = await storeAtoms(deps, agentId, sessionId, newAtoms);
-      if (stored > 0) {
-        totalAtoms += stored;
-        didWork = true;
+    // The watermark advances only past turns that were actually distilled.
+    // A failed LLM call must NOT advance it — otherwise those turns are
+    // silently lost forever (the failure is logged; the next run retries).
+    // An unparseable-but-successful reply ("nothing worth keeping") still
+    // advances: it was attempted, and must not poison every future run.
+    let extractionOk = false;
+    if (!transcript.trim()) {
+      extractionOk = true;
+    } else {
+      try {
+        const existing = await deps.db
+          .select({ text: agentMemoryAtoms.text })
+          .from(agentMemoryAtoms)
+          .where(eq(agentMemoryAtoms.agentId, agentId))
+          .orderBy(desc(agentMemoryAtoms.createdAt))
+          .limit(40);
+        const newAtoms = await distillAtoms(deps, agent, transcript, existing.map((e) => e.text), config.maxAtomsPerPass);
+        const stored = await storeAtoms(deps, agentId, sessionId, newAtoms);
+        if (stored > 0) {
+          totalAtoms += stored;
+          didWork = true;
+          console.log(`[hertz] memory: stored ${stored} atom(s) for agent ${agentId} (session ${sessionId})`);
+        }
+        extractionOk = true;
+      } catch (err) {
+        console.warn(
+          `[hertz] memory: extraction failed for agent ${agentId} session ${sessionId} — turns kept for the next run:`,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
-    state.extractedThrough[sessionId] = lastId;
-    await saveMemoryState(deps.paths, agent.projectId, agentId, state).catch(() => {});
+    if (extractionOk) {
+      state.extractedThrough[sessionId] = lastId;
+      await saveMemoryState(deps.paths, agent.projectId, agentId, state).catch(() => {});
+    }
   }
 
   // ── L1 → L2 ──────────────────────────────────────────────────────────
@@ -142,7 +167,10 @@ async function runPipelineInner(deps: MemoryPipelineDeps, agentId: string, sessi
   // Vector sidecar: embed whatever L1 atoms lack vectors (bounded per run,
   // silent no-op without an embedder or sqlite-vec). Covers remember() writes
   // and backfills, not just this run's distilled atoms.
-  await syncAtomVectors(deps.db, deps.paths, agentId).catch(() => 0);
+  await syncAtomVectors(deps.db, deps.paths, agentId).catch((err) => {
+    console.warn(`[hertz] memory: vector sync failed for agent ${agentId}:`, err instanceof Error ? err.message : err);
+    return 0;
+  });
 
   return didWork;
 }
@@ -185,6 +213,12 @@ async function chatJson(deps: MemoryPipelineDeps, agent: { providerConfigId: str
   return textOf(res.content);
 }
 
+/**
+ * Throws when the provider call itself fails (the caller keeps the watermark
+ * so the turns are retried); returns [] when the model simply found nothing
+ * worth keeping or its reply didn't parse (that outcome is final — retrying
+ * a poison transcript on every run would be worse).
+ */
 async function distillAtoms(
   deps: MemoryPipelineDeps,
   agent: { providerConfigId: string; model: string },
@@ -192,12 +226,8 @@ async function distillAtoms(
   existingTexts: string[],
   maxAtoms: number,
 ): Promise<Array<{ text: string; importance: number }>> {
-  try {
-    const raw = await chatJson(deps, agent, buildAtomExtractionPrompt(transcript, maxAtoms, existingTexts.slice(0, 40)), 1200);
-    return parseAtomsResponse(raw, maxAtoms);
-  } catch {
-    return [];
-  }
+  const raw = await chatJson(deps, agent, buildAtomExtractionPrompt(transcript, maxAtoms, existingTexts.slice(0, 40)), 1200);
+  return parseAtomsResponse(raw, maxAtoms);
 }
 
 async function storeAtoms(
@@ -251,7 +281,8 @@ async function clusterScenarios(
       ),
       1500,
     );
-  } catch {
+  } catch (err) {
+    console.warn(`[hertz] memory: clustering LLM call failed for agent ${agentId}:`, err instanceof Error ? err.message : err);
     return false;
   }
   const scenarios = parseScenariosResponse(raw, unclustered.length);
@@ -327,7 +358,8 @@ async function refreshPersona(
       ),
       800,
     );
-  } catch {
+  } catch (err) {
+    console.warn(`[hertz] memory: persona refresh LLM call failed for agent ${agentId}:`, err instanceof Error ? err.message : err);
     return false;
   }
   const persona = parsePersonaResponse(raw);
