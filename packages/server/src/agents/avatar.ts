@@ -11,6 +11,14 @@ import crypto from "node:crypto";
  *
  * Deliberately abstract (flow fields, topographic rings, orbits, blobs,
  * constellations, facets). No letters in circles, no robot icons, no emoji.
+ *
+ * Circle-safe composition: every motif is designed for a circular crop of the
+ * square viewBox (the UI shows avatars in circular/squircle containers). All
+ * important elements (rings, orbits, satellites, constellation stars, blob
+ * cores) sit inside AVATAR_SAFE_RADIUS of the centre — a ~15 % margin from the
+ * square edges — and motifs are symmetric around the centre. Only deliberately
+ * decorative full-bleed textures (flow fields, facet grids, starfields) may
+ * reach the viewBox edges, since cropping them mid-stroke looks natural.
  */
 
 export interface AvatarSpec {
@@ -21,6 +29,14 @@ export interface AvatarSpec {
 }
 
 export const AVATAR_SIZE = 512;
+
+/**
+ * Circle-safe radius (in the 512 viewBox) that every important motif element
+ * must stay inside. 256 − 180 = 76 px ≈ 14.8 % margin from the square edges,
+ * so a circular crop keeps the whole composition intact and no key element
+ * sits near a cut edge.
+ */
+export const AVATAR_SAFE_RADIUS = 180;
 
 /* ------------------------------------------------------------------ */
 /* Seeded PRNG                                                         */
@@ -103,7 +119,9 @@ interface MotifArt {
   body: string;
 }
 
-/** Streamlines following a sinusoidal angle field. */
+/** Streamlines following a sinusoidal angle field.
+ * Decorative full-bleed texture: lines crossing the viewBox edge are cropped
+ * mid-stroke by a circular container, which looks natural for a pattern. */
 function motifFlow(r: Rng, p: AvatarPalette): MotifArt {
   const S = AVATAR_SIZE;
   const a = r.range(0.004, 0.009);
@@ -133,22 +151,24 @@ function motifFlow(r: Rng, p: AvatarPalette): MotifArt {
   return { defs: "", body: out.join("") };
 }
 
-/** Concentric wobbly rings — topographic feel. */
+/** Concentric wobbly rings — topographic feel. Centered and circle-safe. */
 function motifRings(r: Rng, p: AvatarPalette): MotifArt {
   const S = AVATAR_SIZE;
-  const cx = S / 2 + r.range(-40, 40);
-  const cy = S / 2 + r.range(-40, 40);
+  const cx = S / 2 + r.range(-6, 6);
+  const cy = S / 2 + r.range(-6, 6);
   const count = r.int(10, 14);
-  const gap = (S * 0.46) / count;
+  const inner = 26;
+  const outer = AVATAR_SAFE_RADIUS - 16; // 164 — leaves room for the wobble
+  const gap = (outer - inner) / (count - 1);
   const k1 = r.int(2, 5);
   const k2 = r.int(3, 7);
   const ph1 = r.range(0, Math.PI * 2);
   const ph2 = r.range(0, Math.PI * 2);
-  const amp = r.range(6, 18);
-  const amp2 = r.range(3, 9);
+  const amp = r.range(4, 9);
+  const amp2 = r.range(2, 5);
   const out: string[] = [];
   for (let i = 0; i < count; i++) {
-    const base = 24 + i * gap;
+    const base = inner + i * gap;
     const pts: string[] = [];
     const n = 72;
     for (let j = 0; j <= n; j++) {
@@ -164,7 +184,7 @@ function motifRings(r: Rng, p: AvatarPalette): MotifArt {
   return { defs: "", body: out.join("") };
 }
 
-/** Tilted orbital ellipses with satellites and a starfield. */
+/** Tilted orbital ellipses with satellites and a starfield. Circle-safe. */
 function motifOrbit(r: Rng, p: AvatarPalette): MotifArt {
   const S = AVATAR_SIZE;
   const cx = S / 2;
@@ -172,13 +192,14 @@ function motifOrbit(r: Rng, p: AvatarPalette): MotifArt {
   const out: string[] = [];
   const sats: string[] = [];
   // Starfield backdrop so the artwork is always rich, whatever the orbits do.
+  // Decorative texture: may reach the viewBox edges (a circular crop looks fine).
   for (let i = 0, n = r.int(48, 64); i < n; i++) {
     out.push(
       `<circle cx="${f(r.range(20, S - 20))}" cy="${f(r.range(20, S - 20))}" r="${f(r.range(1, 3.4))}" fill="${r.pick([p.dot, p.dot, p.line2])}" opacity="${r.range(0.25, 0.85).toFixed(2)}"/>`,
     );
   }
   // Thin dashed guide rings for depth.
-  const guideR = r.range(150, 210);
+  const guideR = r.range(120, AVATAR_SAFE_RADIUS - 22);
   out.push(
     `<circle cx="${cx}" cy="${cy}" r="${f(guideR)}" fill="none" stroke="${p.line2}" stroke-width="1.4" stroke-dasharray="2 9" opacity="0.5"/>`,
   );
@@ -186,7 +207,7 @@ function motifOrbit(r: Rng, p: AvatarPalette): MotifArt {
     `<circle cx="${cx}" cy="${cy}" r="${f(guideR * r.range(0.55, 0.7))}" fill="none" stroke="${p.line}" stroke-width="1.2" stroke-dasharray="1 7" opacity="0.35"/>`,
   );
   for (let i = 0, n = r.int(5, 8); i < n; i++) {
-    const rx = r.range(70, 225);
+    const rx = r.range(70, AVATAR_SAFE_RADIUS - 22);
     const ry = rx * r.range(0.28, 0.62);
     const rot = r.range(0, 180);
     out.push(
@@ -200,7 +221,7 @@ function motifOrbit(r: Rng, p: AvatarPalette): MotifArt {
       const rad = (rot * Math.PI) / 180;
       const x = cx + ex * Math.cos(rad) - ey * Math.sin(rad);
       const y = cy + ex * Math.sin(rad) + ey * Math.cos(rad);
-      const sr = r.range(4, 12);
+      const sr = r.range(4, 10);
       sats.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(sr)}" fill="${r.pick([p.accent, p.dot, p.line2])}"/>`);
       sats.push(
         `<circle cx="${f(x)}" cy="${f(y)}" r="${f(sr * 2.1)}" fill="none" stroke="${p.line2}" stroke-width="1" opacity="0.45"/>`,
@@ -214,7 +235,9 @@ function motifOrbit(r: Rng, p: AvatarPalette): MotifArt {
   return { defs: "", body: out.join("") + sats.join("") };
 }
 
-/** Overlapping translucent organic blobs. */
+/** Overlapping translucent organic blobs. Circle-safe: soft washes whose
+ * visible cores sit inside the safe zone; they fade to transparent, so even
+ * the faint outer edge is unobtrusive in a circular crop. */
 function motifBlobs(r: Rng, p: AvatarPalette): MotifArt {
   const S = AVATAR_SIZE;
   const cx = S / 2;
@@ -223,9 +246,9 @@ function motifBlobs(r: Rng, p: AvatarPalette): MotifArt {
   const out: string[] = [];
   const cols = [p.accent, p.line2, p.line] as const;
   for (let i = 0, n = r.int(6, 9); i < n; i++) {
-    const bx = cx + r.range(-130, 130);
-    const by = cy + r.range(-130, 130);
-    const br = r.range(55, 150);
+    const bx = cx + r.range(-60, 60);
+    const by = cy + r.range(-60, 60);
+    const br = r.range(55, 105);
     const col = r.pick(cols);
     const gid = `bl${i}`;
     defs.push(
@@ -234,21 +257,29 @@ function motifBlobs(r: Rng, p: AvatarPalette): MotifArt {
     out.push(`<circle cx="${f(bx)}" cy="${f(by)}" r="${f(br)}" fill="url(#${gid})"/>`);
   }
   for (let i = 0; i < 14; i++) {
+    // Decorative specks, kept inside the safe zone on a uniform disc.
+    const ang = r.range(0, Math.PI * 2);
+    const rad = 185 * Math.sqrt(r());
     out.push(
-      `<circle cx="${f(r.range(40, S - 40))}" cy="${f(r.range(40, S - 40))}" r="${f(r.range(2, 6))}" fill="${p.dot}" opacity="${r.range(0.4, 0.9).toFixed(2)}"/>`,
+      `<circle cx="${f(cx + rad * Math.cos(ang))}" cy="${f(cy + rad * Math.sin(ang))}" r="${f(r.range(2, 6))}" fill="${p.dot}" opacity="${r.range(0.4, 0.9).toFixed(2)}"/>`,
     );
   }
   return { defs: defs.join(""), body: out.join("") };
 }
 
-/** Scattered points with near-neighbour connections. */
+/** Scattered points with near-neighbour connections. Circle-safe: all stars
+ * sit on a uniform disc around the centre, so no star is clipped by a
+ * circular crop. */
 function motifConstellation(r: Rng, p: AvatarPalette): MotifArt {
-  const S = AVATAR_SIZE;
+  const cx = AVATAR_SIZE / 2;
+  const cy = AVATAR_SIZE / 2;
   const pts: Array<{ x: number; y: number; rad: number; c: string }> = [];
   for (let i = 0, n = r.int(26, 38); i < n; i++) {
+    const ang = r.range(0, Math.PI * 2);
+    const rad = (AVATAR_SAFE_RADIUS - 10) * Math.sqrt(r()); // uniform disc, ≤ 170
     pts.push({
-      x: r.range(50, S - 50),
-      y: r.range(50, S - 50),
+      x: cx + rad * Math.cos(ang),
+      y: cy + rad * Math.sin(ang),
       rad: r.range(2.5, 5.5),
       c: r.pick([p.dot, p.dot, p.line, p.accent]),
     });
@@ -272,7 +303,9 @@ function motifConstellation(r: Rng, p: AvatarPalette): MotifArt {
   return { defs: "", body: lines.join("") + dots.join("") };
 }
 
-/** Low-poly triangular facets on a jittered grid. */
+/** Low-poly triangular facets on a jittered grid.
+ * Decorative full-bleed texture: cropped mid-triangle by a circular
+ * container, which looks natural for a pattern. */
 function motifFacets(r: Rng, p: AvatarPalette): MotifArt {
   const S = AVATAR_SIZE;
   const N = 7;
@@ -309,6 +342,36 @@ const MOTIFS: ReadonlyArray<{ name: string; render: (r: Rng, p: AvatarPalette) =
   { name: "constellation", render: motifConstellation },
   { name: "facets", render: motifFacets },
 ];
+
+/** Names of all available generative motifs (for tests and previews). */
+export const AVATAR_MOTIF_NAMES: readonly string[] = MOTIFS.map((m) => m.name);
+
+/**
+ * Render a single named motif as a standalone SVG — deterministic on the seed.
+ * Used by tests (circle-safe geometry checks) and motif previews. Throws on
+ * an unknown motif name.
+ */
+export function renderMotifSvg(name: string, seed: string): string {
+  const motif = MOTIFS.find((m) => m.name === name);
+  if (!motif) throw new Error(`unknown avatar motif: ${name}`);
+  const r = makeRng(`hertz-avatar:${seed}`);
+  const palette = r.pick(PALETTES);
+  const art = motif.render(r, palette);
+  const size = AVATAR_SIZE;
+  const gid = `g${(fnv1a(seed) % 100000).toString(36)}`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Avatar agenta">` +
+    `<defs>` +
+    `<linearGradient id="${gid}bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${palette.bg0}"/><stop offset="100%" stop-color="${palette.bg1}"/></linearGradient>` +
+    `<radialGradient id="${gid}v" cx="50%" cy="50%" r="72%"><stop offset="60%" stop-color="#000000" stop-opacity="0"/><stop offset="100%" stop-color="#000000" stop-opacity="0.22"/></radialGradient>` +
+    art.defs +
+    `</defs>` +
+    `<rect width="${size}" height="${size}" fill="url(#${gid}bg)"/>` +
+    art.body +
+    `<rect width="${size}" height="${size}" fill="url(#${gid}v)"/>` +
+    `</svg>`
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /* Public API                                                          */
