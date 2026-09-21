@@ -13,6 +13,7 @@ import { ProviderCreateForm } from "../components/ProviderCreateForm";
 import { CopyButton } from "../components/CopyButton";
 import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
 import { VaultSection } from "./VaultSection";
+import { GoogleDeviceFlow } from "./GoogleDeviceFlow";
 
 export type Section = "agent" | "model" | "folders" | "providers" | "channels" | "connectors" | "vault" | "data" | "about";
 
@@ -678,6 +679,8 @@ function OneClickConnectors() {
   const isAdmin = user?.role === "admin";
   // Karta, u které je otevřený panel: OAuth krok pro správce, nebo vložení klíče.
   const [panelFor, setPanelFor] = useState<string | null>(null);
+  // Karta, u které je otevřený device flow (Google „Připojit kódem“).
+  const [deviceFor, setDeviceFor] = useState<string | null>(null);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -804,9 +807,17 @@ function OneClickConnectors() {
                   Připojit
                 </button>
               ) : c.oauthReady ? (
-                <a href={`/api/oauth/${c.service}/start?catalogId=${c.id}`} className={ctaCls}>
-                  Připojit
-                </a>
+                c.id === "google" ? (
+                  // Google: primární cesta je device flow („Připojit kódem“),
+                  // web/relay přihlášení zůstává jako sekundární možnost uvnitř panelu.
+                  <button onClick={() => { setPanelFor(null); setDeviceFor(c.id); }} className={ctaCls}>
+                    Připojit kódem
+                  </button>
+                ) : (
+                  <a href={`/api/oauth/${c.service}/start?catalogId=${c.id}`} className={ctaCls}>
+                    Připojit
+                  </a>
+                )
               ) : (
                 <button onClick={() => openPanel(c)} className={ctaCls}>
                   Připojit
@@ -907,6 +918,17 @@ function OneClickConnectors() {
               <button onClick={() => openPanel(c)} className="mt-2 text-[12.5px] font-[600] text-accent underline">
                 Změnit údaje pro přihlašování
               </button>
+            )}
+
+            {/* Google: panel device flow („Připojit kódem“). */}
+            {deviceFor === c.id && c.id === "google" && !c.connected && (
+              <div className="mt-3">
+                <GoogleDeviceFlow
+                  relayUrl={`/api/oauth/${c.service}/start?catalogId=${c.id}`}
+                  onConnected={refresh}
+                  onClose={() => setDeviceFor(null)}
+                />
+              </div>
             )}
 
             {/* API klíč: jedno pole „Vlož klíč“ + odkaz, kde ho najít. */}
