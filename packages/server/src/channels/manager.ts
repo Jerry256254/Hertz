@@ -23,6 +23,7 @@ import { DiscordDriver } from "./discord.js";
 import type { ChannelDriver, InboundMessage, OutboundStream } from "./types.js";
 import { isClearCommand, isNewChatCommand, parseDecisionCommand } from "./types.js";
 import { handleTelegramCallback, handleTelegramCommand, type TelegramCommandEnv } from "./telegram-commands.js";
+import { stripEmoji } from "../text/strip-emoji.js";
 
 export interface ChannelManagerDeps {
   db: Database;
@@ -214,7 +215,7 @@ export class ChannelManager {
         await this.deps.db
           .delete(channelBindings)
           .where(and(eq(channelBindings.channelId, configId), eq(channelBindings.externalChatId, msg.externalChatId)));
-        await driver.sendText(msg.externalChatId, "Začínám nový chat — na čem budeme pracovat?").catch(() => {});
+        await driver.sendText(msg.externalChatId, "Začínám nový chat — o čem si budeme povídat?").catch(() => {});
         return;
       }
 
@@ -424,6 +425,22 @@ export class ChannelManager {
       }
       return;
     }
+    if (event.type === "file_sent") {
+      // The agent delivered a file to the user — forward the bytes to every
+      // channel target that can carry documents (Telegram sendDocument).
+      for (const [chatId, driver] of tap.targets) {
+        if (typeof driver.sendDocument === "function") {
+          await driver
+            .sendDocument(chatId, {
+              absolutePath: event.attachment.absolutePath,
+              filename: event.attachment.filename,
+              caption: event.attachment.caption,
+            })
+            .catch((err) => console.warn(`[hertz] channel sendDocument failed: ${(err as Error).message}`));
+        }
+      }
+      return;
+    }
     if (event.type === "awaiting_input") {
       await this.finishStreams(tap);
       const pendingApprovalId = await this.pendingApprovalId(sessionId);
@@ -432,7 +449,7 @@ export class ChannelManager {
         const approval = rows[0];
         if (approval && approval.status === "pending") {
           for (const [chatId, driver] of tap.targets) {
-            await driver.sendApproval(chatId, approval.id, approval.summary, approval.detail).catch((err) =>
+            await driver.sendApproval(chatId, approval.id, stripEmoji(approval.summary), approval.detail ? stripEmoji(approval.detail) : null).catch((err) =>
               console.warn(`[hertz] channel send failed: ${(err as Error).message}`),
             );
           }
@@ -470,12 +487,13 @@ export class ChannelManager {
       if (typeof driver.beginStream !== "function") continue;
       let stream = tap.streams.get(chatId);
       if (!stream) {
-        const opened = await driver.beginStream(chatId, tap.buffer).catch(() => undefined);
+        const opened = await driver.beginStream(chatId, stripEmoji(tap.buffer)).catch(() => undefined);
         if (!opened) continue; // placeholder failed — legacy sendText fallback
         tap.streams.set(chatId, opened);
         stream = opened;
       }
-      await stream.update(tap.buffer).catch(() => {});
+      // Sanitize the live view too, so an emoji never flashes mid-stream.
+      await stream.update(stripEmoji(tap.buffer)).catch(() => {});
     }
   }
 
@@ -484,7 +502,7 @@ export class ChannelManager {
    * buffer to legacy targets. Consumes the buffer.
    */
   private async finishStreams(tap: SessionTap): Promise<void> {
-    const text = tap.buffer.trim();
+    const text = stripEmoji(tap.buffer.trim());
     tap.buffer = "";
     for (const [chatId, driver] of tap.targets) {
       const stream = tap.streams.get(chatId);
@@ -510,8 +528,9 @@ export class ChannelManager {
   }
 
   private async broadcast(tap: SessionTap, text: string): Promise<void> {
+    const clean = stripEmoji(text);
     for (const [chatId, driver] of tap.targets) {
-      await driver.sendText(chatId, text).catch((err) => console.warn(`[hertz] channel send failed: ${(err as Error).message}`));
+      await driver.sendText(chatId, clean).catch((err) => console.warn(`[hertz] channel send failed: ${(err as Error).message}`));
     }
   }
 

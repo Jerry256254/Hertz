@@ -62,6 +62,30 @@ export interface ToolResult {
    * the summary alone stands.
    */
   attachments?: Array<{ mimeType: string; data: string }>;
+  /**
+   * A file the agent wants to DELIVER to the user (presentation, report, web
+   * page…), set by the send_file tool. The loop emits a `file_sent` event with
+   * this payload: chat channels forward the file (e.g. Telegram sendDocument)
+   * and the WebUI renders it as a downloadable attachment on the message.
+   * The path must already be guard-resolved to inside the agent's workspace —
+   * never a raw user- or model-supplied path.
+   */
+  fileAttachment?: FileAttachmentPayload;
+}
+
+/**
+ * A file handed to the user by the agent. Produced only by the send_file tool
+ * after the path went through the sandbox PathGuard (workspace roots only).
+ */
+export interface FileAttachmentPayload {
+  /** DB id of the recorded attachment — drives the WebUI download URL. */
+  id: string;
+  /** Guard-resolved absolute path on the server. */
+  absolutePath: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  caption?: string;
 }
 
 export interface ToolDef<TInput = any> {

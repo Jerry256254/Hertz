@@ -264,6 +264,28 @@ export const messages = sqliteTable("messages", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/**
+ * Files the agent delivered to the user with the send_file tool. The bytes
+ * stay on disk at the guard-resolved absolute path (inside the agent's
+ * workspace roots); clients fetch them by attachment id — never by path —
+ * so there is no path traversal surface on download.
+ */
+export const messageAttachments = sqliteTable("message_attachments", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  /** The assistant message whose tool call sent the file (null when the message is gone). */
+  messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+  filename: text("filename").notNull(),
+  size: integer("size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  /** Guard-resolved absolute path on the server. */
+  absolutePath: text("absolute_path").notNull(),
+  caption: text("caption"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const providerConfigs = sqliteTable("provider_configs", {
   id: text("id").primaryKey(),
   userId: text("user_id")

@@ -7,7 +7,6 @@ import {
   agents,
   channelBindings,
   channelConfigs,
-  projects,
   providerConfigs,
   sessions,
 } from "../db/schema.js";
@@ -66,7 +65,6 @@ const NO_ARG_COMMANDS = new Set([
   "novy",
   "vycistit",
   "chaty",
-  "projekty",
   "pamet",
   "skilly",
   "pauza",
@@ -87,7 +85,6 @@ export function telegramHelpText(): string {
     `/model [model-id] — změnit model / poskytovatele`,
     `/rezim <plan|auto|autonomni> — režim práce agenta`,
     `/chaty — přepínat mezi chaty`,
-    `/projekty — přepínat mezi projekty`,
     `/pamet — vypsat paměť`,
     `/zapamatuj <text> — uložit do paměti`,
     `/zapomen <id> — zapomenout poznámku`,
@@ -182,7 +179,7 @@ async function cmdNovy(env: TelegramCommandEnv, msg: InboundMessage): Promise<vo
   await env.db
     .delete(channelBindings)
     .where(and(eq(channelBindings.channelId, env.configId), eq(channelBindings.externalChatId, msg.externalChatId)));
-  await env.driver.sendText(msg.externalChatId, "Začínám nový chat — na čem budeme pracovat?");
+  await env.driver.sendText(msg.externalChatId, "Začínám nový chat — o čem si budeme povídat?");
 }
 
 async function cmdVycistit(env: TelegramCommandEnv, msg: InboundMessage): Promise<void> {
@@ -271,16 +268,6 @@ async function cmdChaty(env: TelegramCommandEnv, msg: InboundMessage): Promise<v
     { label: `${s.id === sessionId ? "> " : ""}${s.title.slice(0, 40)}`, data: `tgcmd:chat:${s.id}` },
   ]);
   await env.driver.sendButtons(msg.externalChatId, "Vyber chat:", buttons);
-}
-
-async function cmdProjekty(env: TelegramCommandEnv, msg: InboundMessage): Promise<void> {
-  const rows = await env.db.select().from(projects).orderBy(asc(projects.name));
-  if (rows.length === 0) {
-    await env.driver.sendText(msg.externalChatId, "Žádné projekty tu zatím nejsou.");
-    return;
-  }
-  const buttons = rows.map((p) => [{ label: p.name.slice(0, 40), data: `tgcmd:project:${p.id}` }]);
-  await env.driver.sendButtons(msg.externalChatId, "Vyber projekt (začnu v něm nový chat):", buttons);
 }
 
 async function cmdPamet(env: TelegramCommandEnv, msg: InboundMessage): Promise<void> {
@@ -505,7 +492,6 @@ export async function handleTelegramCommand(env: TelegramCommandEnv, msg: Inboun
     case "model": return void (await cmdModel(env, msg, parsed.args)), true;
     case "rezim": return void (await cmdRezim(env, msg, parsed.args)), true;
     case "chaty": return void (await cmdChaty(env, msg)), true;
-    case "projekty": return void (await cmdProjekty(env, msg)), true;
     case "pamet": return void (await cmdPamet(env, msg)), true;
     case "zapamatuj": return void (await cmdZapamatuj(env, msg, parsed.args)), true;
     case "zapomen": return void (await cmdZapomen(env, msg, parsed.args)), true;
@@ -585,41 +571,6 @@ export async function handleTelegramCallback(
         return;
       }
       await switchToChat(env, externalChatId, payload);
-      return;
-    }
-    case "project": {
-      const pRows = await env.db.select().from(projects).where(eq(projects.id, payload)).limit(1);
-      const project = pRows[0];
-      if (!project) {
-        await env.driver.sendText(externalChatId, "Tento projekt už neexistuje.");
-        return;
-      }
-      // Prefer the channel's default agent when it lives in this project,
-      // otherwise the project's first agent.
-      const cRows = await env.db
-        .select({ defaultAgentId: channelConfigs.defaultAgentId })
-        .from(channelConfigs)
-        .where(eq(channelConfigs.id, env.configId))
-        .limit(1);
-      const agentRows = await env.db.select().from(agents).where(eq(agents.projectId, project.id)).orderBy(asc(agents.name)).limit(10);
-      const defaultId = cRows[0]?.defaultAgentId;
-      const agent = agentRows.find((a) => a.id === defaultId) ?? agentRows[0];
-      if (!agent) {
-        await env.driver.sendText(externalChatId, `Projekt "${project.name}" nemá žádného agenta.`);
-        return;
-      }
-      const now = new Date();
-      const newSessionId = newId();
-      await env.db.insert(sessions).values({
-        id: newSessionId,
-        agentId: agent.id,
-        projectId: project.id,
-        title: `${senderLabel} (telegram)`,
-        status: "active",
-        createdAt: now,
-        updatedAt: now,
-      });
-      await switchToChat(env, externalChatId, newSessionId);
       return;
     }
     default:

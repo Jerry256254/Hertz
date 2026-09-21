@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 import { defaultAgentPrompt } from "../agents/persona.js";
-import { generateAvatarSpec } from "../agents/avatar.js";
+import { generateAvatarSpec, parseAvatarSpec } from "../agents/avatar.js";
 
 /**
  * Hand-written, idempotent (CREATE TABLE IF NOT EXISTS) bootstrap SQL mirroring
@@ -161,6 +161,20 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+
+CREATE TABLE IF NOT EXISTS message_attachments (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+  filename TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mime_type TEXT NOT NULL,
+  absolute_path TEXT NOT NULL,
+  caption TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_attachments_session ON message_attachments(session_id);
+CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
 
 CREATE TABLE IF NOT EXISTS usage_records (
   id TEXT PRIMARY KEY,
@@ -480,6 +494,12 @@ export async function runMigrations(client: Client): Promise<void> {
   if (needsOnboardingBackfill) {
     await backfillOnboarding(client);
   }
+
+  // Every agent must hold a valid generative avatar spec — no legacy/blank
+  // avatars anywhere. Runs on every startup (idempotent): agents that already
+  // carry a valid spec keep it (regenerated/customized avatars are never
+  // clobbered), everyone else gets a freshly minted generative avatar.
+  await backfillAvatarSpecs(client);
 }
 
 /**
@@ -503,5 +523,31 @@ async function backfillOnboarding(client: Client): Promise<void> {
       sql: "UPDATE agents SET onboarded_at = ?, avatar = ?, system_prompt = ? WHERE id = ?",
       args: [now, JSON.stringify(generateAvatarSpec(name)), systemPrompt, r.id],
     });
+  }
+}
+
+/**
+ * Idempotent generative-avatar backfill: any agent whose avatar column is
+ * missing (NULL) or holds anything that is not a valid generative spec —
+ * legacy values, hand-edits, NULLs from before the avatar default existed —
+ * gets a freshly minted spec from avatar.ts. Agents that already carry a valid
+ * generative spec (minted at onboarding, via regenerate_avatar, or by the
+ * user) are left untouched, so customized avatars survive every restart.
+ */
+async function backfillAvatarSpecs(client: Client): Promise<void> {
+  const rows = await client.execute("SELECT id, name, avatar FROM agents");
+  let fixed = 0;
+  for (const row of rows.rows) {
+    const r = row as unknown as { id: string; name: string | null; avatar: string | null };
+    if (parseAvatarSpec(r.avatar)) continue;
+    const name = r.name || "agent";
+    await client.execute({
+      sql: "UPDATE agents SET avatar = ? WHERE id = ?",
+      args: [JSON.stringify(generateAvatarSpec(name)), r.id],
+    });
+    fixed++;
+  }
+  if (fixed > 0) {
+    console.log(`[migrate] minted generative avatars for ${fixed} agent(s)`);
   }
 }

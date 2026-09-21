@@ -29,7 +29,7 @@ export function registerMountRoutes(app: FastifyInstance, ctx: Pick<AppContext, 
   void app.register(async (instance) => {
     instance.addHook("preHandler", requireAuth);
 
-    /** List mounts for a project — any member may see; includes the built-in project folder. */
+    /** List mounts for a project — any member may see; includes the built-in workspace folder. */
     instance.get("/api/projects/:id/mounts", async (request, reply) => {
       const { id } = request.params as { id: string };
       if (!(await hasProjectAccess(ctx.db, request.user!, id))) {

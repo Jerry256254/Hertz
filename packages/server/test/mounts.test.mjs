@@ -225,7 +225,7 @@ describe("folders prompt block (B3)", () => {
     assert.ok(prompt.includes("## Your folders"));
     assert.ok(prompt.includes("- photos — Family photos (root 'photos')"));
     assert.ok(prompt.includes("- misc — (no description) (root 'misc')"));
-    assert.ok(prompt.includes("- main — the shared project folder (root 'main'"));
+    assert.ok(prompt.includes("- main — your workspace folder (root 'main'"));
     assert.ok(prompt.includes("- self — your own personal folder"));
   });
 

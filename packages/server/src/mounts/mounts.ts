@@ -60,7 +60,7 @@ export function renderFoldersBlock(rows: Pick<MountRow, "name" | "purpose">[]): 
   const lines = [
     "## Your folders",
     "Folders mounted into your computer. Pass the root id to file tools (read_file, write_file, edit_file, glob, grep, shell_exec cwd) to work there:",
-    "- main — the shared project folder (root 'main', used when you omit root)",
+    "- main — your workspace folder (root 'main', used when you omit root)",
     "- self — your own personal folder for notes, materials and data (root 'self')",
   ];
   for (const m of rows) {

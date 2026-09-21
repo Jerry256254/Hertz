@@ -310,7 +310,6 @@ describe("command parsing", () => {
     ["/model gpt-4o-mini", "model", "gpt-4o-mini"],
     ["/rezim autonomni", "rezim", "autonomni"],
     ["/chaty", "chaty", ""],
-    ["/projekty", "projekty", ""],
     ["/pamet", "pamet", ""],
     ["/zapamatuj koupit mléko", "zapamatuj", "koupit mléko"],
     ["/zapomen abc123", "zapomen", "abc123"],
@@ -337,6 +336,10 @@ describe("command parsing", () => {
     assert.equal(parseChannelCommand("ahoj, jak se máš"), undefined);
     assert.equal(parseChannelCommand("/neexistujicí příkaz"), undefined);
     assert.equal(parseChannelCommand("/usr/bin"), undefined);
+    // /projekty was removed — no projects in the product anymore; it now goes
+    // to the agent as a plain message instead of being a command.
+    assert.equal(parseChannelCommand("/projekty"), undefined);
+    assert.ok(!isChannelCommand("/projekty"));
     assert.ok(!isChannelCommand("schvalit abc"));
   });
 

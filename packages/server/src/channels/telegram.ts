@@ -1,5 +1,7 @@
 import type { ChannelCallbacks, ChannelDriver, ChannelStartOptions, OutboundStream } from "./types.js";
 import { chunkTelegramHtml, markdownToTelegramHtml, stripTelegramHtml } from "./telegram-format.js";
+import fs from "node:fs/promises";
+import { MAX_SEND_FILE_BYTES, mimeTypeForFilename } from "../files/attachments.js";
 
 const API = "https://api.telegram.org/bot";
 const LIMIT = 4096;
@@ -402,8 +404,32 @@ export class TelegramDriver implements ChannelDriver {
     });
   }
 
-  async sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void> {
-    const lines = [`Je potřeba schválení`, ``, summary];
+  /**
+   * Deliver a file as a Telegram document (multipart upload). The path comes
+   * from the send_file tool, already resolved through the sandbox PathGuard —
+   * only workspace files can ever reach this point.
+   */
+  async sendDocument(
+    externalChatId: string,
+    file: { absolutePath: string; filename: string; caption?: string },
+  ): Promise<void> {
+    const stat = await fs.stat(file.absolutePath).catch(() => null);
+    if (!stat || !stat.isFile()) throw new Error(`Telegram sendDocument: soubor neexistuje (${file.filename})`);
+    if (stat.size > MAX_SEND_FILE_BYTES) {
+      throw new Error(`Telegram sendDocument: soubor ${file.filename} je příliš velký pro Telegram`);
+    }
+    const data = await fs.readFile(file.absolutePath);
+    const form = new FormData();
+    form.append("chat_id", this.chatId(externalChatId));
+    form.append("document", new File([data], file.filename, { type: mimeTypeForFilename(file.filename) }));
+    const caption = file.caption?.trim().slice(0, 1024);
+    if (caption) form.append("caption", caption);
+    const res = await fetch(`${API}${this.token}/sendDocument`, { method: "POST", body: form });
+    const json = (await res.json()) as { ok: boolean; description?: string };
+    if (!json.ok) throw new Error(`Telegram sendDocument failed: ${json.description ?? res.status}`);
+  }
+
+  async sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void> {    const lines = [`Je potřeba schválení`, ``, summary];
     if (detail?.trim()) lines.push(``, detail.trim().slice(0, 3000));
     await this.sendFormatted(externalChatId, lines.join("\n"), {
       reply_markup: {

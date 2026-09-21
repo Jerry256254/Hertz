@@ -1,9 +1,9 @@
 import { asc, eq } from "drizzle-orm";
 import type { ContentBlock } from "@kuclab-hertz/providers";
-import type { PersistedMessage, PersistencePort, UsageRecordInput } from "@kuclab-hertz/core";
+import type { FileAttachmentInfo, PersistedMessage, PersistencePort, UsageRecordInput } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agentMemoryAtoms, agents, messages, sessions, usageRecords } from "../db/schema.js";
+import { agentMemoryAtoms, agents, messageAttachments, messages, sessions, usageRecords } from "../db/schema.js";
 import { keywordsFor } from "../memory/tokenize.js";
 
 function toPersistedMessage(row: typeof messages.$inferSelect): PersistedMessage {
@@ -50,7 +50,33 @@ export function createPersistenceAdapter(db: Database): PersistencePort {
         .from(messages)
         .where(eq(messages.sessionId, sessionId))
         .orderBy(asc(messages.createdAt));
-      return rows.map(toPersistedMessage);
+      // Attachments the agent sent with send_file, keyed by message.
+      const attRows = await db
+        .select()
+        .from(messageAttachments)
+        .where(eq(messageAttachments.sessionId, sessionId))
+        .orderBy(asc(messageAttachments.createdAt));
+      const byMessage = new Map<string, FileAttachmentInfo[]>();
+      for (const a of attRows) {
+        if (!a.messageId) continue;
+        const info: FileAttachmentInfo = {
+          id: a.id,
+          filename: a.filename,
+          size: a.size,
+          mimeType: a.mimeType,
+          caption: a.caption,
+          createdAt: a.createdAt,
+        };
+        const list = byMessage.get(a.messageId);
+        if (list) list.push(info);
+        else byMessage.set(a.messageId, [info]);
+      }
+      return rows.map((row) => {
+        const msg = toPersistedMessage(row);
+        const atts = byMessage.get(row.id);
+        if (atts) msg.attachments = atts;
+        return msg;
+      });
     },
 
     async updateSessionStatus(sessionId, status) {

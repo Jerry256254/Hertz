@@ -13,6 +13,7 @@ import { ensureDefaultSkills } from "../skills/default-skills.js";
 import { forgetById, loadPersona } from "../memory/recall.js";
 import { removeAgentVectors, removeAtomVector } from "../memory/vector-store.js";
 import { ensureAgent } from "../bootstrap.js";
+import { ensureDefaultProject } from "../projects/default-project.js";
 import { parseAvatarSpec, avatarSvgForAgent } from "../agents/avatar.js";
 
 const updateSchema = z.object({
@@ -46,7 +47,8 @@ const skillSaveSchema = z.object({
 });
 
 const ensureAgentSchema = z.object({
-  projectId: z.string().min(1),
+  /** Omitted → the single implicit workspace project is used/created. */
+  projectId: z.string().min(1).optional(),
   providerConfigId: z.string().min(1),
   model: z.string().min(1),
   name: z.string().min(1).max(80).optional(),
@@ -83,7 +85,10 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.post("/api/agent/ensure", async (request, reply) => {
       const parsed = ensureAgentSchema.safeParse(request.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
-      if (!(await hasProjectAccess(ctx.db, request.user!, parsed.data.projectId))) {
+      // No project picker in the UI anymore — the agent lives in the one
+      // implicit workspace; an explicit projectId is still honored for API/CLI callers.
+      const projectId = parsed.data.projectId ?? (await ensureDefaultProject(ctx));
+      if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) {
         return reply.code(403).send({ error: "No access to this project" });
       }
       if (parsed.data.providerConfigId) {
@@ -91,9 +96,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         const pc = await ctx.db.select({ id: providerConfigs.id }).from(providerConfigs).where(eq(providerConfigs.id, parsed.data.providerConfigId)).limit(1);
         if (!pc[0]) return reply.code(400).send({ error: "Zvolený provider neexistuje — vyberte jiný model v nastavení" });
       }
-      const id = await ensureAgent(ctx, parsed.data);
+      const id = await ensureAgent(ctx, { ...parsed.data, projectId });
       // Newborn agents start with the default procedures (missing-only, idempotent).
-      await ensureDefaultSkills(ctx.paths, parsed.data.projectId, id).catch(() => {});
+      await ensureDefaultSkills(ctx.paths, projectId, id).catch(() => {});
       return reply.code(201).send({ id });
     });
 

@@ -17,11 +17,11 @@ const mkdirSchema = z.object({
 });
 
 /**
- * Browses the server's filesystem so a project root can be picked graphically
- * instead of typed as plain text. Unlike the project file routes, there is no
- * PathGuard containment here by design — there is no root yet, this endpoint is
- * how one gets chosen — so it is admin-only and lists directory names only,
- * never file contents.
+ * Browses the server's filesystem so a folder can be picked graphically
+ * instead of typed as plain text. Unlike the workspace file routes, there is
+ * no PathGuard containment here by design — there is no root yet, this
+ * endpoint is how one gets chosen — so it is admin-only and lists directory
+ * names only, never file contents.
  */
 export function registerFsBrowseRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {

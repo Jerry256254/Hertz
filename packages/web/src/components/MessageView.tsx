@@ -1,6 +1,7 @@
 import { ChevronRight, Minimize2 } from "lucide-react";
 import type { PersistedMessage } from "../lib/types";
 import { AgentAvatar } from "./AgentAvatar";
+import { FileAttachmentCard } from "./FileAttachmentCard";
 import { Markdown } from "./Markdown";
 import { ToolStepChecklist, type ToolStep } from "./ToolStepChecklist";
 
@@ -10,12 +11,15 @@ export function MessageView({
   message,
   toolResultsById,
   agentId,
+  projectId,
   collapsibleTools = true,
   stepsSettled = false,
 }: {
   message: PersistedMessage;
   toolResultsById?: Map<string, { content: string; isError?: boolean }>;
   agentId: string;
+  /** Project id — builds the attachment download URLs. */
+  projectId: string;
   collapsibleTools?: boolean;
   /** True when the run is over — orphaned tool uses stop spinning. */
   stepsSettled?: boolean;
@@ -67,9 +71,10 @@ export function MessageView({
 
   const textBlocks = message.content.filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text" && b.text.trim().length > 0);
   const toolUses = message.content.filter((b): b is Extract<typeof b, { type: "tool_use" }> => b.type === "tool_use");
+  const attachments = message.attachments ?? [];
   const steps: ToolStep[] = toolUses.map((block) => ({ id: block.id, name: block.name, input: block.input, result: toolResultsById?.get(block.id) }));
   // Nothing visible (e.g. image-only turn — artifacts render separately in ChatView): no empty bubble.
-  if (textBlocks.length === 0 && toolUses.length === 0) return null;
+  if (textBlocks.length === 0 && toolUses.length === 0 && attachments.length === 0) return null;
   return (
     <div className="mx-auto flex w-full max-w-[760px] gap-2 px-4 py-1.5 animate-fade-in">
       <div className="mt-0.5 shrink-0">
@@ -81,6 +86,11 @@ export function MessageView({
             {textBlocks.map((block, i) => <Markdown key={i}>{block.text}</Markdown>)}
           </div>
         )}
+        {attachments.map((attachment) => (
+          <div key={attachment.id} className="py-0.5">
+            <FileAttachmentCard attachment={attachment} projectId={projectId} />
+          </div>
+        ))}
         {steps.length > 0 && (collapsibleTools ? (
           <details className="group px-0.5 py-1">
             <summary className="flex cursor-pointer list-none items-center gap-0.5 text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">

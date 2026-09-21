@@ -50,6 +50,10 @@ function isVisibleMessage(m: PersistedMessage): boolean {
 /** Assistant turn with tools but no text — these collapse into one steps block. */
 function isToolOnlyAssistant(m: PersistedMessage): boolean {
   if (m.role !== "assistant" || m.purpose === "summarization") return false;
+  // Messages carrying file attachments (e.g. a send_file tool call) must
+  // render as a full message so the attachment card is visible — never fold
+  // them into the grouped tool-steps row.
+  if ((m.attachments?.length ?? 0) > 0) return false;
   const hasText = m.content.some((b) => b.type === "text" && b.text.trim().length > 0);
   const hasTools = m.content.some((b) => b.type === "tool_use");
   return hasTools && !hasText;
@@ -174,6 +178,9 @@ export function ChatView({
         void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
         // The server may have auto-corrected a stale model id mid-run — refresh the agent so the UI shows the real one.
         void queryClient.invalidateQueries({ queryKey: ["agent"] });
+      } else if (event.type === "file_sent") {
+        // The agent just delivered a file — refresh so the attachment card appears on its message.
+        void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
       } else if (event.type === "status") {
         setIsRunning(event.status === "running");
         setIsPaused(event.status === "paused");
@@ -454,7 +461,7 @@ export function ChatView({
             />
           ) : (
             <div key={block.key}>
-              <MessageView message={block.messages[0]!} toolResultsById={toolResultsById} agentId={agent.id} stepsSettled={!isRunning && !isPaused} />
+              <MessageView message={block.messages[0]!} toolResultsById={toolResultsById} agentId={agent.id} projectId={data?.session.projectId ?? ""} stepsSettled={!isRunning && !isPaused} />
               {block.messages[0]!.role === "assistant" && hasBrowserTools(block.messages[0]!) && block.key === lastBrowserBlockKey && (
                 <BrowserCard title={truncate(firstText(block.messages[0]!.content) || data?.session.title || "", 48)} onOpen={onOpenPreview} />
               )}

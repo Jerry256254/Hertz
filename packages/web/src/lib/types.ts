@@ -150,6 +150,18 @@ export interface PersistedMessage {
   cost: number;
   purpose: string;
   createdAt: string;
+  /** Files the agent attached to this message via the send_file tool. */
+  attachments?: MessageAttachment[];
+}
+
+/** A file the agent delivered to the user — downloadable by id. */
+export interface MessageAttachment {
+  id: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  caption?: string | null;
+  createdAt: string;
 }
 
 export interface Budget {
@@ -185,6 +197,7 @@ export type AgentLoopEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; id: string; name: string; summary: string; isError?: boolean }
+  | { type: "file_sent"; attachment: { id: string; filename: string; size: number; mimeType: string; caption?: string } }
   | { type: "message_saved"; message: PersistedMessage }
   | { type: "status"; status: "running" | "idle" | "error" | "paused" }
   | { type: "awaiting_input"; question: string }

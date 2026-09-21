@@ -57,6 +57,15 @@ export interface ChannelDriver {
   /** Restart the inbound stream without touching configuration. */
   restart?(opts?: ChannelStartOptions): Promise<void>;
   sendText(externalChatId: string, text: string): Promise<void>;
+  /**
+   * Deliver a file as a document. The path was already resolved by the
+   * send_file tool through the sandbox PathGuard (workspace roots only) —
+   * drivers must treat it as trusted and never accept raw user paths here.
+   */
+  sendDocument?(
+    externalChatId: string,
+    file: { absolutePath: string; filename: string; caption?: string },
+  ): Promise<void>;
   /** Approval request with one-tap decision buttons where the platform supports them. */
   sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void>;
   /** Best-effort "is typing…" indicator; no-op where the platform lacks one. */
@@ -134,8 +143,6 @@ const COMMAND_ALIASES: Record<string, string> = {
   mode: "rezim",
   chaty: "chaty",
   chats: "chaty",
-  projekty: "projekty",
-  projects: "projekty",
   pamet: "pamet",
   memory: "pamet",
   zapamatuj: "zapamatuj",

@@ -11,6 +11,7 @@ import { registerProjectRoutes } from "./routes/projects.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerFileRoutes } from "./routes/files.js";
+import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerFsBrowseRoutes } from "./routes/fs-browse.js";
 import { registerMountRoutes } from "./routes/mounts.js";
 import { registerUsageRoutes } from "./routes/usage.js";
@@ -54,6 +55,7 @@ export async function buildApp(ctx: AppContext, options: BuildAppOptions = {}): 
   registerAgentRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
   registerFileRoutes(app, ctx);
+  registerAttachmentRoutes(app, ctx);
   registerFsBrowseRoutes(app, ctx);
   registerMountRoutes(app, ctx);
   registerUsageRoutes(app, ctx);
