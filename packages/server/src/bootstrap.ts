@@ -5,6 +5,7 @@ import { agents, users, providerConfigs } from "./db/schema.js";
 import { hashPassword } from "./auth/password.js";
 import { encryptSecret } from "./secrets/key-encryption.js";
 import { defaultAgentPrompt } from "./agents/persona.js";
+import { generateAvatarSpec } from "./agents/avatar.js";
 
 /** The agent's character prompt — defined in agents/persona.ts (Czech-first). */
 export { defaultAgentPrompt };
@@ -78,13 +79,16 @@ export async function ensureAgent(ctx: AppContext, input: EnsureAgentInput): Pro
   const existing = await ctx.db.select({ id: agents.id }).from(agents).limit(1);
   if (existing[0]) return existing[0].id;
   const id = newId();
+  const agentName = input.name?.trim() || "Orion";
   await ctx.db.insert(agents).values({
     id,
     projectId: input.projectId,
     providerConfigId: input.providerConfigId,
-    name: input.name?.trim() || "Orion",
+    name: agentName,
     model: input.model,
-    systemPrompt: defaultAgentPrompt(input.name?.trim() || "Orion"),
+    systemPrompt: defaultAgentPrompt(agentName),
+    // Mint the generative avatar at birth — no agent ever starts avatar-less.
+    avatar: JSON.stringify(generateAvatarSpec(agentName)),
     createdAt: new Date(),
   });
   return id;
