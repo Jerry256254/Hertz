@@ -55,7 +55,7 @@ export function buildCanvasMermaid(sessionTitle: string, steps: CanvasStep[]): s
     if (step.resultRef) {
       lines.push(`    ${id}(["${label}<br/>ref: ${step.resultRef}"])`);
     } else if (step.isError) {
-      lines.push(`    ${id}{{"${label} ❌"}}`);
+      lines.push(`    ${id}{{"${label} (chyba)"}}`);
     } else {
       lines.push(`    ${id}["${label}"]`);
     }

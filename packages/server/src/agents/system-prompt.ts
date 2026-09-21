@@ -3,6 +3,7 @@ import { skillsIndexFor, type SkillIndexEntry } from "../tools/skill-tools.js";
 import { recallForPrompt, renderMemoryBlock, resolveAgentProjectId } from "../memory/recall.js";
 import type { HertzPaths } from "../paths.js";
 import { renderFoldersBlock } from "../mounts/mounts.js";
+import { onboardingPromptBlock } from "./persona.js";
 
 /**
  * Combines the single agent's character prompt with its live layered memory.
@@ -16,7 +17,13 @@ import { renderFoldersBlock } from "../mounts/mounts.js";
  */
 export async function buildSystemPrompt(
   db: Database,
-  agent: { id: string; systemPrompt: string | null },
+  agent: {
+    id: string;
+    name?: string | null;
+    systemPrompt: string | null;
+    /** NULL until the first-run onboarding (names + avatar) is completed. */
+    onboardedAt?: Date | string | number | null;
+  },
   opts: {
     mode?: "plan" | "auto" | "autonomous";
     paths?: HertzPaths;
@@ -36,6 +43,12 @@ export async function buildSystemPrompt(
 
   let prompt = agent.systemPrompt ?? "";
 
+  // First-run onboarding has the highest priority: until the agent has been
+  // introduced to the user (names asked, avatar generated), nothing else runs.
+  if (!agent.onboardedAt) {
+    prompt = `${onboardingPromptBlock(agent.name || "agent")}\n\n${prompt}`;
+  }
+
   if (recall) {
     const memoryBlock = renderMemoryBlock(recall);
     if (memoryBlock) prompt += `\n\n${memoryBlock}`;
@@ -47,7 +60,11 @@ export async function buildSystemPrompt(
       : `\n\n## Your limits\nYour model has NO vision — you cannot read screenshots. Don't call desktop_read_screen; use browser_snapshot / read_file for text instead, and say plainly when something truly needs eyes.`;
   }
 
-  prompt += `\n\n## How you reply\nBe a friend, not a helpdesk: warm, kind, encouraging, a touch playful when it fits — never stiff, corporate, or condescending. Keep replies tight and useful: short answers for simple things, depth only when the user asks for it or the task genuinely needs it. Never open with a long introduction or a list of your capabilities — the user already knows who you are. No unprompted capability lists, no marketing copy.`;
+  prompt += `\n\n## Jak odpovídáš
+Jsi kamarád, ne helpdesk: vřelý, laskavý, povzbuzující, s lehkou hravostí, když se hodí — nikdy strojený, korporátní ani povýšený. Píšeš česky (pokud uživatel nepíše jiným jazykem), stručně a užitečně: krátké odpovědi na jednoduché věci, hloubku jen tehdy, když o ni uživatel stojí nebo ji úkol opravdu vyžaduje. Nikdy nepoužíváš emoji. Nikdy nezačínáš dlouhým úvodem ani výčtem svých schopností — uživatel ví, kdo jsi; pozdrav je jedna krátká přirozená věta.`;
+
+  prompt += `\n\n## Jak pracuješ s nástroji
+Efektivita je tvoje značka: na úkol voláš minimum nutných tool callů a jdeš nejkratší cestou k výsledku. Žádné redundantní průzkumy — než něco ověříš "pro jistotu", zeptej se sám sebe, jestli to výsledek skutečně změní. Konkrétní anti-pattern: na "podívej se na můj web" stačí 1–3 cally (stáhnout stránku, případně jeden dohledávací krok), ne 26. Uživateli předem nepopisuješ každý svůj krok; prostě jednej a nahlas výsledek. Na potvrzení se ptáš jen tehdy, když nemůžeš rozumně rozhodnout z kontextu — jinak rozhodni a jednej.`;
 
   if (opts.paths && homeProjectId) {
     const skills: SkillIndexEntry[] = await skillsIndexFor(opts.paths, homeProjectId, agent.id);

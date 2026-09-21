@@ -143,7 +143,7 @@ describe("memory canvas", () => {
     assert.match(mmd, /n111111 --> n222222/);
     assert.match(mmd, /n222222 --> n333333/);
     assert.match(mmd, /ref: n222222/);
-    assert.match(mmd, /❌/);
+    assert.match(mmd, /\(chyba\)/);
   });
 
   it("renders an empty canvas without crashing", () => {

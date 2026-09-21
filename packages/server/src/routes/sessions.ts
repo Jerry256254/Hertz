@@ -166,7 +166,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const budget = computeBudget(messages);
 
     const agent = session.agentId
-      ? (await ctx.db.select({ id: agents.id, name: agents.name, mascot: agents.mascot }).from(agents).where(eq(agents.id, session.agentId)).limit(1))[0]
+      ? (await ctx.db.select({ id: agents.id, name: agents.name, mascot: agents.mascot, avatar: agents.avatar }).from(agents).where(eq(agents.id, session.agentId)).limit(1))[0]
       : undefined;
 
     return {
@@ -351,7 +351,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       } catch {
         return reply.code(400).send({ error: `Could not decode ${file.name}` });
       }
-      content.push({ type: "text", text: `📎 Attached file ${file.name}:\n\`\`\`\n${decoded}\n\`\`\`` });
+      content.push({ type: "text", text: `Příloha ${file.name}:\n\`\`\`\n${decoded}\n\`\`\`` });
     }
 
     // A message sent while the agent is mid-work is injected into the run: the

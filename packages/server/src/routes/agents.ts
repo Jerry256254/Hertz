@@ -13,6 +13,7 @@ import { ensureDefaultSkills } from "../skills/default-skills.js";
 import { forgetById, loadPersona } from "../memory/recall.js";
 import { removeAgentVectors, removeAtomVector } from "../memory/vector-store.js";
 import { ensureAgent } from "../bootstrap.js";
+import { parseAvatarSpec, avatarSvgForAgent } from "../agents/avatar.js";
 
 const updateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
@@ -28,6 +29,12 @@ const updateSchema = z.object({
   heartbeatPrompt: z.string().max(4000).nullable().optional(),
   /** Avatar style seed shown as the agent's animated avatar everywhere. */
   mascot: z.string().min(1).max(8).nullable().optional(),
+  /**
+   * Generative avatar spec (JSON string: { version, kind, seed }) — the agent's
+   * unique visual identity, rendered as SVG. Minted at onboarding; the agent can
+   * re-roll it with the regenerate_avatar tool.
+   */
+  avatar: z.string().min(1).max(20_000).nullable().optional(),
 });
 
 const ensureChatSchema = z.object({ projectId: z.string().min(1) });
@@ -95,6 +102,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = rows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (parsed.data.avatar && !parseAvatarSpec(parsed.data.avatar)) {
+        return reply.code(400).send({ error: "Neplatný avatar spec — očekáváno JSON { version: 1, kind: \"generative\", seed }" });
+      }
       if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) {
         return reply.code(403).send({ error: "No access to this project" });
       }
@@ -109,6 +119,27 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
 
       await ctx.db.update(agents).set(parsed.data).where(eq(agents.id, id));
       return { ok: true };
+    });
+
+    /**
+     * The agent's generative avatar as standalone SVG (deterministic per spec).
+     * Usable directly as an <img> source; falls back to a stable generated
+     * motif when the agent has no stored spec yet.
+     */
+    instance.get("/api/agents/:id/avatar.svg", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const rows = await ctx.db
+        .select({ id: agents.id, projectId: agents.projectId, avatar: agents.avatar })
+        .from(agents)
+        .where(eq(agents.id, id))
+        .limit(1);
+      const agent = rows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) {
+        return reply.code(403).send({ error: "No access" });
+      }
+      const svg = avatarSvgForAgent(agent.avatar, agent.id);
+      return reply.header("content-type", "image/svg+xml; charset=utf-8").send(svg);
     });
 
     /** Status of the agent's own computer — auto-creates the container when missing. */

@@ -1,9 +1,12 @@
 import { z } from "zod";import { zodToJsonSchema } from "zod-to-json-schema";
+import { eq } from "drizzle-orm";
+import { agents } from "../db/schema.js";
 import { ALL_TOOLS, runTool, toProviderToolDefinitions } from "@kuclab-hertz/tools";
 import type { AgentLoopManager, PersistencePort, ProviderPort, ToolPort } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import type { AgentToolDef } from "./tool-def.js";
 import { createMemoryTools } from "./memory-tools.js";
+import { createOnboardingTools } from "./onboarding-tools.js";
 import { createShellTools } from "./shell-tools.js";
 import { createApprovalTools } from "./approval-tools.js";
 import { createHostAccessTools } from "./host-access-tools.js";
@@ -63,6 +66,7 @@ const ASK_USER_DEF: AgentToolDef = {
  */
 export function createToolPort(deps: ToolPortDeps): ToolPort {
   const memoryTools = createMemoryTools(deps.db, deps.paths);
+  const onboardingTools = createOnboardingTools(deps.db);
   const shellTools = createShellTools(deps.db, deps.shellManager);
   const approvalTools = createApprovalTools(deps.db);
   const hostAccessTools = createHostAccessTools(deps.db);
@@ -71,11 +75,12 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const desktopTools = createDesktopTools(deps.db, deps.masterKey, deps.desktop);
   const contextTools = createContextTools(deps.db);
   const allByName = new Map(
-    [...memoryTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...skillTools, ...browserTools, ...desktopTools, ...contextTools, ASK_USER_DEF].map((t) => [t.name, t]),
+    [...memoryTools, ...onboardingTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...skillTools, ...browserTools, ...desktopTools, ...contextTools, ASK_USER_DEF].map((t) => [t.name, t]),
   );
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
   const memoryDefs = toDefs(memoryTools);
+  const onboardingDefs = toDefs(onboardingTools);
   const shellDefs = toDefs(shellTools);
   const approvalDefs = [...toDefs(approvalTools), ...toDefs(hostAccessTools)];
   const skillDefs = toDefs(skillTools);
@@ -86,7 +91,17 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   return {
     async listDefinitions(agentId) {
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      return [...baseDefs, ...memoryDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...computerDefs, ...contextDefs, ...mcpDefs, ...askUserDefs];
+      let defs = [...baseDefs, ...memoryDefs, ...onboardingDefs, ...shellDefs, ...approvalDefs, ...skillDefs, ...computerDefs, ...contextDefs, ...mcpDefs, ...askUserDefs];
+      // complete_onboarding is single-use: hide it once the agent is onboarded
+      // so it never wastes context or gets called twice.
+      const rows = await deps.db
+        .select({ onboardedAt: agents.onboardedAt })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1)
+        .catch(() => []);
+      if (rows[0]?.onboardedAt) defs = defs.filter((d) => d.name !== "complete_onboarding");
+      return defs;
     },
     async run(name, input, ctx) {
       const tool = allByName.get(name);

@@ -1,4 +1,6 @@
 import type { Client } from "@libsql/client";
+import { defaultAgentPrompt } from "../agents/persona.js";
+import { generateAvatarSpec } from "../agents/avatar.js";
 
 /**
  * Hand-written, idempotent (CREATE TABLE IF NOT EXISTS) bootstrap SQL mirroring
@@ -79,6 +81,8 @@ CREATE TABLE IF NOT EXISTS agents (
   computer_backend TEXT NOT NULL DEFAULT 'docker',
   computer_image TEXT,
   mascot TEXT,
+  avatar TEXT,
+  onboarded_at INTEGER,
   heartbeat_minutes INTEGER NOT NULL DEFAULT 0,
   heartbeat_prompt TEXT,
   last_heartbeat_at INTEGER,
@@ -365,6 +369,8 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agent_memory ADD COLUMN keywords TEXT",
   "ALTER TABLE agent_memory ADD COLUMN last_used_at INTEGER",
   "ALTER TABLE agents ADD COLUMN mascot TEXT",
+  "ALTER TABLE agents ADD COLUMN avatar TEXT",
+  "ALTER TABLE agents ADD COLUMN onboarded_at INTEGER",
   "ALTER TABLE users ADD COLUMN monthly_budget_usd REAL",
   "ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'generic'",
   "ALTER TABLE sessions ADD COLUMN is_main_chat INTEGER NOT NULL DEFAULT 0",
@@ -429,11 +435,56 @@ export async function runMigrations(client: Client): Promise<void> {
   for (const statement of statements) {
     await client.execute(statement);
   }
+  // Detect a pre-onboarding agents table (upgrade path): if onboarded_at is
+  // missing here, the rows below predate the onboarding feature and get the
+  // one-shot backfill after the column migrations run.
+  let needsOnboardingBackfill = false;
+  try {
+    const cols = await client.execute("PRAGMA table_info(agents)");
+    needsOnboardingBackfill = !cols.rows.some((r) => (r as unknown as { name?: string }).name === "onboarded_at");
+  } catch {
+    needsOnboardingBackfill = false;
+  }
   for (const ddl of COLUMN_MIGRATIONS) {
     try {
       await client.execute(ddl);
     } catch (err) {
       if (!/duplicate column name/i.test((err as Error).message)) throw err;
     }
+  }
+
+  // One-shot backfill for agents created before the onboarding feature existed:
+  // grandfather them as onboarded, mint each a unique generative avatar, and
+  // replace the old English "superintelligent agent" character prompt — template
+  // match only, customized prompts are left untouched. Runs only when the
+  // onboarded_at column is brand new (i.e. this is an upgrade, not a fresh
+  // install or a later startup), so agents created after this upgrade still go
+  // through onboarding on their first chat.
+  if (needsOnboardingBackfill) {
+    await backfillOnboarding(client);
+  }
+}
+
+/**
+ * Matches the pre-persona character prompt template ("You are <name>, the
+ * user's personal superintelligent agent …"). Customized prompts don't match
+ * and are preserved by the backfill.
+ */
+const OLD_PERSONA_RE = /^You are .+, the user's personal superintelligent agent/;
+
+async function backfillOnboarding(client: Client): Promise<void> {
+  const rows = await client.execute("SELECT id, name, system_prompt FROM agents WHERE onboarded_at IS NULL");
+  const now = Date.now();
+  for (const row of rows.rows) {
+    const r = row as unknown as { id: string; name: string | null; system_prompt: string | null };
+    const name = r.name || "agent";
+    const systemPrompt =
+      typeof r.system_prompt === "string" && OLD_PERSONA_RE.test(r.system_prompt)
+        ? defaultAgentPrompt(name)
+        : r.system_prompt;
+    await client.execute({
+      sql: "UPDATE agents SET onboarded_at = ?, avatar = ?, system_prompt = ? WHERE id = ?",
+      args: [now, JSON.stringify(generateAvatarSpec(name)), systemPrompt, r.id],
+    });
   }
 }

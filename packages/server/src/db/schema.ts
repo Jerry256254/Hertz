@@ -114,6 +114,18 @@ export const agents = sqliteTable("agents", {
   /** The agent's mascot emoji — its face everywhere in the UI (animated avatar). */
   mascot: text("mascot"),
   /**
+   * Generative avatar spec (JSON: { version, kind, seed }) — the agent's unique
+   * visual identity, minted at onboarding. Rendered via agents/avatar.ts as
+   * standalone SVG or a data URL. NULL = render the deterministic fallback.
+   */
+  avatar: text("avatar"),
+  /**
+   * First-run onboarding (agent name + user name + avatar) completed at this
+   * time. NULL = the agent must run the onboarding flow on its next turn.
+   * Pre-existing agents are grandfathered as onboarded by migration.
+   */
+  onboardedAt: integer("onboarded_at", { mode: "timestamp_ms" }),
+  /**
    * Proactive heartbeat interval in minutes (0 = off). When enabled, the agent
    * gets a periodic self-directed turn (OpenClaw-style heartbeat): it can check
    * its tools, continue stalled work, or message the user — or stay quiet.
