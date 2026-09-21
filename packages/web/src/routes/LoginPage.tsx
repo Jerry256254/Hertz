@@ -32,12 +32,12 @@ export function LoginPage() {
 
         <div className="mt-6 space-y-3">
           <div>
-            <Label>EMAIL</Label>
-            <Input type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@firma.cz" />
+            <Label htmlFor="login-email">EMAIL</Label>
+            <Input id="login-email" type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jmeno@firma.cz" />
           </div>
           <div>
-            <Label>HESLO</Label>
-            <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Label htmlFor="login-password">HESLO</Label>
+            <Input id="login-password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
         </div>
 

@@ -41,6 +41,11 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
   const value = text ?? agent.systemPrompt ?? "";
   const dirty = value !== (agent.systemPrompt ?? "");
 
+  function askClose() {
+    if (dirty && !window.confirm("Máš neuložené změny. Opravdu zavřít bez uložení?")) return;
+    onClose();
+  }
+
   function wrap(before: string, after = "") {
     const el = document.getElementById("soul-textarea") as HTMLTextAreaElement | null;
     if (!el) {
@@ -87,13 +92,13 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
             <ToolButton title="Náhled" onClick={() => setPreview((v) => !v)} active={preview}><MoreHorizontal size={15} /></ToolButton>
             {dirty && (
               <button onClick={() => save.mutate(value)} disabled={save.isPending} className="pressable rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
-                {save.isPending ? "Ukládám…" : saved ? "Uloženo ✓" : "Uložit"}
+                {save.isPending ? "Ukládám…" : saved ? "Uloženo" : "Uložit"}
               </button>
             )}
-            {saved && !dirty && <span className="text-[13px] font-[600] text-live">Uloženo ✓</span>}
+            {saved && !dirty && <span className="text-[13px] font-[600] text-live">Uloženo</span>}
           </>
         )}
-        <ToolButton title="Zavřít" onClick={onClose}><X size={16} /></ToolButton>
+        <ToolButton title="Zavřít" onClick={askClose}><X size={16} /></ToolButton>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 md:px-5">

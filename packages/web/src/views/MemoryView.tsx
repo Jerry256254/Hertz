@@ -10,7 +10,7 @@ import { Markdown } from "../components/Markdown";
 export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; onOpenSoul: () => void; bare?: boolean }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"persona" | "scenarios" | "atoms">("persona");
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["memory", agent.id],
     queryFn: () => api.get<AgentLayeredMemory>(`/agents/${agent.id}/memory`),
   });
@@ -46,6 +46,14 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
       <div className={`min-h-0 flex-1 ${bare ? "" : "overflow-y-auto px-3 py-4 md:px-5"}`}>
         <div className={`mx-auto w-full max-w-[760px] ${bare ? "pt-3" : ""}`}>
           {isLoading && <p className="py-8 text-center text-[13px] text-fg-subtle">Načítám paměť…</p>}
+          {isError && !data && (
+            <div className="rounded-[20px] border border-danger/30 bg-danger-wash p-5 text-center">
+              <p className="text-[13.5px] font-[600] text-fg">Paměť se nepodařilo načíst.</p>
+              <button onClick={() => refetch()} className="pressable mt-3 rounded-full bg-danger px-4 py-2 text-[13px] font-[600] text-white">
+                Zkusit znovu
+              </button>
+            </div>
+          )}
           {data && tab === "persona" && (
             <div className="rounded-[20px] border border-border bg-bg-raised p-5">
               {data.persona ? <Markdown>{data.persona}</Markdown> : <p className="text-[13.5px] text-fg-subtle">Agent si zatím nevytvořil osobnost. Vznikne sama z konverzací.</p>}
@@ -77,7 +85,7 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
                     <p className="text-[13px] leading-relaxed text-fg">{a.text}</p>
                     <p className="mt-1 text-[11.5px] text-fg-subtle">důležitost {a.importance} · {relTime(a.createdAt)}</p>
                   </div>
-                  <button onClick={() => forget.mutate(a.id)} title="Zapomenout" className="hidden shrink-0 rounded-full p-1.5 text-fg-subtle hover:text-danger group-hover:block">
+                  <button onClick={() => forget.mutate(a.id)} title="Zapomenout" className="shrink-0 rounded-full p-1.5 text-fg-subtle hover:text-danger [@media(hover:hover)]:invisible [@media(hover:hover)]:group-hover:visible">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -89,7 +97,7 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
                     <p className="text-[13px] leading-relaxed text-fg">{n.note}</p>
                     <p className="mt-1 text-[11.5px] text-fg-subtle">{relTime(n.createdAt)}</p>
                   </div>
-                  <button onClick={() => forget.mutate(n.id)} title="Zapomenout" className="hidden shrink-0 rounded-full p-1.5 text-fg-subtle hover:text-danger group-hover:block">
+                  <button onClick={() => forget.mutate(n.id)} title="Zapomenout" className="shrink-0 rounded-full p-1.5 text-fg-subtle hover:text-danger [@media(hover:hover)]:invisible [@media(hover:hover)]:group-hover:visible">
                     <Trash2 size={13} />
                   </button>
                 </div>

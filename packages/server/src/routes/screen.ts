@@ -80,32 +80,23 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
       const { id } = request.params as { id: string };
       if (!(await canAccess(ctx, request, id))) return reply.code(403).send({ error: "No access" });
 
-      const pending = await findPendingTakeoverSession(ctx, id);
-      if (pending) {
-        const meta = { ...pending.metadata };
-        delete meta.pendingQuestion;
-        delete meta.pendingQuestionAgentId;
-        delete meta.pendingTakeover;
-        await ctx.db
-          .update(sessionsTable)
-          .set({ status: "active", metadata: JSON.stringify(meta), updatedAt: new Date() })
-          .where(eq(sessionsTable.id, pending.sessionId));
-
-        await ctx.agentLoop.appendInbound(pending.sessionId, [
-          {
-            type: "text",
-            text: "[The user finished logging in on your screen.] The browser session is now signed in — continue exactly where you stopped.",
-          },
-        ]);
-        try {
-          await enqueueAgentRun(ctx, { sessionId: pending.sessionId, prePersisted: true }, { maxAttempts: 2 });
-        } catch {
-          /* already running — inbound will be picked up mid-run */
-        }
-      }
-
+      await completeTakeover(ctx, id);
       return { ok: true };
     });
+  });
+
+  // --- token-authenticated takeover completion --------------------------------
+  // The viewer page is opened by people who only have the signed link (no
+  // Hertz login). Without this, "I'm done" 401s, pendingTakeover never clears
+  // and the session stays in awaiting_input forever.
+  app.post("/api/agents/:id/takeover/done-link", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { t } = request.query as { t?: string };
+    if (!t || !verifyScreenToken(ctx.masterKey, t, id)) {
+      return reply.code(403).send({ error: "Invalid or expired link" });
+    }
+    await completeTakeover(ctx, id);
+    return { ok: true };
   });
 
   // --- noVNC client assets, served from our own node_modules (no CDN) -------
@@ -271,6 +262,31 @@ export function registerScreenRoutes(app: FastifyInstance, ctx: AppContext): voi
 
 // --- helpers -----------------------------------------------------------------
 
+async function completeTakeover(ctx: AppContext, agentId: string): Promise<void> {
+  const pending = await findPendingTakeoverSession(ctx, agentId);
+  if (!pending) return;
+  const meta = { ...pending.metadata };
+  delete meta.pendingQuestion;
+  delete meta.pendingQuestionAgentId;
+  delete meta.pendingTakeover;
+  await ctx.db
+    .update(sessionsTable)
+    .set({ status: "active", metadata: JSON.stringify(meta), updatedAt: new Date() })
+    .where(eq(sessionsTable.id, pending.sessionId));
+
+  await ctx.agentLoop.appendInbound(pending.sessionId, [
+    {
+      type: "text",
+      text: "[The user finished logging in on your screen.] The browser session is now signed in — continue exactly where you stopped.",
+    },
+  ]);
+  // Resume only when nothing is already working on this session — the inbound
+  // above is persisted, so a running loop picks it up mid-run.
+  if (!ctx.agentLoop.isRunning(pending.sessionId)) {
+    await enqueueAgentRun(ctx, { sessionId: pending.sessionId, prePersisted: true }, { maxAttempts: 2 });
+  }
+}
+
 async function canAccess(ctx: AppContext, request: FastifyRequest, agentId: string): Promise<boolean> {
   const user = request.user!;
   if (user.role === "admin") return true;
@@ -341,12 +357,24 @@ function viewerHtml(agentId: string, token: string): string {
 
   const AGENT_ID = ${JSON.stringify(agentId)};
   const TOKEN = ${JSON.stringify(token)};
-  document.getElementById("done").addEventListener("click", async () => {
+  const doneBtn = document.getElementById("done");
+  doneBtn.addEventListener("click", async () => {
+    doneBtn.disabled = true;
+    let ok = false;
     try {
-      await fetch("/api/agents/" + AGENT_ID + "/takeover/done", { method: "POST", credentials: "include" });
-    } catch (e) { /* link-only viewers just close */ }
-    show("Handed back to the agent — you can close this tab.", "#22c55e");
-    try { window.rfb && window.rfb.disconnect(); } catch (e) {}
+      const res = await fetch("/api/agents/" + AGENT_ID + "/takeover/done-link?t=" + encodeURIComponent(TOKEN), { method: "POST" });
+      ok = res.ok;
+      if (!ok) show("Couldn't hand back (" + res.status + ") — try again, the agent is still parked.", "#ef4444");
+    } catch (e) {
+      // offline — the agent stays parked until the owner confirms
+      show("You're offline — the agent is still parked. Try again when connected.", "#ef4444");
+    }
+    if (ok) {
+      show("Handed back to the agent — you can close this tab.", "#22c55e");
+      try { window.rfb && window.rfb.disconnect(); } catch (e) {}
+    } else {
+      doneBtn.disabled = false;
+    }
   });
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";

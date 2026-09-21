@@ -2,7 +2,7 @@
 export function relTime(iso: string | null | undefined): string {
   if (!iso) return "nikdy";
   const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "";
+  if (Number.isNaN(t)) return "—";
   const diff = Date.now() - t;
   if (diff < 0) return "za chvíli";
   const min = Math.floor(diff / 60000);

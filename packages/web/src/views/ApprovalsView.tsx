@@ -3,7 +3,7 @@ import { ApprovalCard, ApprovalHistoryRow, useApprovals } from "../panels/Approv
 
 /** Full-page approvals inbox (icon-rail module). */
 export function ApprovalsView() {
-  const { data, isLoading } = useApprovals();
+  const { data, isLoading, isError, refetch } = useApprovals();
   const approvals = data?.approvals ?? [];
   const pending = approvals.filter((a) => a.status === "pending");
   const history = approvals.filter((a) => a.status !== "pending");
@@ -22,7 +22,15 @@ export function ApprovalsView() {
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 md:px-5">
         <div className="mx-auto w-full max-w-[760px] space-y-5">
           {isLoading && <p className="py-8 text-center text-[13px] text-fg-subtle">Načítám…</p>}
-          {pending.length > 0 && (
+          {isError && (
+            <div className="rounded-[20px] border border-danger/30 bg-danger-wash p-5 text-center">
+              <p className="text-[13.5px] font-[600] text-fg">Schválení se nepodařilo načíst.</p>
+              <button onClick={() => refetch()} className="pressable mt-3 rounded-full bg-danger px-4 py-2 text-[13px] font-[600] text-white">
+                Zkusit znovu
+              </button>
+            </div>
+          )}
+          {!isLoading && !isError && pending.length > 0 && (
             <section className="space-y-2.5">
               <p className="text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">ČEKÁ NA ROZHODNUTÍ</p>
               {pending.map((a) => <ApprovalCard key={a.id} approval={a} />)}
@@ -30,7 +38,7 @@ export function ApprovalsView() {
           )}
           <section>
             <p className="mb-1 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">HISTORIE SCHVÁLENÍ</p>
-            {history.length === 0 && !isLoading && <p className="py-2 text-[13px] text-fg-subtle">Zatím žádná historie.</p>}
+            {!isError && history.length === 0 && !isLoading && <p className="py-2 text-[13px] text-fg-subtle">Zatím žádná historie.</p>}
             {history.map((a) => <ApprovalHistoryRow key={a.id} approval={a} />)}
           </section>
         </div>

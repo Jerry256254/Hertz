@@ -10,11 +10,26 @@ import { BrowserPanel } from "../panels/BrowserPanel";
 /** Počítač — files, shells and live desktop in one module. */
 export function ComputerView({ agent, projectId, bare = false }: { agent: Agent; projectId: string; bare?: boolean }) {
   const [tab, setTab] = useState<"files" | "shells" | "desktop">("files");
-  const { data: computer } = useQuery({
+  const { data: computer, isError: computerError, refetch: refetchComputer } = useQuery({
     queryKey: ["computer", agent.id],
     queryFn: () => api.get<{ backend: string; status: string; error?: string }>(`/agents/${agent.id}/computer`),
     refetchInterval: 15000,
   });
+
+  function statusLine() {
+    if (computer) return `${computer.backend} · ${computer.status}${computer.error ? ` · ${computer.error}` : ""}`;
+    if (computerError) {
+      return (
+        <span>
+          Stav se nepodařilo načíst.{" "}
+          <button onClick={() => refetchComputer()} className="font-[600] text-accent hover:underline">
+            Zkusit znovu
+          </button>
+        </span>
+      );
+    }
+    return "Načítám stav…";
+  }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -23,10 +38,7 @@ export function ComputerView({ agent, projectId, bare = false }: { agent: Agent;
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-wash text-success"><Monitor size={18} /></span>
           <div>
             <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">Počítač</p>
-            <p className="text-[12px] text-fg-muted">
-              {computer ? `${computer.backend} · ${computer.status}` : "Načítám stav…"}
-              {computer?.error && ` · ${computer.error}`}
-            </p>
+            <p className="text-[12px] text-fg-muted">{statusLine()}</p>
           </div>
           <span className="flex-1" />
           <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
@@ -38,8 +50,7 @@ export function ComputerView({ agent, projectId, bare = false }: { agent: Agent;
       ) : (
         <div className="shrink-0 pb-2">
           <p className="px-1 pb-1.5 text-[12px] text-fg-muted">
-            {computer ? `${computer.backend} · ${computer.status}` : "Načítám stav…"}
-            {computer?.error && ` · ${computer.error}`}
+            {statusLine()}
           </p>
           <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
             <ComputerTab active={tab === "files"} onClick={() => setTab("files")} icon={<FolderOpen size={14} />} label="Soubory" />

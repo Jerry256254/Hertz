@@ -48,18 +48,39 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
   );
 }
 
+/** Only http(s): and mailto: links are clickable; anything else (notably
+ * javascript:) is dropped so model-generated markdown can never execute code. */
+function safeHref(href?: string): string | undefined {
+  if (!href) return undefined;
+  try {
+    const u = new URL(href, window.location.href);
+    if (u.protocol === "http:" || u.protocol === "https:" || u.protocol === "mailto:") return href;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 export function Markdown({ children }: { children: string }) {
   return (
     <div className="markdown-body text-[14px] leading-relaxed text-fg">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="font-[600] text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
-              {children}
-            </a>
-          ),
+          p: ({ children }) => <p className="mb-3 break-words last:mb-0">{children}</p>,
+          a: ({ href, children }) => {
+            const safe = safeHref(href);
+            if (!safe) {
+              // Non-http(s)/mailto: hrefs (e.g. javascript:) render as
+              // non-clickable text — never as a live link.
+              return <span className="font-[600] text-fg-muted underline decoration-dotted">{children}</span>;
+            }
+            return (
+              <a href={safe} target="_blank" rel="noreferrer noopener" className="font-[600] text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
+                {children}
+              </a>
+            );
+          },
           ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
           ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
           li: ({ children }) => <li className="pl-0.5">{children}</li>,

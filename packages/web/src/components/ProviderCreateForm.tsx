@@ -27,6 +27,14 @@ export function ProviderCreateForm({
   const [defaultModel, setDefaultModel] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
+  function reset() {
+    setLabel("");
+    setProvider("openai-compatible");
+    setApiKey("");
+    setBaseUrl("");
+    setDefaultModel("");
+  }
+
   const create = useMutation({
     mutationFn: () =>
       api.post<{ id: string }>("/providers", {
@@ -37,12 +45,22 @@ export function ProviderCreateForm({
         ...(defaultModel.trim() ? { defaultModel: defaultModel.trim() } : {}),
       }),
     onSuccess: (res) => {
+      const model = defaultModel.trim() || undefined;
+      reset();
       setErr(null);
       void queryClient.invalidateQueries({ queryKey: ["providers"] });
-      onCreated(res.id, defaultModel.trim() || undefined);
+      onCreated(res.id, model);
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Přidání selhalo"),
   });
+
+  // label + API klíč jsou povinné (Anthropic má OAuth, takže klíč skrytý a
+  // volitelný); u openai-compatible navíc URL serveru.
+  const canSubmit =
+    !create.isPending &&
+    label.trim().length > 0 &&
+    (provider === "anthropic" || apiKey.trim().length > 0) &&
+    (provider !== "openai-compatible" || baseUrl.trim().length > 0);
 
   return (
     <div className="space-y-2.5">
@@ -87,7 +105,7 @@ export function ProviderCreateForm({
       <div className="flex gap-2">
         <button
           onClick={() => create.mutate()}
-          disabled={create.isPending || !label.trim()}
+          disabled={!canSubmit}
           className="pressable flex-1 rounded-full bg-accent py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40"
         >
           {create.isPending ? "Přidávám…" : submitLabel}

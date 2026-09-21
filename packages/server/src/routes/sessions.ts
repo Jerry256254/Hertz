@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
 import type { AppContext } from "../context.js";
-import { agents, messages, projects, sessions } from "../db/schema.js";
+import { agents, approvals, channelBindings, messages, projects, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { createPersistenceAdapter } from "../persistence/persistence-adapter.js";
@@ -38,7 +38,7 @@ const renameSessionSchema = z.object({
 });
 
 const sendMessageSchema = z.object({
-  text: z.string().optional(),
+  text: z.string().max(100_000).optional(),
   images: z
     .array(z.object({ mimeType: z.string(), data: z.string() }))
     .optional()
@@ -96,6 +96,11 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
     const projectId = parsed.data.projectId ?? agent.projectId;
+    // The session belongs to the agent's own project — no cross-project chats.
+    if (projectId !== agent.projectId) return reply.code(400).send({ error: "Project does not match the agent" });
+    if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) {
+      return reply.code(403).send({ error: "No access to this project" });
+    }
 
     const id = newId();
     const now = new Date();
@@ -112,9 +117,12 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   instance.get("/api/sessions", async (request) => {
-    // Non-admin users only see sessions in projects they can access
+    // Non-admin users only see sessions in projects they can access.
+    // Filter in SQL, not after .limit(200) — otherwise a non-admin could get
+    // an empty page even though they have sessions further down the list.
     const accessible = request.user!.role === "admin" ? ("all" as const) : await accessibleProjectIds(ctx.db, request.user!);
-    const rows = await ctx.db
+    if (accessible !== "all" && accessible.size === 0) return { sessions: [] };
+    const base = ctx.db
       .select({
         id: sessions.id,
         agentId: sessions.agentId,
@@ -128,14 +136,14 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       })
       .from(sessions)
       .innerJoin(agents, eq(sessions.agentId, agents.id))
-      .innerJoin(projects, eq(sessions.projectId, projects.id))
-      .orderBy(desc(sessions.updatedAt))
-      .limit(200);
-    if (accessible !== "all") {
-      const allowed = accessible as Set<string>;
-      const filtered = (rows as Array<{ projectId: string }>).filter((r) => allowed.has(r.projectId));
-      return { sessions: filtered as typeof rows };
-    }
+      .innerJoin(projects, eq(sessions.projectId, projects.id));
+    const rows =
+      accessible === "all"
+        ? await base.orderBy(desc(sessions.updatedAt)).limit(200)
+        : await base
+            .where(inArray(sessions.projectId, [...accessible] as string[]))
+            .orderBy(desc(sessions.updatedAt))
+            .limit(200);
     return { sessions: rows };
   });
 
@@ -257,6 +265,12 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     if (!sessionRows[0]) return reply.code(404).send({ error: "Session not found" });
 
+    // FK cascades are declared in the schema but not enforced
+    // (PRAGMA foreign_keys is off) — clean up dependents manually so no
+    // orphan rows are left behind.
+    await ctx.db.delete(messages).where(eq(messages.sessionId, id));
+    await ctx.db.delete(approvals).where(eq(approvals.sessionId, id));
+    await ctx.db.delete(channelBindings).where(eq(channelBindings.sessionId, id));
     await ctx.db.delete(sessions).where(eq(sessions.id, id));
     return reply.code(204).send();
   });
@@ -302,6 +316,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const session = sessionRows[0];
     if (!session) return reply.code(404).send({ error: "Session not found" });
     if (!(await hasProjectAccess(ctx.db, request.user!, session.projectId))) return reply.code(403).send({ error: "No access" });
+    // run-jobs would silently drop the job — fail loudly instead of swallowing the message.
+    if (session.status === "archived") return reply.code(410).send({ error: "This chat is archived" });
 
     const budget = await checkBudget(ctx.db, request.user!.id);
     if (!budget.allowed) {
@@ -402,6 +418,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       .set({ status: "active", metadata: clearedAnswer, updatedAt: new Date() })
       .where(eq(sessions.id, id));
 
+    // isRunning was checked above (409) — enqueue directly.
     try {
       await enqueueAgentRun(
         ctx,
@@ -413,7 +430,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         { maxAttempts: 2 },
       );
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message });
+      // Only real enqueue failures (DB down etc.) land here.
+      return reply.code(500).send({ error: `Could not resume the agent: ${(err as Error).message}` });
     }
     return reply.code(202).send({ ok: true });
   });

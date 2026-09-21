@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import type { ToolContext, ToolDef, ToolResult } from "../types.js";
 
@@ -13,6 +15,7 @@ const speakSchema = z.object({
   text: z.string().min(1).max(4000),
   outPath: z.string().optional().describe("Where to save the audio, relative to the project root (default: tts-<timestamp>.mp3 in your personal folder)"),
   voice: z.string().optional().describe("Voice name (OpenAI TTS voices: alloy, echo, fable, onyx, nova, shimmer)"),
+  language: z.string().optional().describe("ISO language hint for offline engines, e.g. 'cs' or 'en' — picks the matching espeak-ng voice"),
 });
 type SpeakInput = z.infer<typeof speakSchema>;
 
@@ -54,14 +57,21 @@ async function transcribeWithOpenAI(absPath: string, language: string | undefine
 
 /** Local whisper CLI (pip install openai-whisper) — free after the one-time model download. */
 async function transcribeWithLocalWhisper(absPath: string, language: string | undefined): Promise<string> {
-  const args = [absPath, "--model", "base", "--output_format", "txt", "--output_dir", "/tmp"];
-  if (language) args.push("--language", language);
-  await runCommand("whisper", args, 300_000);
-  const base = (absPath.split("/").pop() ?? "audio").replace(/\.[^.]+$/, "");
-  const txt = await fs.readFile(`/tmp/${base}.txt`, "utf8").catch(() => "");
-  await fs.rm(`/tmp/${base}.txt`, { force: true });
-  if (!txt.trim()) throw new Error("local whisper produced no output");
-  return txt.trim();
+  // A unique output dir per run: whisper names its txt output after the input
+  // basename, so a shared /tmp/<basename>.txt collided across folders and
+  // concurrent runs could read or delete each other's output.
+  const outDir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-whisper-"));
+  try {
+    const args = [absPath, "--model", "base", "--output_format", "txt", "--output_dir", outDir];
+    if (language) args.push("--language", language);
+    await runCommand("whisper", args, 300_000);
+    const base = (absPath.split("/").pop() ?? "audio").replace(/\.[^.]+$/, "");
+    const txt = await fs.readFile(path.join(outDir, `${base}.txt`), "utf8").catch(() => "");
+    if (!txt.trim()) throw new Error("local whisper produced no output");
+    return txt.trim();
+  } finally {
+    await fs.rm(outDir, { recursive: true, force: true });
+  }
 }
 
 export const transcribeAudioTool: ToolDef<TranscribeInput> = {
@@ -118,11 +128,22 @@ async function speakWithOpenAI(text: string, voice: string | undefined, apiKey: 
   return { bytes: Buffer.from(await res.arrayBuffer()), ext: "mp3", engine: "OpenAI TTS" };
 }
 
+/** espeak-ng voice per ISO 639-1 language; unknown languages fall back to the engine default. */
+const ESPEAK_VOICES: Record<string, string> = {
+  cs: "cs", sk: "sk", en: "en", de: "de", fr: "fr", es: "es", it: "it", pl: "pl",
+  ru: "ru", uk: "uk", pt: "pt", nl: "nl", hu: "hu", ro: "ro", sv: "sv", da: "da",
+  fi: "fi", no: "nb", el: "el", tr: "tr", ar: "ar", zh: "zh", ja: "ja", ko: "ko",
+};
+
 /** Offline CLI engines, best first. Output formats differ, so each reports its own extension. */
-async function speakWithLocalCli(text: string, tmpBase: string): Promise<TtsResult> {
+async function speakWithLocalCli(text: string, tmpBase: string, language: string | undefined): Promise<TtsResult> {
   if (await commandExists("espeak-ng")) {
     const out = `${tmpBase}.wav`;
-    await runCommand("espeak-ng", ["-v", "cs", "-s", "165", "-w", out, text]);
+    const args = ["-s", "165", "-w", out];
+    const voice = language ? ESPEAK_VOICES[language.toLowerCase().slice(0, 2)] : undefined;
+    if (voice) args.unshift("-v", voice);
+    args.push(text);
+    await runCommand("espeak-ng", args);
     return { bytes: await fs.readFile(out), ext: "wav", engine: "espeak-ng" };
   }
   if (await commandExists("pico2wave")) {
@@ -156,7 +177,7 @@ export const speakTextTool: ToolDef<SpeakInput> = {
     if (!audio) {
       const tmpBase = `/tmp/hertz-tts-${Date.now()}`;
       try {
-        audio = await speakWithLocalCli(input.text, tmpBase);
+        audio = await speakWithLocalCli(input.text, tmpBase, input.language);
       } catch (err) {
         errors.push((err as Error).message);
       } finally {

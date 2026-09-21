@@ -468,6 +468,13 @@ export class AgentLoopManager {
       this.abortControllers.delete(config.sessionId);
       this.emit(config.sessionId, { type: "status", status: "idle" });
       this.emit(config.sessionId, { type: "done" });
+      // Don't leak emitters for sessions nobody is watching anymore —
+      // subscribe() recreates on demand. Keep it only while listeners remain
+      // (a live WS tail stays subscribed across runs).
+      const emitter = this.emitters.get(config.sessionId);
+      if (emitter && emitter.listenerCount("event") === 0) {
+        this.emitters.delete(config.sessionId);
+      }
     }
   }
 

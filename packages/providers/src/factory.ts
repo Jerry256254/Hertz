@@ -17,8 +17,11 @@ function pricingTableForBaseUrl(baseUrl: string): Record<string, ModelPricing> |
     return undefined;
   }
   if (host.startsWith("_")) return undefined;
-  const table = (compatiblePricing as unknown as Record<string, Record<string, ModelPricing>>)[host];
-  return table;
+  const tables = compatiblePricing as unknown as Record<string, Record<string, ModelPricing>>;
+  // Own-property check: a host like "constructor" or "toString" is a valid URL
+  // host but would otherwise resolve to Object.prototype and price as garbage.
+  if (!Object.hasOwn(tables, host)) return undefined;
+  return tables[host];
 }
 
 export function createProviderAdapter(

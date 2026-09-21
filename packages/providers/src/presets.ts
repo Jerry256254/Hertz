@@ -11,6 +11,8 @@ export interface ProviderPreset {
   baseUrl?: string;
   /** Short domain/host shown next to the name in the picker. */
   hint: string;
+  /** Optional extra guidance shown under the picker entry (e.g. manual model entry). */
+  note?: string;
 }
 
 /**
@@ -82,6 +84,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     category: "frontier",
     baseUrl: "https://api.perplexity.ai",
     hint: "api.perplexity.ai",
+    note: "Perplexity nemá /models endpoint — model zadej ručně.",
   },
 
   // --- Aggregators / inference clouds ---

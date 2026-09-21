@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { createProviderAdapter, describeScanError, SUPPORTED_PROVIDERS, type SupportedProvider } from "@kuclab-hertz/providers";
 import type { AppContext } from "../context.js";
-import { providerConfigKeys, providerConfigs } from "../db/schema.js";
+import { providerConfigKeys, providerConfigs, agents } from "../db/schema.js";
 import { decryptSecret, encryptSecret, maskKey } from "../secrets/key-encryption.js";
 import { requireAuth } from "../auth/plugin.js";
 import { addProviderConfig } from "../bootstrap.js";
@@ -129,9 +129,27 @@ export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): v
 
     instance.delete("/api/providers/:id", async (request, reply) => {
       const { id } = request.params as { id: string };
-      await ctx.db
-        .delete(providerConfigs)
-        .where(and(eq(providerConfigs.id, id), eq(providerConfigs.userId, request.user!.id)));
+      const owned = await ctx.db
+        .select({ id: providerConfigs.id })
+        .from(providerConfigs)
+        .where(and(eq(providerConfigs.id, id), eq(providerConfigs.userId, request.user!.id)))
+        .limit(1);
+      if (!owned[0]) return reply.code(404).send({ error: "Provider not found" });
+
+      // FK cascades are not enforced (PRAGMA foreign_keys is off), so deleting a
+      // config that agents still reference would leave them with a dangling
+      // providerConfigId and every run would fail with "Unknown provider config".
+      const inUse = await ctx.db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.providerConfigId, id))
+        .limit(1);
+      if (inUse[0])
+        return reply.code(409).send({
+          error: "Provider is still used by agents — reassign or delete those agents first.",
+        });
+
+      await ctx.db.delete(providerConfigs).where(eq(providerConfigs.id, id));
       return reply.code(204).send();
     });
 

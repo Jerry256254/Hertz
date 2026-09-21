@@ -17,6 +17,8 @@ export function BrowserPanel({ agent, onClose, onTakeoverDone }: { agent: Agent;
   const [iframeKey, setIframeKey] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [finishingTakeover, setFinishingTakeover] = useState(false);
+  const [takeoverError, setTakeoverError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const frameRef = useRef<HTMLDivElement>(null);
 
@@ -84,11 +86,17 @@ export function BrowserPanel({ agent, onClose, onTakeoverDone }: { agent: Agent;
   }
 
   async function takeoverDone() {
+    if (finishingTakeover) return;
+    setFinishingTakeover(true);
+    setTakeoverError(null);
     try {
       await api.post(`/agents/${agent.id}/takeover/done`);
-    } catch {
-      /* link-only viewers just close */
+    } catch (e) {
+      setTakeoverError(e instanceof ApiError ? e.message : "Předání se nezdařilo.");
+      setFinishingTakeover(false);
+      return;
     }
+    setFinishingTakeover(false);
     onTakeoverDone?.();
   }
 
@@ -131,9 +139,12 @@ export function BrowserPanel({ agent, onClose, onTakeoverDone }: { agent: Agent;
         )}
 
         <div className="mt-2.5 flex items-center gap-1.5">
-          <Button size="sm" variant="secondary" onClick={() => void startDesktop()}>{status?.running ? "Restartovat" : "Spustit"}</Button>
-          <Button size="sm" variant="secondary" onClick={() => void takeoverDone()}>Hotovo — vrátit agentovi</Button>
+          <Button size="sm" variant="secondary" onClick={() => void startDesktop()} disabled={starting}>{status?.running ? "Restartovat" : "Spustit"}</Button>
+          <Button size="sm" variant="secondary" onClick={() => void takeoverDone()} disabled={finishingTakeover}>{finishingTakeover ? "Předávám…" : "Hotovo — vrátit agentovi"}</Button>
           <span className="flex-1" />
+        </div>
+        {takeoverError && <p className="mt-2 text-[12.5px] text-danger">{takeoverError}</p>}
+        <div className="mt-2 flex items-center gap-1">
           <IconButton title="Obnovit náhled" onClick={() => void openViewer()} disabled={!status?.running}><RefreshCw size={14} /></IconButton>
           <IconButton title="Celá obrazovka" onClick={toggleFullscreen} disabled={!iframeUrl}><Maximize size={14} /></IconButton>
           <IconButton title="Otevřít v novém okně" onClick={openInNewTab} disabled={!status?.running}><ExternalLink size={14} /></IconButton>

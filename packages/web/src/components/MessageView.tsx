@@ -11,11 +11,14 @@ export function MessageView({
   toolResultsById,
   agentId,
   collapsibleTools = true,
+  stepsSettled = false,
 }: {
   message: PersistedMessage;
   toolResultsById?: Map<string, { content: string; isError?: boolean }>;
   agentId: string;
   collapsibleTools?: boolean;
+  /** True when the run is over — orphaned tool uses stop spinning. */
+  stepsSettled?: boolean;
 }) {
   if (message.purpose === "summarization") {
     const text = message.content.filter((b) => b.type === "text").map((b) => (b.type === "text" ? b.text : "")).join("\n");
@@ -56,7 +59,7 @@ export function MessageView({
           style={{ backgroundColor: "var(--color-user-bubble)", color: "var(--color-user-bubble-fg)" }}
         >
           {imageBlocks.map((block, i) => block.type === "image" ? <img key={i} src={`data:${block.mimeType};base64,${block.data}`} alt="příloha" className="mb-2 max-h-64 rounded-[12px]" /> : null)}
-          {textBlocks.map((block, i) => block.type === "text" ? <p key={i} className="whitespace-pre-wrap">{block.text}</p> : null)}
+          {textBlocks.map((block, i) => block.type === "text" ? <p key={i} className="whitespace-pre-wrap break-words">{block.text}</p> : null)}
         </div>
       </div>
     );
@@ -83,10 +86,10 @@ export function MessageView({
             <summary className="cursor-pointer list-none text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
               {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"} ▸
             </summary>
-            <div className="mt-1"><ToolStepChecklist steps={steps} /></div>
+            <div className="mt-1"><ToolStepChecklist steps={steps} settled={stepsSettled} /></div>
           </details>
         ) : (
-          <ToolStepChecklist steps={steps} />
+          <ToolStepChecklist steps={steps} settled={stepsSettled} />
         ))}
       </div>
     </div>

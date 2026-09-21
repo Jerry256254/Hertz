@@ -7,6 +7,21 @@ export class ApiError extends Error {
   }
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+let unauthorizedFired = false;
+
+/**
+ * Registers a one-shot-per-page-load callback for 401 responses (expired
+ * session). Auth endpoints themselves are excluded so the login flow and
+ * the initial "am I logged in" probe never trigger it.
+ */
+export function onUnauthorized(fn: () => void) {
+  unauthorizedHandler = fn;
+}
+
+/** API paths that legitimately return 401 without meaning "session expired". */
+const AUTH_PATHS = ["/auth/", "/setup/"];
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
@@ -15,6 +30,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
+    if (res.status === 401 && !unauthorizedFired && !AUTH_PATHS.some((p) => path.startsWith(p))) {
+      unauthorizedFired = true;
+      try {
+        unauthorizedHandler?.();
+      } catch {
+        /* handler must never break the request path */
+      }
+    }
     let message = res.statusText;
     try {
       const data = await res.json();

@@ -42,7 +42,7 @@ export function FileExplorer({
     queryFn: () => api.get<{ entries: FileEntry[] }>(`/projects/${projectId}/files?path=${encodeURIComponent(currentPath)}${scopeParam}`),
     refetchInterval: 4000,
   });
-  const { data: preview } = useQuery({
+  const { data: preview, isLoading: previewLoading, isError: previewError } = useQuery({
     queryKey: ["file-content", projectId, root, agentId, previewPath],
     queryFn: () => api.get<{ content: string; truncated: boolean }>(`/projects/${projectId}/file-content?path=${encodeURIComponent(previewPath!)}${scopeParam}`),
     enabled: !!previewPath,
@@ -73,6 +73,8 @@ export function FileExplorer({
           <div className="flex h-full flex-col">
             <button onClick={() => setPreviewPath(undefined)} className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 mono text-[11px] font-[600] tracking-wide text-fg-muted hover:text-fg"><ArrowLeft size={12} /> zpět</button>
             <div className="min-h-0 flex-1 overflow-auto">
+              {previewLoading && <p className="p-3 mono text-[11px] text-fg-subtle">Načítám náhled…</p>}
+              {previewError && <p className="p-3 mono text-[11px] text-danger">Náhled se nepodařilo načíst.</p>}
               {preview && <Suspense fallback={<p className="p-3 mono text-[11px] text-fg-subtle">Načítám…</p>}><CodeViewer path={previewPath} content={preview.content} /></Suspense>}
             </div>
             {preview?.truncated && <p className="shrink-0 border-t border-warning/20 bg-warning-wash px-2 py-1.5 mono text-[11px] text-warning">Náhled zkrácen.</p>}

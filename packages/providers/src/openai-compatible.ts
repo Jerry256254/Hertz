@@ -1,4 +1,5 @@
-import { parseSSEStream } from "./sse.js";
+import { parseSSEStream, StreamStallError } from "./sse.js";
+import { withTimeout } from "./signal.js";
 import type {
   ChatRequest,
   ChatResponse,
@@ -99,6 +100,10 @@ function extractUsage(usage: any): UsageInfo {
   };
 }
 
+const CHAT_TIMEOUT_MS = 30_000;
+const SCAN_TIMEOUT_MS = 15_000;
+const STREAM_INACTIVITY_MS = 90_000;
+
 export interface OpenAICompatibleOptions {
   id: string;
   displayName: string;
@@ -121,12 +126,26 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
 
   async function listModels(): Promise<ModelInfo[]> {
     if (opts.listModelsOverride) return opts.listModelsOverride();
-    const res = await fetch(`${opts.baseUrl.replace(/\/$/, "")}/models`, { headers });
+    const res = await fetch(`${opts.baseUrl.replace(/\/$/, "")}/models`, {
+      headers,
+      signal: withTimeout(undefined, SCAN_TIMEOUT_MS),
+    });
     if (!res.ok) {
       throw new ProviderError(opts.id, `listModels failed: ${await res.text()}`, res.status);
     }
-    const body = (await res.json()) as { data: Array<{ id: string }> };
-    const scanned = body.data.map((m) => ({ id: m.id, displayName: m.id, supportsTools: true }));
+    const body = (await res.json()) as { data?: Array<{ id: string }>; error?: { message?: string } };
+    // Some gateways answer errors with HTTP 200 — a missing/invalid `data`
+    // array must surface as a ProviderError, not a TypeError on .map.
+    if (!Array.isArray(body.data)) {
+      throw new ProviderError(
+        opts.id,
+        `listModels failed: ${body.error?.message ?? "unexpected response shape"}`,
+        res.status,
+      );
+    }
+    const scanned = body.data
+      .filter((m) => typeof m?.id === "string")
+      .map((m) => ({ id: m.id, displayName: m.id, supportsTools: true }));
     if (scanned.length > 0) {
       // A successful non-empty /models response is authoritative: the endpoint
       // decides which ids it serves. Injecting curated ids on top produced
@@ -144,27 +163,43 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
       method: "POST",
       headers,
       body: JSON.stringify(buildBody(req, false)),
-      signal: req.signal,
+      signal: withTimeout(req.signal, CHAT_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new ProviderError(opts.id, `chat failed: ${await res.text()}`, res.status);
     }
     const body = (await res.json()) as any;
-    const choice = body.choices[0];
+    // Some gateways answer errors with HTTP 200 — surface those as a
+    // ProviderError instead of crashing on choices[0].
+    const choice = body.choices?.[0];
+    if (!choice || typeof choice.message !== "object" || choice.message === null) {
+      throw new ProviderError(
+        opts.id,
+        `chat failed: ${body.error?.message ?? "chat returned no choices"}`,
+        res.status,
+      );
+    }
+    const message = choice.message;
     const content: ContentBlock[] = [];
-    if (choice.message.content) {
-      if (typeof choice.message.content === "string") content.push({ type: "text", text: choice.message.content });
-      else if (Array.isArray(choice.message.content)) {
-        for (const part of choice.message.content) if (part.type === "text" && part.text) content.push({ type: "text", text: part.text });
+    if (message.content) {
+      if (typeof message.content === "string") content.push({ type: "text", text: message.content });
+      else if (Array.isArray(message.content)) {
+        for (const part of message.content) if (part.type === "text" && part.text) content.push({ type: "text", text: part.text });
       }
     }
-    for (const call of choice.message.tool_calls ?? []) {
-      content.push({
-        type: "tool_use",
-        id: call.id,
-        name: call.function.name,
-        input: JSON.parse(call.function.arguments || "{}"),
-      });
+    for (const call of message.tool_calls ?? []) {
+      if (typeof call?.id !== "string" || typeof call?.function?.name !== "string") continue;
+      let input: unknown = {};
+      try {
+        input = JSON.parse(call.function.arguments ?? "{}");
+      } catch {
+        throw new ProviderError(
+          opts.id,
+          `chat failed: truncated tool-call arguments for "${call.function.name}"`,
+          res.status,
+        );
+      }
+      content.push({ type: "tool_use", id: call.id, name: call.function.name, input });
     }
     return {
       content,
@@ -189,38 +224,52 @@ export function createOpenAICompatibleAdapter(opts: OpenAICompatibleOptions): Pr
     const toolCallIds = new Map<number, string>();
     let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 };
     let stopReason: StopReason = "end_turn";
+    let finished = false;
 
-    for await (const frame of parseSSEStream(res.body)) {
-      if (!frame.data || frame.data === "[DONE]") continue;
-      const chunk = JSON.parse(frame.data);
-      if (chunk.usage) usage = extractUsage(chunk.usage);
-      const choice = chunk.choices?.[0];
-      if (!choice) continue;
-      const delta = choice.delta ?? {};
+    try {
+      for await (const frame of parseSSEStream(res.body, { inactivityMs: STREAM_INACTIVITY_MS })) {
+        if (!frame.data || frame.data === "[DONE]") continue;
+        let chunk: any;
+        try {
+          chunk = JSON.parse(frame.data);
+        } catch {
+          continue; // malformed frame — skip it, don't kill the run
+        }
+        if (chunk.usage) usage = extractUsage(chunk.usage);
+        const choice = chunk.choices?.[0];
+        if (!choice) continue;
+        const delta = choice.delta ?? {};
 
-      if (delta.content) {
-        yield { type: "text_delta", text: delta.content };
-      }
-      for (const call of delta.tool_calls ?? []) {
-        const idx = call.index ?? 0;
-        if (call.id) {
-          toolCallIds.set(idx, call.id);
-          toolCallNames.set(idx, call.function?.name ?? toolCallNames.get(idx) ?? "");
-          yield { type: "tool_use_start", id: call.id, name: call.function?.name ?? toolCallNames.get(idx) ?? "" };
-        } else if (call.function?.name && toolCallIds.has(idx)) {
-          toolCallNames.set(idx, call.function.name);
+        if (delta.content) {
+          yield { type: "text_delta", text: delta.content };
         }
-        if (call.function?.arguments) {
-          const id = toolCallIds.get(idx);
-          if (id) yield { type: "tool_use_delta", id, inputDelta: call.function.arguments };
+        for (const call of delta.tool_calls ?? []) {
+          const idx = call.index ?? 0;
+          if (call.id) {
+            toolCallIds.set(idx, call.id);
+            toolCallNames.set(idx, call.function?.name ?? toolCallNames.get(idx) ?? "");
+            yield { type: "tool_use_start", id: call.id, name: call.function?.name ?? toolCallNames.get(idx) ?? "" };
+          } else if (call.function?.name && toolCallIds.has(idx)) {
+            toolCallNames.set(idx, call.function.name);
+          }
+          if (call.function?.arguments) {
+            const id = toolCallIds.get(idx);
+            if (id) yield { type: "tool_use_delta", id, inputDelta: call.function.arguments };
+          }
+        }
+        // Some gateways repeat finish_reason across chunks — honor it once so
+        // tool_use_end / message_end are never emitted twice.
+        if (choice.finish_reason && !finished) {
+          finished = true;
+          stopReason = fromFinishReason(choice.finish_reason);
         }
       }
-      if (choice.finish_reason) {
-        stopReason = fromFinishReason(choice.finish_reason);
-        for (const id of toolCallIds.values()) yield { type: "tool_use_end", id };
-        yield { type: "message_end", stopReason, usage };
-      }
+    } catch (err) {
+      if (err instanceof StreamStallError) throw new ProviderError(opts.id, err.message, 408);
+      throw err;
     }
+    for (const id of toolCallIds.values()) yield { type: "tool_use_end", id };
+    yield { type: "message_end", stopReason, usage };
   }
 
   async function countTokens(req: ChatRequest): Promise<number> {

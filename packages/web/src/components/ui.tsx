@@ -73,8 +73,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
 );
 Textarea.displayName = "Textarea";
 
-export function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <label className={`mb-1.5 block text-[11px] font-[600] tracking-[0.06em] text-fg-muted ${className}`}>{children}</label>;
+export function Label({ children, className = "", htmlFor }: { children: ReactNode; className?: string; htmlFor?: string }) {
+  return <label htmlFor={htmlFor} className={`mb-1.5 block text-[11px] font-[600] tracking-[0.06em] text-fg-muted ${className}`}>{children}</label>;
 }
 
 type BadgeTone = "neutral" | "accent" | "success" | "warning" | "danger" | "live";

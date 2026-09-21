@@ -29,6 +29,9 @@ importers:
       prompts:
         specifier: ^2.4.2
         version: 2.4.2
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

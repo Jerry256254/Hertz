@@ -19,6 +19,8 @@ interface Match {
   text: string;
 }
 
+const MAX_GREP_BYTES = 5_000_000;
+
 export const grepTool: ToolDef<Input> = {
   name: "grep",
   description: "Search file contents for a regular expression, returning matching lines with file:line, not whole files. Text tool — never use desktop_* / browser_* for file work.",
@@ -41,11 +43,18 @@ export const grepTool: ToolDef<Input> = {
     });
 
     const matches: Match[] = [];
+    const skippedLarge: string[] = [];
     for (const rel of files) {
       if (matches.length >= input.maxMatches) break;
       let content: string;
       try {
-        content = await fs.readFile(path.join(root, rel), "utf8");
+        const abs = path.join(root, rel);
+        const st = await fs.stat(abs);
+        if (st.size > MAX_GREP_BYTES) {
+          skippedLarge.push(rel);
+          continue;
+        }
+        content = await fs.readFile(abs, "utf8");
       } catch {
         continue;
       }
@@ -62,8 +71,12 @@ export const grepTool: ToolDef<Input> = {
       matches.length > 0
         ? matches.map((m) => `${m.file}:${m.line}: ${m.text}`).join("\n")
         : "(no matches)";
+    const skippedNote =
+      skippedLarge.length > 0
+        ? ` (skipped ${skippedLarge.length} file(s) over 5 MB: ${skippedLarge.slice(0, 3).join(", ")}${skippedLarge.length > 3 ? ", …" : ""})`
+        : "";
     return {
-      summary: `${matches.length} match(es) for /${input.pattern}/${truncated ? " (truncated, narrow the glob or pattern)" : ""}:\n${body}`,
+      summary: `${matches.length} match(es) for /${input.pattern}/${truncated ? " (truncated, narrow the glob or pattern)" : ""}${skippedNote}:\n${body}`,
     };
   },
 };

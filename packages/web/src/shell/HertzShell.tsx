@@ -259,7 +259,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
                 <ProviderCreateForm onCreated={(id, defaultModel) => { setProviderId(id); if (defaultModel) setModel(defaultModel); }} />
               </>
             ) : (
-              <select value={providerId} onChange={(e) => { setProviderId(e.target.value); const p = providers.find((x) => x.id === e.target.value); if (p?.defaultModel) setModel(p.defaultModel); }} className={inputCls}>
+              <select value={providerId} onChange={(e) => { setProviderId(e.target.value); const p = providers.find((x) => x.id === e.target.value); setModel(p?.defaultModel ?? ""); }} className={inputCls}>
                 {providers.map((p) => (
                   <option key={p.id} value={p.id}>{p.label} ({p.provider})</option>
                 ))}

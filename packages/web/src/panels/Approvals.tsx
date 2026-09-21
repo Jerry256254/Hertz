@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, FileWarning, Globe, HardDrive, ShieldCheck, X } from "lucide-react";
+import { Check, FileWarning, HardDrive, ShieldCheck, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { ApprovalItem, HostAccessOp, HostAccessPayload, HostAccessResult } from "../lib/types";
 import { relTime } from "../lib/format";
@@ -154,7 +154,7 @@ export function ApprovalHistoryRow({ approval }: { approval: ApprovalItem }) {
   return (
     <div className="flex items-start gap-3 rounded-[14px] px-2 py-2.5 hover:bg-bg-sunken/50">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-sunken text-fg-muted">
-        {approval.kind === "host_access" ? <HardDrive size={15} /> : approval.summary.toLowerCase().includes("web") || approval.summary.toLowerCase().includes("browser") ? <Globe size={15} /> : <FileWarning size={15} />}
+        {approval.kind === "host_access" ? <HardDrive size={15} /> : <FileWarning size={15} />}
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-[600] text-fg">{approval.summary}</p>

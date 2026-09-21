@@ -66,7 +66,10 @@ export function SettingsModal({ agent, projectId, initialSection = "general", on
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
           <div className="flex shrink-0 items-center justify-between px-5 pb-1 pt-4">
             <p className="text-[16px] font-[700] tracking-[-0.02em] text-fg">{NAV.find((n) => n.id === section)?.label}</p>
-            <button onClick={onClose} className="rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={17} /></button>
+            <div className="flex items-center gap-1">
+              <button onClick={() => void logout()} title="Odhlásit se" className="rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-danger sm:hidden"><LogOut size={17} /></button>
+              <button onClick={onClose} className="rounded-full p-2 text-fg-muted hover:bg-bg-sunken hover:text-fg"><X size={17} /></button>
+            </div>
           </div>
           <div className="flex gap-1 overflow-x-auto border-b border-border px-5 pb-2.5 sm:hidden">
             {NAV.map((n) => (
@@ -115,27 +118,41 @@ function GeneralSection({ agent }: { agent: Agent }) {
   const [heartbeat, setHeartbeat] = useState(String(agent.heartbeatMinutes));
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Per-field dirty tracking: a background refresh must never clobber a
+  // field the user is currently editing.
+  const [touched, setTouched] = useState({ name: false, providerId: false, model: false, heartbeat: false });
+  function touch(field: keyof typeof touched) {
+    setTouched((t) => (t[field] ? t : { ...t, [field]: true }));
+  }
+
+  useEffect(() => {
+    setTouched({ name: false, providerId: false, model: false, heartbeat: false });
+  }, [agent.id]);
 
   // The server can correct the stored model mid-run (stale id → scanned
-  // fallback); keep the form in sync so it never shows a dead value.
+  // fallback); keep the form in sync, but only for fields the user hasn't
+  // touched yet.
   useEffect(() => {
-    setName(agent.name);
-    setModel(agent.model);
-    setProviderId(agent.providerConfigId);
-    setHeartbeat(String(agent.heartbeatMinutes));
-  }, [agent.id, agent.name, agent.model, agent.providerConfigId, agent.heartbeatMinutes]);
+    if (!touched.name) setName(agent.name);
+    if (!touched.providerId) setProviderId(agent.providerConfigId);
+    if (!touched.model) setModel(agent.model);
+    if (!touched.heartbeat) setHeartbeat(String(agent.heartbeatMinutes));
+  }, [agent.id, agent.name, agent.model, agent.providerConfigId, agent.heartbeatMinutes, touched]);
 
   const save = useMutation({
-    mutationFn: () =>
-      api.patch(`/agents/${agent.id}`, {
+    mutationFn: () => {
+      if (!model.trim()) throw new Error("Nejdřív vyber model — bez něj chat neběží.");
+      return api.patch(`/agents/${agent.id}`, {
         name: name.trim() || agent.name,
-        model: model.trim() || agent.model,
+        model: model.trim(),
         providerConfigId: providerId,
         heartbeatMinutes: Math.max(0, Math.min(10080, Number.parseInt(heartbeat, 10) || 0)),
-      }),
+      });
+    },
     onSuccess: () => {
-      setMsg("Uloženo ✓");
+      setMsg("Uloženo");
       setErr(null);
+      setTouched({ name: false, providerId: false, model: false, heartbeat: false });
       setTimeout(() => setMsg(null), 2000);
       void queryClient.invalidateQueries({ queryKey: ["agent"] });
     },
@@ -152,15 +169,21 @@ function GeneralSection({ agent }: { agent: Agent }) {
         </div>
       </div>
       <Field label="Jméno agenta">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+        <input value={name} onChange={(e) => { touch("name"); setName(e.target.value); }} className={inputCls} />
       </Field>
       <Field label="Poskytovatel a model" hint="Kde se platí za modely. Nového poskytovatele přidáš v záložce Poskytovatelé.">
         <div className="rounded-[16px] border border-border bg-bg-raised p-3">
-          <ModelFields providerId={providerId} onProviderIdChange={setProviderId} model={model} onModelChange={setModel} idPrefix="settings" />
+          <ModelFields
+            providerId={providerId}
+            onProviderIdChange={(id) => { touch("providerId"); setProviderId(id); }}
+            model={model}
+            onModelChange={(m) => { touch("model"); setModel(m); }}
+            idPrefix="settings"
+          />
         </div>
       </Field>
       <Field label="Heartbeat (minut)" hint="Jak často se agent sám probudí a zkontroluje práci. 0 = vypnuto.">
-        <input value={heartbeat} onChange={(e) => setHeartbeat(e.target.value)} inputMode="numeric" className={inputCls} />
+        <input value={heartbeat} onChange={(e) => { touch("heartbeat"); setHeartbeat(e.target.value); }} inputMode="numeric" className={inputCls} />
       </Field>
       {err && <p className="mb-3 text-[13px] text-danger">{err}</p>}
       <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
@@ -300,6 +323,7 @@ function ProvidersSection({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const { data } = useQuery({
     queryKey: ["providers"],
@@ -309,16 +333,29 @@ function ProvidersSection({ agent }: { agent: Agent }) {
 
   const remove = useMutation({
     mutationFn: (id: string) => api.delete(`/providers/${id}`),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["providers"] }),
+    onSuccess: () => {
+      setErr(null);
+      void queryClient.invalidateQueries({ queryKey: ["providers"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Smazání selhalo"),
   });
   const useForAgent = useMutation({
     mutationFn: (p: ProviderConfig) =>
-      api.patch(`/agents/${agent.id}`, { providerConfigId: p.id, ...(p.defaultModel ? { model: p.defaultModel } : {}) }),
-    onSuccess: () => {
+      api.patch(`/agents/${agent.id}`, {
+        providerConfigId: p.id,
+        // A provider without a default model must NOT silently keep the old
+        // provider's model — clear it and make the user pick one.
+        model: p.defaultModel ?? "",
+      }),
+    onSuccess: (_d, p) => {
       void queryClient.invalidateQueries({ queryKey: ["agent"] });
       setErr(null);
+      setInfo(p.defaultModel ? null : "Poskytovatel přepnut. Vyber mu model v záložce Obecné — bez modelu chat neběží.");
     },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Přepnutí selhalo"),
+    onError: (e) => {
+      setInfo(null);
+      setErr(e instanceof ApiError ? e.message : "Přepnutí selhalo");
+    },
   });
 
   return (
@@ -327,6 +364,7 @@ function ProvidersSection({ agent }: { agent: Agent }) {
         Kde agent bere modely. Agent právě používá model <span className="mono text-fg">{agent.model}</span>.
       </p>
       {err && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{err}</p>}
+      {info && <p className="mb-3 rounded-[14px] border border-warning/25 bg-warning-wash px-4 py-2.5 text-[13px] text-fg">{info}</p>}
       {providers.map((p) => (
         <div key={p.id} className={`mb-2 flex items-center gap-3 rounded-[16px] border bg-bg-raised px-4 py-3 ${p.id === agent.providerConfigId ? "border-accent/50" : "border-border"}`}>
           <div className="min-w-0 flex-1">
@@ -337,8 +375,8 @@ function ProvidersSection({ agent }: { agent: Agent }) {
             <p className="mono truncate text-[12px] text-fg-muted">{p.provider} · {p.keyHint} · {p.keyCount} {p.keyCount === 1 ? "klíč" : p.keyCount < 5 ? "klíče" : "klíčů"}{p.defaultModel ? ` · ${p.defaultModel}` : ""}</p>
           </div>
           {p.id !== agent.providerConfigId && (
-            <button onClick={() => useForAgent.mutate(p)} title="Použít pro agenta" className="pressable shrink-0 rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg hover:bg-bg-hover">
-              Použít
+            <button onClick={() => useForAgent.mutate(p)} disabled={useForAgent.isPending} title="Použít pro agenta" className="pressable shrink-0 rounded-full border border-border bg-bg-sunken px-3.5 py-1.5 text-[12px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40">
+              {useForAgent.isPending ? "Přepínám…" : "Použít"}
             </button>
           )}
           <button onClick={() => { if (window.confirm(`Smazat poskytovatele „${p.label}"?`)) remove.mutate(p.id); }} title="Smazat" className="rounded-full p-2 text-fg-subtle hover:bg-bg-sunken hover:text-danger"><Trash2 size={14} /></button>

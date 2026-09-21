@@ -38,6 +38,11 @@ export class SandboxRegistry {
     return bundle;
   }
 
+  /** Releases a session's bundle after its run finished — the map would otherwise grow for the process lifetime. */
+  unregister(sessionId: string): void {
+    this.bundles.delete(sessionId);
+  }
+
   /** For one-off, user-initiated path resolution (file explorer) outside any agent session. */
   buildPathGuard(roots: ProjectRoots): PathGuard {
     return new PathGuard(roots, this.audit);

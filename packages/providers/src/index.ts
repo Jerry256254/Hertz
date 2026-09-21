@@ -1,6 +1,8 @@
 export * from "./types.js";
 export * from "./factory.js";
 export * from "./presets.js";
+export { withTimeout } from "./signal.js";
+export { StreamStallError } from "./sse.js";
 export { describeScanError } from "./scan-errors.js";
 export { knownModelsForEndpoint, mergeModelLists } from "./known-models.js";
 export { createAnthropicAdapter } from "./anthropic.js";

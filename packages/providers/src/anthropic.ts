@@ -1,4 +1,5 @@
-import { parseSSEStream } from "./sse.js";
+import { parseSSEStream, StreamStallError } from "./sse.js";
+import { withTimeout } from "./signal.js";
 import type {
   ChatRequest,
   ChatResponse,
@@ -16,6 +17,11 @@ import pricingTable from "./pricing/anthropic.json" with { type: "json" };
 
 const API_BASE = "https://api.anthropic.com/v1";
 const API_VERSION = "2023-06-01";
+
+const CHAT_TIMEOUT_MS = 30_000;
+const SCAN_TIMEOUT_MS = 15_000;
+const COUNT_TIMEOUT_MS = 15_000;
+const STREAM_INACTIVITY_MS = 90_000;
 
 function toAnthropicContent(blocks: ContentBlock[], cacheEligible: boolean) {
   return blocks.map((block, i) => {
@@ -90,15 +96,23 @@ export function createAnthropicAdapter(creds: ProviderCredentials): ProviderAdap
     let afterId: string | undefined;
     for (let page = 0; page < 10; page++) {
       const url = `${API_BASE}/models?limit=1000${afterId ? `&after_id=${encodeURIComponent(afterId)}` : ""}`;
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { headers, signal: withTimeout(undefined, SCAN_TIMEOUT_MS) });
       if (!res.ok) {
         throw new ProviderError("anthropic", `listModels failed: ${await res.text()}`, res.status);
       }
       const body = (await res.json()) as {
-        data: Array<{ id: string; display_name?: string }>;
+        data?: Array<{ id: string; display_name?: string }>;
         has_more?: boolean;
         last_id?: string;
+        error?: { message?: string };
       };
+      if (!Array.isArray(body.data)) {
+        throw new ProviderError(
+          "anthropic",
+          `listModels failed: ${body.error?.message ?? "unexpected response shape"}`,
+          res.status,
+        );
+      }
       for (const m of body.data) {
         out.push({ id: m.id, displayName: m.display_name ?? m.id, supportsTools: true, supportsVision: true });
       }
@@ -113,17 +127,23 @@ export function createAnthropicAdapter(creds: ProviderCredentials): ProviderAdap
       method: "POST",
       headers,
       body: JSON.stringify(buildBody(req)),
-      signal: req.signal,
+      signal: withTimeout(req.signal, CHAT_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new ProviderError("anthropic", `chat failed: ${await res.text()}`, res.status);
     }
     const body = (await res.json()) as any;
-    const content: ContentBlock[] = body.content.map((b: any) =>
-      b.type === "text"
-        ? { type: "text", text: b.text }
-        : { type: "tool_use", id: b.id, name: b.name, input: b.input },
-    );
+    const blocks: any[] = Array.isArray(body.content) ? body.content : [];
+    const content: ContentBlock[] = [];
+    for (const b of blocks) {
+      if (b.type === "text") {
+        content.push({ type: "text", text: b.text ?? "" });
+      } else if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
+        content.push({ type: "tool_use", id: b.id, name: b.name, input: b.input });
+      }
+      // thinking / redacted_thinking / server_tool_use / web_search_tool_result
+      // blocks carry no executable tool call — never synthesize tool_use from them.
+    }
     return {
       content,
       stopReason: fromAnthropicStopReason(body.stop_reason),
@@ -147,43 +167,53 @@ export function createAnthropicAdapter(creds: ProviderCredentials): ProviderAdap
     let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 };
     let stopReason: StopReason = "end_turn";
 
-    for await (const frame of parseSSEStream(res.body)) {
-      if (!frame.data) continue;
-      const evt = JSON.parse(frame.data);
-      switch (evt.type) {
-        case "message_start":
-          usage = extractUsage(evt.message.usage);
-          break;
-        case "content_block_start":
-          if (evt.content_block.type === "tool_use") {
-            openToolUses.set(evt.index, evt.content_block.id);
-            yield { type: "tool_use_start", id: evt.content_block.id, name: evt.content_block.name };
-          }
-          break;
-        case "content_block_delta":
-          if (evt.delta.type === "text_delta") {
-            yield { type: "text_delta", text: evt.delta.text };
-          } else if (evt.delta.type === "input_json_delta") {
-            const id = openToolUses.get(evt.index);
-            if (id) yield { type: "tool_use_delta", id, inputDelta: evt.delta.partial_json };
-          }
-          break;
-        case "content_block_stop": {
-          const id = openToolUses.get(evt.index);
-          if (id) yield { type: "tool_use_end", id };
-          break;
+    try {
+      for await (const frame of parseSSEStream(res.body, { inactivityMs: STREAM_INACTIVITY_MS })) {
+        if (!frame.data) continue;
+        let evt: any;
+        try {
+          evt = JSON.parse(frame.data);
+        } catch {
+          continue; // malformed frame — skip it, don't kill the run
         }
-        case "message_delta":
-          if (evt.delta?.stop_reason) stopReason = fromAnthropicStopReason(evt.delta.stop_reason);
-          if (evt.usage) usage = { ...usage, ...extractUsage(evt.usage) };
-          break;
-        case "message_stop":
-          yield { type: "message_end", stopReason, usage };
-          break;
-        case "error":
-          yield { type: "error", message: evt.error?.message ?? "unknown stream error" };
-          break;
+        switch (evt.type) {
+          case "message_start":
+            usage = extractUsage(evt.message.usage);
+            break;
+          case "content_block_start":
+            if (evt.content_block.type === "tool_use") {
+              openToolUses.set(evt.index, evt.content_block.id);
+              yield { type: "tool_use_start", id: evt.content_block.id, name: evt.content_block.name };
+            }
+            break;
+          case "content_block_delta":
+            if (evt.delta.type === "text_delta") {
+              yield { type: "text_delta", text: evt.delta.text };
+            } else if (evt.delta.type === "input_json_delta") {
+              const id = openToolUses.get(evt.index);
+              if (id) yield { type: "tool_use_delta", id, inputDelta: evt.delta.partial_json };
+            }
+            break;
+          case "content_block_stop": {
+            const id = openToolUses.get(evt.index);
+            if (id) yield { type: "tool_use_end", id };
+            break;
+          }
+          case "message_delta":
+            if (evt.delta?.stop_reason) stopReason = fromAnthropicStopReason(evt.delta.stop_reason);
+            if (evt.usage) usage = { ...usage, ...extractUsage(evt.usage) };
+            break;
+          case "message_stop":
+            yield { type: "message_end", stopReason, usage };
+            break;
+          case "error":
+            yield { type: "error", message: evt.error?.message ?? "unknown stream error" };
+            break;
+        }
       }
+    } catch (err) {
+      if (err instanceof StreamStallError) throw new ProviderError("anthropic", err.message, 408);
+      throw err;
     }
   }
 
@@ -192,6 +222,7 @@ export function createAnthropicAdapter(creds: ProviderCredentials): ProviderAdap
       method: "POST",
       headers,
       body: JSON.stringify(buildBody(req)),
+      signal: withTimeout(req.signal, COUNT_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new ProviderError("anthropic", `countTokens failed: ${await res.text()}`, res.status);

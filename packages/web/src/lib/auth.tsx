@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, onUnauthorized } from "./api";
 import type { User } from "./types";
 
 interface AuthState {
@@ -17,6 +17,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | undefined>(undefined);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Expired session mid-work: drop auth state and reload into the login
+    // screen instead of leaving the app in a silent-error limbo.
+    onUnauthorized(() => {
+      setUser(undefined);
+      try {
+        window.location.reload();
+      } catch {
+        /* ignore */
+      }
+    });
+  }, []);
 
   useEffect(() => {
     async function init() {

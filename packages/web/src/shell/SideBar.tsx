@@ -50,10 +50,13 @@ export function SideBar({
   const createChat = useMutation({
     mutationFn: () => api.post<{ id: string }>(`/agents/${agent.id}/sessions`, { projectId }),
     onSuccess: (res) => {
+      setCreateChatError(null);
       void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
       onSelectChat(res.id);
     },
+    onError: () => setCreateChatError("Chat se nepodařilo založit."),
   });
+  const [createChatError, setCreateChatError] = useState<string | null>(null);
   const deleteChat = useMutation({
     mutationFn: (id: string) => api.delete(`/sessions/${id}`),
     onSuccess: (_d, id) => {
@@ -136,6 +139,7 @@ export function SideBar({
           </button>
         </div>
         {sideChats.length === 0 && <p className="px-3 py-1.5 text-[12.5px] text-fg-subtle">Zatím žádné. Založ první tlačítkem +.</p>}
+        {createChatError && <p className="px-3 py-1 text-[12px] text-danger">{createChatError}</p>}
         {sideChats.map((s) => (
           <div key={s.id} className={`group flex w-full items-center gap-2 rounded-[14px] px-3 py-2 ${activeSessionId === s.id ? "bg-bg-sunken" : "hover:bg-bg-sunken/50"}`}>
             <button onClick={() => onSelectChat(s.id)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">

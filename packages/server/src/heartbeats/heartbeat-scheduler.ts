@@ -1,8 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
-import { agents, sessions } from "../db/schema.js";
+import { agents, jobs, sessions } from "../db/schema.js";
 import type { JobQueue } from "../queue/job-queue.js";
+import type { AgentLoopManager } from "@kuclab-hertz/core";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 
 export const HEARTBEAT_SESSION_TITLE = "Heartbeat";
@@ -10,6 +11,7 @@ export const HEARTBEAT_SESSION_TITLE = "Heartbeat";
 export interface HeartbeatSchedulerDeps {
   db: Database;
   queue: JobQueue;
+  agentLoop: AgentLoopManager;
 }
 
 function heartbeatBrief(agent: typeof agents.$inferSelect): string {
@@ -87,6 +89,31 @@ export class HeartbeatScheduler {
         createdAt: now,
         updatedAt: now,
       });
+    }
+
+    // Don't pile up duplicate runs: if the heartbeat thread is still working,
+    // skip this tick — lastHeartbeatAt still advances below so a stuck run
+    // doesn't cause an enqueue storm. Check the in-memory loop AND the job
+    // table: a job may already be queued (not yet picked up by the loop) while
+    // isRunning() is still false.
+    if (this.deps.agentLoop.isRunning(sessionId)) {
+      await db.update(agents).set({ lastHeartbeatAt: now }).where(eq(agents.id, agent.id));
+      return;
+    }
+    const pendingJobs = await db
+      .select({ payload: jobs.payload })
+      .from(jobs)
+      .where(and(eq(jobs.type, "agent_run"), inArray(jobs.status, ["queued", "running"])))
+      .limit(50);
+    for (const job of pendingJobs) {
+      try {
+        if ((JSON.parse(job.payload) as { sessionId?: string }).sessionId === sessionId) {
+          await db.update(agents).set({ lastHeartbeatAt: now }).where(eq(agents.id, agent.id));
+          return;
+        }
+      } catch {
+        /* malformed payload — ignore */
+      }
     }
 
     await enqueueAgentRun(

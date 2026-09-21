@@ -30,6 +30,10 @@ export const editFileTool: ToolDef<Input> = {
   inputSchema,
   async execute(input, ctx: ToolContext): Promise<ToolResult> {
     const abs = ctx.pathGuard.resolve(ctx.actor, input.root ?? ctx.rootId, input.path);
+    try {
+      const st = await fs.stat(abs);
+      if (st.size > 5_000_000) return { summary: `File too large (${st.size} bytes) — max 5 MB — read a line range instead`, isError: true };
+    } catch {}
     const raw = await fs.readFile(abs, "utf8");
     const occurrences = countOccurrences(raw, input.oldString);
 

@@ -88,6 +88,13 @@ if (enabledApis.has("gmail")) {
       inputSchema: { to: z.string(), subject: z.string(), body: z.string(), cc: z.string().optional() },
     },
     async ({ to, subject, body, cc }) => {
+      // Header values are interpolated raw into the RFC822 message — reject
+      // CR/LF so a model (or injected input) can't smuggle extra headers in.
+      for (const [field, value] of [["to", to], ["cc", cc], ["subject", subject]] as const) {
+        if (value && /[\r\n]/.test(value)) {
+          throw new Error(`gmail_send_message: "${field}" must not contain CR/LF characters`);
+        }
+      }
       const lines = [`To: ${to}`, cc ? `Cc: ${cc}` : undefined, `Subject: ${subject}`, "Content-Type: text/plain; charset=utf-8", "", body].filter(
         (l): l is string => l !== undefined,
       );

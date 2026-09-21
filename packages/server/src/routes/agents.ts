@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agents, channelBindings, messages, projectRoots, sessions } from "../db/schema.js";
+import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agents, approvals, channelBindings, employeeShellGrants, employeeShells, mcpServers, messages, mounts, projectRoots, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { hasProjectAccess } from "../auth/project-access.js";
@@ -100,8 +100,11 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       }
       if (parsed.data.providerConfigId) {
         const { providerConfigs } = await import("../db/schema.js");
-        const pc = await ctx.db.select({ id: providerConfigs.id }).from(providerConfigs).where(eq(providerConfigs.id, parsed.data.providerConfigId)).limit(1);
+        const pc = await ctx.db.select({ id: providerConfigs.id, userId: providerConfigs.userId }).from(providerConfigs).where(eq(providerConfigs.id, parsed.data.providerConfigId)).limit(1);
         if (!pc[0]) return reply.code(400).send({ error: "Provider config not found" });
+        // A project member must not burn someone else's API key/quota.
+        if (pc[0].userId !== request.user!.id && request.user!.role !== "admin")
+          return reply.code(403).send({ error: "This provider belongs to another user" });
       }
 
       await ctx.db.update(agents).set(parsed.data).where(eq(agents.id, id));
@@ -179,6 +182,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
       const agent = agentRows[0];
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      // The chat belongs to the agent's own project — a member of another
+      // project must not open a cross-project chat with this agent.
+      if (projectId !== agent.projectId) return reply.code(400).send({ error: "Project does not match the agent" });
       if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
 
       const flagged = await ctx.db
@@ -226,6 +232,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const parsed = ensureChatSchema.safeParse(request.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
       const projectId = parsed.data.projectId;
+      const agentCheck = await ctx.db.select({ projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
+      if (!agentCheck[0]) return reply.code(404).send({ error: "Agent not found" });
+      if (projectId !== agentCheck[0].projectId) return reply.code(400).send({ error: "Project does not match the agent" });
       if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access" });
 
       const boundRows = await ctx.db.select({ sessionId: channelBindings.sessionId }).from(channelBindings);
@@ -249,7 +258,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const { id } = request.params as { id: string };
       const rows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!rows[0]) return reply.code(404).send({ error: "Agent not found" });
-      if (!(await hasProjectAccess(ctx.db, request.user!, (rows[0] as any).projectId))) return reply.code(403).send({ error: "No access" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, rows[0].projectId))) return reply.code(403).send({ error: "No access" });
       // First access seeds the defaults (missing-only — agent/user edits win).
       await ensureDefaultSkills(ctx.paths, rows[0].projectId, id).catch(() => {});
       return { skills: await skillsIndexFor(ctx.paths, rows[0].projectId, id) };
@@ -344,16 +353,43 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       const { id } = request.params as { id: string };
       const rows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!rows[0]) return reply.code(404).send({ error: "Agent not found" });
-      if (!(await hasProjectAccess(ctx.db, request.user!, (rows[0] as any).projectId))) return reply.code(403).send({ error: "No access" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, rows[0].projectId))) return reply.code(403).send({ error: "No access" });
 
       const sessionRows = await ctx.db.select({ id: sessions.id }).from(sessions).where(eq(sessions.agentId, id));
       if (sessionRows.some((s) => ctx.agentLoop.isRunning(s.id))) {
         return reply.code(409).send({ error: "Can't delete the agent while one of its chats is running" });
       }
 
-      // Deletes its sessions/messages and memory rows via ON DELETE CASCADE.
+      // FK cascades are declared in the schema but not enforced
+      // (PRAGMA foreign_keys is off) — clean up dependents manually so no
+      // orphan rows or stray containers/desktops are left behind.
+      const sessionIds = sessionRows.map((s) => s.id);
+      if (sessionIds.length > 0) {
+        for (const table of [messages, approvals, channelBindings]) {
+          await ctx.db.delete(table).where(inArray(table.sessionId, sessionIds));
+        }
+        await ctx.db.delete(sessions).where(inArray(sessions.id, sessionIds));
+      }
+      await ctx.db.delete(approvals).where(eq(approvals.agentId, id));
+      await ctx.db.delete(agentMemory).where(eq(agentMemory.agentId, id));
+      await ctx.db.delete(agentMemoryAtoms).where(eq(agentMemoryAtoms.agentId, id));
+      await ctx.db.delete(agentMemoryScenarios).where(eq(agentMemoryScenarios.agentId, id));
+      await ctx.db.delete(mounts).where(eq(mounts.agentId, id));
+      await ctx.db.delete(mcpServers).where(eq(mcpServers.agentId, id));
+      const shellRows = await ctx.db.select({ id: employeeShells.id }).from(employeeShells).where(eq(employeeShells.ownerAgentId, id));
+      const shellIds = shellRows.map((s) => s.id);
+      if (shellIds.length > 0) {
+        await ctx.db.delete(employeeShellGrants).where(inArray(employeeShellGrants.shellId, shellIds));
+        await ctx.db.delete(employeeShells).where(inArray(employeeShells.id, shellIds));
+      }
+      await ctx.db.delete(employeeShellGrants).where(eq(employeeShellGrants.agentId, id));
       await ctx.db.delete(agents).where(eq(agents.id, id));
+
       removeAgentVectors(ctx.paths, id);
+      // Stop the agent's computer resources — orphan containers/desktops
+      // would otherwise keep running with no owner.
+      await ctx.desktop.stop(id).catch(() => {});
+      await ctx.computer.destroyContainer(id).catch(() => {});
       return reply.code(204).send();
     });
   });

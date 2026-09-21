@@ -122,9 +122,11 @@ async function prepareComputer(deps: RunJobsDeps, agent: typeof agents.$inferSel
   }
 }
 
-export function normalizeSessionMode(_mode: string): "autonomous" {
-  // Hertz is autonomous-first: every run works until the goal is done and may
-  // ask the user only through explicit gates (ask_user / request_approval).
+export function normalizeSessionMode(mode: string | null | undefined): "plan" | "auto" | "autonomous" {
+  // Respect the session's own mode (plan/auto/autonomous) — the answer-flow
+  // resume must run in the same mode the session started in. Unknown values
+  // fall back to autonomous-first.
+  if (mode === "plan" || mode === "auto" || mode === "autonomous") return mode;
   return "autonomous";
 }
 
@@ -215,32 +217,41 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
       }
     }
 
-    await deps.agentLoop.runToCompletion(
-      {
-        sessionId: session.id,
-        agentId: agent.id,
-        projectId: session.projectId,
-        userId: payload.userId ?? (await deps.fallbackUserId()),
-        rootId: mainRoot.rootId,
-        model,
-        providerConfigId: agent.providerConfigId,
-        systemPrompt: await buildSystemPrompt(deps.db, agent, {
-          mode,
-          paths: deps.paths,
-          projectId: agent.projectId,
+    try {
+      await deps.agentLoop.runToCompletion(
+        {
           sessionId: session.id,
-          mounts: mountRows,
-          conversationContext: await extractLastUserText(deps, session.id),
-          visionSupport: await modelSupportsVision(deps, agent.providerConfigId, model),
-        }),
-        mode,
-        excludeTools: excludeTools.length > 0 ? excludeTools : undefined,
-        prePersisted: prePersisted || !payload.userMessage,
-        suppressAutoMemory: payload.suppressAutoMemory,
-        supportsVision: await modelSupportsVision(deps, agent.providerConfigId, model),
-      },
-      payload.userMessage ?? [],
-    );
+          agentId: agent.id,
+          projectId: session.projectId,
+          userId: payload.userId ?? (await deps.fallbackUserId()),
+          rootId: mainRoot.rootId,
+          model,
+          providerConfigId: agent.providerConfigId,
+          systemPrompt: await buildSystemPrompt(deps.db, agent, {
+            mode,
+            paths: deps.paths,
+            projectId: agent.projectId,
+            sessionId: session.id,
+            mounts: mountRows,
+            conversationContext: await extractLastUserText(deps, session.id),
+            visionSupport: await modelSupportsVision(deps, agent.providerConfigId, model),
+          }),
+          mode,
+          excludeTools: excludeTools.length > 0 ? excludeTools : undefined,
+          prePersisted: prePersisted || !payload.userMessage,
+          suppressAutoMemory: payload.suppressAutoMemory,
+          supportsVision: await modelSupportsVision(deps, agent.providerConfigId, model),
+        },
+        payload.userMessage ?? [],
+      );
+    } finally {
+      // Release the session's sandbox bundle — never while a run is still in
+      // flight (a duplicate job registers its own bundle, fails fast on
+      // "already running", and must not pull the rug from the live run).
+      if (!deps.agentLoop.isRunning(session.id)) {
+        deps.sandboxRegistry.unregister(session.id);
+      }
+    }
 
     // Layered memory: distill this run's turns into atoms (L1), re-cluster
     // scenarios (L2), and refresh the persona (L3) — each on its own cadence.

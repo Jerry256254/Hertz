@@ -5,6 +5,7 @@ import type { AppContext } from "../context.js";
 import { agents, approvals, projectMembers, projects, sessions, users } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
 import { decideApproval } from "../tools/approval-tools.js";
+import { hasProjectAccess } from "../auth/project-access.js";
 import {
   executeHostAccessOp,
   formatHostAccessExecutedInbound,
@@ -63,6 +64,16 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: AppContext): v
       const { id } = request.params as { id: string };
       const parsed = decisionSchema.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+
+      // Authorization: only someone with access to the approval's project may decide it.
+      const pending = await ctx.db
+        .select({ projectId: approvals.projectId, status: approvals.status })
+        .from(approvals)
+        .where(eq(approvals.id, id))
+        .limit(1);
+      if (!pending[0] || pending[0].status !== "pending") return reply.code(404).send({ error: "Pending approval not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, pending[0].projectId)))
+        return reply.code(403).send({ error: "No access to this project" });
 
       const result = await decideApproval(ctx.db, id, parsed.data.decision, request.user!.id);
       if (!result) return reply.code(404).send({ error: "Pending approval not found" });
@@ -142,10 +153,10 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: AppContext): v
         .set({ status: "active", metadata: JSON.stringify(meta), updatedAt: new Date() })
         .where(eq(sessions.id, result.sessionId));
 
-      try {
+      // Resume the run only if the session isn't already being worked on —
+      // inbound above is persisted, so a running loop picks it up mid-run.
+      if (!ctx.agentLoop.isRunning(result.sessionId)) {
         await enqueueAgentRun(ctx, { sessionId: result.sessionId, prePersisted: true }, { maxAttempts: 2 });
-      } catch {
-        // Session already running — appendInbound above will be picked up mid-run.
       }
 
       return { ok: true };

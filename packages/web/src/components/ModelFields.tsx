@@ -21,7 +21,7 @@ export function ModelFields({
   onModelChange: (model: string) => void;
   idPrefix?: string;
 }) {
-  const { data: providersData } = useQuery({
+  const { data: providersData, isLoading: providersLoading } = useQuery({
     queryKey: ["providers"],
     queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
   });
@@ -30,18 +30,38 @@ export function ModelFields({
   function pickProvider(id: string) {
     onProviderIdChange(id);
     const p = providers.find((x) => x.id === id);
-    if (p?.defaultModel) onModelChange(p.defaultModel);
+    // A provider without a default model must NOT silently keep the previous
+    // provider's model (the run would fail) — clear it and force a pick.
+    onModelChange(p?.defaultModel ?? "");
   }
+
+  if (providersLoading) {
+    return <p className="py-2 text-[12.5px] text-fg-muted">Načítám poskytovatele…</p>;
+  }
+  if (providers.length === 0) {
+    return (
+      <p className="py-2 text-[12.5px] leading-relaxed text-fg-muted">
+        Zatím žádný poskytovatel. Přidej ho v Nastavení → Poskytovatelé.
+      </p>
+    );
+  }
+
+  const known = providers.some((p) => p.id === providerId);
 
   return (
     <div>
       <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">POSKYTOVATEL</p>
       <select
         id={`${idPrefix}-provider`}
-        value={providerId}
+        value={known ? providerId : ""}
         onChange={(e) => pickProvider(e.target.value)}
         className="h-10 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[13px] text-fg outline-none focus:border-accent"
       >
+        {!known && (
+          <option value="" disabled>
+            {providerId ? "Poskytovatel už neexistuje — vyber jiného" : "Vyber poskytovatele"}
+          </option>
+        )}
         {providers.map((p) => (
           <option key={p.id} value={p.id}>
             {p.label} ({p.provider})
@@ -49,7 +69,12 @@ export function ModelFields({
         ))}
       </select>
       <p className="mb-1.5 mt-3 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">MODEL</p>
-      <ModelPicker providerConfigId={providerId} value={model} onChange={onModelChange} />
+      <ModelPicker providerConfigId={known ? providerId : ""} value={model} onChange={onModelChange} />
+      {!model.trim() && (
+        <p className="mt-2 rounded-[12px] border border-warning/30 bg-warning-wash px-3 py-2 text-[12px] leading-snug text-fg">
+          Bez modelu chat neběží — vyber ho ze seznamu, nebo napiš ID ručně.
+        </p>
+      )}
       <input
         id={`${idPrefix}-manual`}
         value={model}

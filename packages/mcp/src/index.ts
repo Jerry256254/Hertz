@@ -30,6 +30,8 @@ export interface McpConnection {
  * the server's tool-port merges alongside the built-in fs/shell/web toolset —
  * it doesn't know about agents, DB rows, or encryption; that's the caller's job.
  */
+const CONNECT_TIMEOUT_MS = 15_000;
+
 export async function connectMcpServer(displayName: string, config: McpTransportConfig): Promise<McpConnection> {
   const client = new Client({ name: `kuclab-hertz-${displayName}`, version: "0.1.0" }, { capabilities: {} });
 
@@ -40,7 +42,25 @@ export async function connectMcpServer(displayName: string, config: McpTransport
           requestInit: config.headers ? { headers: config.headers } : undefined,
         });
 
-  await client.connect(transport);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      client.connect(transport),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Timed out connecting to MCP server "${displayName}" after ${CONNECT_TIMEOUT_MS / 1000} s`)),
+          CONNECT_TIMEOUT_MS,
+        );
+        timer.unref?.();
+      }),
+    ]);
+  } catch (err) {
+    // A half-open connection must not linger behind the failed attempt.
+    await client.close().catch(() => {});
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 
   return {
     async listTools() {

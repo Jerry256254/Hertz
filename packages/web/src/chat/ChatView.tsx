@@ -121,6 +121,8 @@ export function ChatView({
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [runError, setRunError] = useState<string | undefined>(undefined);
+  const [fileWarning, setFileWarning] = useState<string | undefined>(undefined);
+  const [takeoverError, setTakeoverError] = useState<string | undefined>(undefined);
   const [answerText, setAnswerText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -141,7 +143,7 @@ export function ChatView({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => api.get<SessionDetail>(`/sessions/${sessionId}`),
   });
@@ -182,15 +184,22 @@ export function ChatView({
         }
       } else if (event.type === "awaiting_input") {
         setStreamingText("");
+        // Waiting on the user is not "working" — hide the spinner + green dot.
+        setIsRunning(false);
+        setIsPaused(false);
         void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
       } else if (event.type === "error") setRunError(event.message);
       else if (event.type === "done") {
         setIsRunning(false);
         setIsPaused(false);
+        setStreamingText("");
         void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
         void queryClient.invalidateQueries({ queryKey: ["agent"] });
       }
+    }, () => {
+      // Server rejected the stream permanently (401/403/404) — don't spin forever.
+      setRunError("Živé spojení bylo serverem odmítnuto. Obnov stránku.");
     });
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,7 +234,8 @@ export function ChatView({
 
   async function send() {
     if (readOnly) return;
-    if (!text && images.length === 0 && docFiles.length === 0) return;
+    if (!text.trim() && images.length === 0 && docFiles.length === 0) return;
+    setRunError(undefined);
     const command = text.trim().toLowerCase();
     if (command === "/compact" || command === "/clear" || command === "/export") {
       setText("");
@@ -268,9 +278,19 @@ export function ChatView({
     onError: (err) => setRunError(err instanceof ApiError ? err.message : "Nešlo změnit stav"),
   });
 
+  const stopRun = useMutation({
+    mutationFn: () => api.post(`/sessions/${sessionId}/stop`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }),
+    onError: (err) => setRunError(err instanceof ApiError ? err.message : "Zastavení selhalo"),
+  });
+
   const doneTakeover = useMutation({
     mutationFn: () => api.post(`/agents/${agent.id}/takeover/done`),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["session", sessionId] }),
+    onSuccess: () => {
+      setTakeoverError(undefined);
+      void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+    },
+    onError: (err) => setTakeoverError(err instanceof ApiError ? err.message : "Předání se nezdařilo"),
   });
 
   const answerQuestion = useMutation({
@@ -286,6 +306,7 @@ export function ChatView({
   function submitAnswer(e: FormEvent) {
     e.preventDefault();
     if (!answerText.trim()) return;
+    setRunError(undefined);
     answerQuestion.mutate(answerText);
   }
   function onSubmit(e: FormEvent) {
@@ -315,7 +336,10 @@ export function ChatView({
       setDocFiles((prev) => [...prev, ...nextDocs]);
     }
     const skipped = list.length - nextImages.length - textish.slice(0, 5).length;
-    if (skipped > 0) setRunError("Některé soubory jsem přeskočil — umím obrázky a textové dokumenty (txt, md, csv, json).");
+    if (skipped > 0) {
+      const word = skipped === 1 ? "soubor" : skipped < 5 ? "soubory" : "souborů";
+      setFileWarning(`Přeskočil jsem ${skipped} ${word} — umím obrázky a textové dokumenty (txt, md, csv, json).`);
+    }
   }
 
   const toolResultsById = useMemo(() => {
@@ -388,6 +412,23 @@ export function ChatView({
             Načítám konverzaci…
           </div>
         )}
+        {isError && !data && (
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-[13.5px] text-fg-muted">Konverzaci se nepodařilo načíst.</p>
+            <button onClick={() => refetch()} className="pressable rounded-full bg-accent px-4 py-2 text-[13px] font-[600] text-white">
+              Zkusit znovu
+            </button>
+          </div>
+        )}
+        {!isLoading && !isError && !streamingText && renderBlocks.length === 0 && (
+          <div className="mx-auto w-full max-w-[760px] px-4 py-10 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center"><AgentAvatar seed={agent.id} size={52} /></div>
+            <p className="text-[15px] font-[700] text-fg">Nová konverzace</p>
+            <p className="mx-auto mt-1 max-w-[420px] text-[13px] leading-relaxed text-fg-muted">
+              Napiš, s čím ti {agent.name} má pomoct — úkoly, otázky, soubory i počítač. Zůstane to jen mezi vámi.
+            </p>
+          </div>
+        )}
         {renderBlocks.map((block) =>
           block.grouped ? (
             <GroupedSteps
@@ -398,10 +439,11 @@ export function ChatView({
               sessionTitle={data?.session.title ?? ""}
               onOpenPreview={onOpenPreview}
               showBrowserCard={block.key === lastBrowserBlockKey}
+              settled={!isRunning && !isPaused}
             />
           ) : (
             <div key={block.key}>
-              <MessageView message={block.messages[0]!} toolResultsById={toolResultsById} agentId={agent.id} />
+              <MessageView message={block.messages[0]!} toolResultsById={toolResultsById} agentId={agent.id} stepsSettled={!isRunning && !isPaused} />
               {block.messages[0]!.role === "assistant" && hasBrowserTools(block.messages[0]!) && block.key === lastBrowserBlockKey && (
                 <BrowserCard title={truncate(firstText(block.messages[0]!.content) || data?.session.title || "", 48)} onOpen={onOpenPreview} />
               )}
@@ -419,26 +461,26 @@ export function ChatView({
             </div>
           </div>
         )}
-        {isRunning && !streamingText && (
+        {(isRunning || isPaused) && !streamingText && (
           <div className="mx-auto flex w-full max-w-[760px] items-center gap-2 px-4 py-1.5">
-            <AgentAvatar seed={agent.id} mood="working" size={24} />
+            <AgentAvatar seed={agent.id} mood={isPaused ? "idle" : "working"} size={24} />
             <span className="flex items-center gap-1.5 text-[12px] text-fg-muted">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-live" />
+              <span className={`h-1.5 w-1.5 rounded-full ${isPaused ? "bg-warning" : "bg-live animate-pulse"}`} />
               {isPaused ? "pozastaveno" : "pracuje…"}
             </span>
             {!readOnly && (
               <span className="flex items-center gap-1">
                 {isPaused ? (
-                  <button onClick={() => pauseResume.mutate("resume")} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg">
-                    <Play size={11} /> Pokračovat
+                  <button onClick={() => pauseResume.mutate("resume")} disabled={pauseResume.isPending} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
+                    <Play size={11} /> {pauseResume.isPending ? "Pokračuji…" : "Pokračovat"}
                   </button>
                 ) : (
-                  <button onClick={() => pauseResume.mutate("pause")} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg">
+                  <button onClick={() => pauseResume.mutate("pause")} disabled={pauseResume.isPending} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-fg disabled:opacity-40">
                     <Pause size={11} /> Pozastavit
                   </button>
                 )}
-                <button onClick={() => void api.post(`/sessions/${sessionId}/stop`).catch(() => {})} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-danger">
-                  <Square size={10} /> Zastavit
+                <button onClick={() => stopRun.mutate()} disabled={stopRun.isPending} className="pressable flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-[11.5px] font-[600] text-fg-muted hover:text-danger disabled:opacity-40">
+                  <Square size={10} /> {stopRun.isPending ? "Zastavuji…" : "Zastavit"}
                 </button>
               </span>
             )}
@@ -453,6 +495,14 @@ export function ChatView({
             </div>
           </div>
         )}
+        {fileWarning && (
+          <div className="mx-auto flex w-full max-w-[760px] items-start gap-2.5 px-4 py-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[16px] border border-warning/25 bg-warning-wash px-4 py-2.5 text-[13px] text-fg">
+              <p className="min-w-0 flex-1">{fileWarning}</p>
+              <button onClick={() => setFileWarning(undefined)} className="shrink-0 font-[600] text-fg-muted hover:text-fg">Zavřít</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* run controls + pending states */}
@@ -464,8 +514,11 @@ export function ChatView({
               <p className="mt-0.5 text-[12.5px] text-fg-muted">{data.pendingTakeover.reason}</p>
               <div className="mt-2.5 flex items-center gap-2">
                 <button onClick={onOpenPreview} className="pressable rounded-full bg-accent px-4 py-1.5 text-[12.5px] font-[600] text-white">Převzít</button>
-                <button onClick={() => doneTakeover.mutate()} className="pressable rounded-full border border-border bg-bg-raised px-4 py-1.5 text-[12.5px] font-[600] text-fg">Mám hotovo</button>
+                <button onClick={() => doneTakeover.mutate()} disabled={doneTakeover.isPending} className="pressable rounded-full border border-border bg-bg-raised px-4 py-1.5 text-[12.5px] font-[600] text-fg disabled:opacity-40">
+                  {doneTakeover.isPending ? "Předávám…" : "Mám hotovo"}
+                </button>
               </div>
+              {takeoverError && <p className="mt-2 text-[12.5px] text-danger">{takeoverError}</p>}
             </div>
           )}
 
@@ -567,6 +620,7 @@ export function GroupedSteps({
   sessionTitle,
   onOpenPreview,
   showBrowserCard,
+  settled = false,
 }: {
   messages: PersistedMessage[];
   agentId: string;
@@ -574,6 +628,8 @@ export function GroupedSteps({
   sessionTitle: string;
   onOpenPreview: () => void;
   showBrowserCard: boolean;
+  /** True when the run is over — orphaned tool uses stop spinning. */
+  settled?: boolean;
 }) {
   const steps: ToolStep[] = [];
   for (const m of messages) {
@@ -593,7 +649,7 @@ export function GroupedSteps({
           <summary className="cursor-pointer list-none text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
             {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"} ▸
           </summary>
-          <div className="mt-1"><ToolStepChecklist steps={steps} /></div>
+          <div className="mt-1"><ToolStepChecklist steps={steps} settled={settled} /></div>
         </details>
         {showBrowser && showBrowserCard && (
           <div className="px-0.5 py-1"><BrowserCardRow title={truncate(sessionTitle, 48)} onOpen={onOpenPreview} /></div>

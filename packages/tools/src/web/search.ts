@@ -34,29 +34,44 @@ function stripTags(text: string): string {
 async function searchDuckDuckGo(query: string, count: number): Promise<SearchHit[]> {
   const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
     headers: { "user-agent": UA },
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`DuckDuckGo returned HTTP ${res.status}`);
   const html = await res.text();
   const hits: SearchHit[] = [];
-  const linkRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-  const snippetRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-  const links: Array<{ href: string; title: string }> = [];
+  // Single pass over the document in order: a result__a anchor opens a new
+  // result, the following result__snippet belongs to it. Pairing by index
+  // across two separate loops broke whenever a result had no snippet.
+  let pending: { title: string; url: string } | null = null;
+  const flush = (snippet: string) => {
+    if (!pending) return;
+    const { title, url } = pending;
+    pending = null;
+    if (!/^https?:\/\//.test(url) || url.includes("duckduckgo.com")) return;
+    if (hits.length >= count) return;
+    hits.push({ title: title || url, url, snippet });
+  };
+  const anchorRe = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
   let m: RegExpExecArray | null;
-  while ((m = linkRe.exec(html)) && links.length < count) {
-    links.push({ href: m[1]!, title: stripTags(m[2]!) });
+  while ((m = anchorRe.exec(html))) {
+    const tag = m[1]!;
+    const cls = /class="([^"]*)"/i.exec(tag)?.[1] ?? "";
+    const isLink = cls.includes("result__a");
+    const isSnippet = cls.includes("result__snippet");
+    if (!isLink && !isSnippet) continue;
+    if (isLink) {
+      flush("");
+      const href = /href="([^"]*)"/i.exec(tag)?.[1] ?? "";
+      // DDG wraps outbound links as //duckduckgo.com/l/?uddg=<encoded-url>.
+      const uddg = /[?&]uddg=([^&]+)/.exec(href)?.[1];
+      const url = uddg ? decodeURIComponent(uddg) : href.startsWith("//") ? `https:${href}` : href;
+      pending = { title: stripTags(m[2]!), url };
+      if (hits.length >= count) break;
+    } else {
+      flush(stripTags(m[2]!));
+    }
   }
-  const snippets: string[] = [];
-  while ((m = snippetRe.exec(html)) && snippets.length < count) {
-    snippets.push(stripTags(m[1]!));
-  }
-  for (let i = 0; i < links.length; i++) {
-    const raw = links[i]!;
-    // DDG wraps outbound links as //duckduckgo.com/l/?uddg=<encoded-url>.
-    const uddg = /[?&]uddg=([^&]+)/.exec(raw.href)?.[1];
-    const url = uddg ? decodeURIComponent(uddg) : raw.href.startsWith("//") ? `https:${raw.href}` : raw.href;
-    if (!/^https?:\/\//.test(url) || url.includes("duckduckgo.com")) continue;
-    hits.push({ title: raw.title || url, url, snippet: snippets[i] ?? "" });
-  }
+  flush("");
   return hits;
 }
 

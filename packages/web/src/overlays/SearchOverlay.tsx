@@ -8,7 +8,7 @@ import { relTime } from "../lib/format";
 /** Centered search overlay — recent chats + filter. */
 export function SearchOverlay({ agent, onClose, onSelect }: { agent: Agent; onClose: () => void; onSelect: (sessionId: string) => void }) {
   const [q, setQ] = useState("");
-  const { data } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["sessions", "all"],
     queryFn: () => api.get<{ sessions: SessionListItem[] }>("/sessions"),
   });
@@ -38,7 +38,9 @@ export function SearchOverlay({ agent, onClose, onSelect }: { agent: Agent; onCl
         </div>
         <div className="max-h-[50vh] overflow-y-auto p-2.5">
           <p className="px-3 pb-1 pt-1.5 text-[12px] font-[700] tracking-[0.05em] text-fg-subtle">{q.trim() ? "VÝSLEDKY" : "NEDÁVNÉ"}</p>
-          {sessions.length === 0 && <p className="px-3 py-4 text-[13px] text-fg-subtle">Nic jsem nenašel.</p>}
+          {isLoading && <p className="px-3 py-4 text-[13px] text-fg-subtle">Hledám…</p>}
+          {isError && <p className="px-3 py-4 text-[13px] text-danger">Hledání se nezdařilo.</p>}
+          {!isLoading && !isError && sessions.length === 0 && <p className="px-3 py-4 text-[13px] text-fg-subtle">Nic jsem nenašel.</p>}
           {sessions.map((s) => (
             <button key={s.id} onClick={() => { onSelect(s.id); onClose(); }} className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left hover:bg-bg-sunken">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-sunken text-fg-muted"><MessageCircle size={15} /></span>

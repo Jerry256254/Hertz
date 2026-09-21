@@ -24,6 +24,7 @@
     "@kuclab-hertz/server": "workspace:*",
     "prompts": "^2.4.2",
     "kleur": "^4.1.5",
+    "zod": "^3.24.0",
     "@kuclab-hertz/web": "workspace:*"
   },
   "devDependencies": {

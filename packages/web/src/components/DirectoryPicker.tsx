@@ -47,8 +47,8 @@ export function DirectoryPicker({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 flex h-[28rem] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-[20px] border border-border bg-bg-raised shadow-popover">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[28rem] max-h-[calc(100vh-3rem)] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-[20px] border border-border bg-bg-raised shadow-popover">
           <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-4">
             <Dialog.Title className="text-sm font-semibold text-fg">Vyber složku</Dialog.Title>
             <Dialog.Close asChild>
@@ -61,16 +61,17 @@ export function DirectoryPicker({
           <div className="flex h-9 flex-shrink-0 items-center gap-1 border-b border-border px-2">
             <button
               onClick={() => data && setPath(data.home)}
-              className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg"
+              disabled={isLoading || !data}
+              className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-30"
             >
               <House size={12} /> Domů
             </button>
             <button
               onClick={() => data?.parent && setPath(data.parent)}
-              disabled={!data?.parent}
+              disabled={isLoading || !data?.parent}
               className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg disabled:opacity-30"
             >
-              <ChevronUp size={12} /> Up
+              <ChevronUp size={12} /> Nahoru
             </button>
             <button
               onClick={() => setShowNewFolder((v) => !v)}
@@ -99,7 +100,7 @@ export function DirectoryPicker({
                 className="h-7 min-w-0 flex-1 rounded-md border border-border bg-bg-raised px-2 text-xs text-fg outline-none focus:border-accent"
               />
               <Button type="submit" size="sm" variant="primary" disabled={!newFolderName.trim() || createFolder.isPending}>
-                Create
+                Vytvořit
               </Button>
             </form>
           )}

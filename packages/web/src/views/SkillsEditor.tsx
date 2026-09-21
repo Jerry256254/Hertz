@@ -30,13 +30,13 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: indexData } = useQuery({
+  const { data: indexData, isLoading: indexLoading, isError: indexError } = useQuery({
     queryKey: ["skills", agent.id],
     queryFn: () => api.get<{ skills: SkillIndexEntry[] }>(`/agents/${agent.id}/skills`),
   });
   const skills = indexData?.skills ?? [];
 
-  const { data: fileData } = useQuery({
+  const { data: fileData, isLoading: fileLoading } = useQuery({
     queryKey: ["skill", agent.id, selected],
     queryFn: () => api.get<{ skill: SkillFile }>(`/agents/${agent.id}/skills/${selected}`),
     enabled: !!selected && !creating,
@@ -99,7 +99,9 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
       ) : (
         <div className="mt-3 grid gap-3 md:grid-cols-[240px_1fr]">
           <div className="space-y-2">
-            {skills.length === 0 && (
+            {indexLoading && <p className="p-4 text-[13px] text-fg-subtle">Načítám skilly…</p>}
+            {indexError && <p className="rounded-[16px] border border-danger/25 bg-danger-wash p-4 text-[13px] text-danger">Seznam skillů se nepodařilo načíst.</p>}
+            {!indexLoading && !indexError && skills.length === 0 && (
               <p className="rounded-[16px] border border-dashed border-border p-4 text-[13px] text-fg-subtle">
                 Zatím žádné skilly. Agent si je začne tvořit sám — nebo přidej první.
               </p>
@@ -117,7 +119,9 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
           </div>
 
           <div className="min-w-0 rounded-[20px] border border-border bg-bg-raised p-5">
-            {!selected || !file ? (
+            {fileLoading ? (
+              <p className="py-8 text-center text-[13.5px] text-fg-subtle">Načítám skill…</p>
+            ) : !selected || !file ? (
               <p className="py-8 text-center text-[13.5px] text-fg-subtle">Vyber skill ze seznamu.</p>
             ) : (
               <>
@@ -186,11 +190,11 @@ function SkillForm({ agentId, initial, onDone, onCancel }: {
       <div className="mt-3 space-y-3">
         <div>
           <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">NÁZEV (malá písmena, pomlčky)</p>
-          <input value={name} onChange={(e) => setName(e.target.value)} disabled={!!initial} placeholder="weekly-sales-report" className={`${inputCls} mono disabled:opacity-60`} />
+          <input value={name} onChange={(e) => setName(e.target.value)} disabled={!!initial} placeholder="např. tydenni-report" className={`${inputCls} mono disabled:opacity-60`} />
         </div>
         <div>
           <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">KDY HO POUŽÍT (jedna věta)</p>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Use when preparing the Monday sales report…" className={inputCls} />
+          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="K čemu je skill dobrý, jedna věta" className={inputCls} />
         </div>
         <div>
           <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">POSTUP ( Markdown — přesné kroky, příkazy, cesty)</p>
