@@ -96,6 +96,9 @@ export function HertzShell() {
 
   const showSidebar = sidebarOpen && (module === "chat" || module === "channel");
   const browserOpen = rightPanel === "browser";
+  // Tab Dovednosti potřebuje na desktopu dvousloupec (seznam + detail),
+  // takže panel dostane víc místa; ostatní taby zůstanou úzké.
+  const skillsWide = rightPanel === "agent" && agentTab === "skills";
 
   function selectChat(id: string) {
     setActiveSessionId(id);
@@ -171,7 +174,7 @@ export function HertzShell() {
       {rightPanel && (
         <>
           <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setRightPanel(null)} />
-          <aside className="fixed inset-y-0 right-0 z-40 flex w-[360px] max-w-[92vw] flex-col border-l border-border bg-bg-sidebar lg:static lg:z-auto lg:shrink-0">
+          <aside className={`fixed inset-y-0 right-0 z-40 flex w-[360px] max-w-[92vw] flex-col border-l border-border bg-bg-sidebar lg:static lg:z-auto lg:shrink-0 ${skillsWide ? "lg:w-[640px] xl:w-[720px]" : ""}`}>
             {rightPanel === "agent" ? (
             <AgentPanel
               agent={agent}
