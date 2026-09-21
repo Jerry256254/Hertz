@@ -104,6 +104,76 @@ Cloudflare ti vypíše veřejnou `https://…trycloudflare.com` adresu —
 pro trvalý provoz si v Cloudflare Zero Trust vytvoř pojmenovaný tunel
 a namiř na něj vlastní doménu (např. `oauth.kuclab.org`).
 
+### 1c. Varianta Vercel (zdarma, bez vlastního serveru)
+
+Místo vlastního serveru může relay běžet jako funkce na Vercelu —
+nemusíš mít VPS, doménu ani otevřené porty. Na bezplatném tarifu to
+stačí: jeden bounce trvá pár milisekund a relay si nic nepamatuje.
+
+**Krok 1 — projekt na Vercelu.** Založ si účet na
+[vercel.com](https://vercel.com/) (jde se přihlásit přes GitHub).
+V dashboardu klikni **"Add New…" → "Project" → "Import Git Repository"**
+a vyber repozitář `Jerry256254/Hertz`. Protože je repozitář soukromý,
+Vercel si vyžádá přístup ke tvému GitHubu — povol ho.
+
+**Krok 2 — Root Directory.** V "Configure Project" klikni u položky
+**Root Directory** na **Edit** a napiš:
+
+```
+packages/oauth-relay
+```
+
+**Krok 3 — Environment Variables.** Přidej proměnnou:
+
+- **Name:** `RELAY_STATE_SECRET`
+- **Value:** výstup příkazu `openssl rand -hex 32`
+
+**Pozor, důležité:** tenhle secret si zapiš a později ho nastav
+**úplně stejný** i na ferveru jako `HERTZ_OAUTH_STATE_SECRET`.
+Server secretem podepisuje `state`, relay jím podpis ověřuje —
+kdyby se hodnoty lišily, relay všechny požadavky odmítne.
+
+**Krok 4 — Deploy.** Klikni **Deploy** a počkej na dokončení.
+Výsledná adresa bude vypadat třeba takto:
+
+```
+https://<projekt>.vercel.app
+```
+
+(Jméno projektu jde v nastavení případně změnit — URL pak platí nová.)
+
+**Krok 5 — ověření.** Otevři v prohlížeči:
+
+```
+https://<projekt>.vercel.app/bounce
+```
+
+Správná reakce je chybová hláška **"Neplatný nebo expirovaný
+požadavek."** — endpoint žije a jen čeká na parametry od Googlu.
+
+**Krok 6 — propojení s instancí.** Na ferveru nastav:
+
+```
+HERTZ_OAUTH_RELAY_URL=https://<projekt>.vercel.app
+HERTZ_OAUTH_STATE_SECRET=<stejný secret jako v kroku 3>
+```
+
+a Hertze restartuj.
+
+**Krok 7 — Google Cloud Console.** U OAuth klienta přidej do
+**Authorized redirect URIs**:
+
+```
+https://<projekt>.vercel.app/bounce
+```
+
+(podrobněji viz sekce 2 níže — jen dosaď adresu svého Vercel projektu).
+
+Pár poznámek na závěr: bezplatný tarif Vercelu na tohle bohatě stačí.
+URL projektu je stabilní, dokud projekt nepřejmenuješ. A kdybys někdy
+secret měnil, změň ho **na obou místech najednou** (Vercel i ferver),
+jinak přihlašování přestane fungovat.
+
 ### 2. Redirect URI v Google Cloud Console
 
 V [Google Cloud Console](https://console.cloud.google.com/) →
@@ -140,10 +210,13 @@ curl -i "https://oauth.kuclab.org/bounce?code=x&state=nesmysl"
 ## API kontrakt (pro serverovou část Hertze)
 
 - `GET /bounce?code=<code>&state=<state>` → `302` na
-  `target?code=…&state=…`. Při zamítnutí souhlasu uživatelem přijde od
+  `target?code=…` (target už v sobě nese vlastní vnitřní `state` instance,
+  který se zachovává). Při zamítnutí souhlasu uživatelem přijde od
   providera `?error=…&error_description=…&state=…` → `302` na
-  `target?error=…&error_description=…&state=…`.
-- Přebírají se **pouze** parametry `code`, `state`, `error`, `error_description`.
+  `target?error=…&error_description=…`.
+- Přebírají se **pouze** parametry `code`, `error`, `error_description`.
+  Relay `state` se pouze ověřuje (HMAC podpis) a dál se **nepředává**.
+  Query řetězec cíle se zachovává — včetně jeho vnitřního `state`.
 - `state = v1.<base64url(JSON)>.<base64url(HMAC-SHA256(rawPayloadB64, secret))>`,
   payload `{ target, svc: "google"|"notion", iat, nonce }`.
 - Neplatný/podvržený/expirovaný state nebo nebezpečný target → `400`

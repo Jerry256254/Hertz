@@ -1,5 +1,9 @@
 /**
- * HTTP handler pro OAuth relay bounce.
+ * HTTP handler pro OAuth relay bounce (node:http adaptér).
+ *
+ * Path routing (/, /healthz, /bounce, 404, 405) a logování zůstávají zde;
+ * samotné vyhodnocení /bounce deleguje na sdílené jádro `bounce-core.ts`,
+ * aby se logika neduplikovala s Vercel adaptérem (`api/bounce.ts`).
  *
  * Kontrakt:
  *  - GET /bounce?code=<code>&state=<state>  → 302 na target z ověřeného state
@@ -16,12 +20,11 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { verifyState } from "./state.js";
+import { handleBounceRequest } from "./bounce-core.js";
 import { createLogger, type RelayLogger } from "./logger.js";
 
-/** Jediné query parametry, které relay smí předat dál na instanci.
- *  Relay `state` se ověřuje, ale nepředává — target už nese vnitřní state instance. */
-const FORWARDED_PARAMS = ["code", "error", "error_description"] as const;
+// Zpětná kompatibilita: buildRedirectUrl žije v jádře, re-export pro staré importy.
+export { buildRedirectUrl } from "./bounce-core.js";
 
 const TEXT = { "Content-Type": "text/plain; charset=utf-8" };
 const NO_STORE = "no-store, no-cache, must-revalidate";
@@ -34,22 +37,6 @@ function send(
 ): void {
   res.writeHead(status, { ...TEXT, "Cache-Control": NO_STORE, ...headers });
   res.end(body);
-}
-
-/**
- * Sestaví cílovou URL: vezme ověřený target a přidá povolené parametry
- * z příchozího query stringu. Existující query v targetu se zachová —
- * včetně vnitřního `state` instance, který relay nikdy nepřepisuje.
- */
-export function buildRedirectUrl(target: string, params: URLSearchParams): string {
-  const url = new URL(target);
-  for (const name of FORWARDED_PARAMS) {
-    const value = params.get(name);
-    if (value !== null) {
-      url.searchParams.set(name, value);
-    }
-  }
-  return url.toString();
 }
 
 function pathOf(rawUrl: string | undefined): string {
@@ -121,25 +108,25 @@ export function createBounceHandler(secret: string, options: BounceHandlerOption
       return;
     }
 
-    const state = params.get("state");
-    if (!state) {
-      logger.warn("400 missing-state");
-      send(res, 400, "Neplatný nebo expirovaný požadavek.");
+    const result = handleBounceRequest(secret, method, params);
+    if (result.status === 302) {
+      logger.info(`302 bounce svc=${result.svc}`);
+      res.writeHead(302, { Location: result.location, "Cache-Control": NO_STORE });
+      res.end();
       return;
     }
-
-    const verified = verifyState(state, secret);
-    if (!verified.ok) {
-      // Záměrně bez detailu důvodu a bez vypsání parametrů — nic nesmí
-      // prozradit autorizační kód ani strukturu state útočníkovi.
-      logger.warn(`400 invalid-state (${verified.reason})`);
-      send(res, 400, "Neplatný nebo expirovaný požadavek.");
+    if (result.status === 400) {
+      logger.warn(
+        result.reason === "missing-state"
+          ? "400 missing-state"
+          : `400 invalid-state (${result.reason ?? "unknown"})`,
+      );
+      send(res, 400, result.body);
       return;
     }
-
-    const location = buildRedirectUrl(verified.payload.target, params);
-    logger.info(`302 bounce svc=${verified.payload.svc}`);
-    res.writeHead(302, { Location: location, "Cache-Control": NO_STORE });
-    res.end();
+    // Při tomto pořadí kontrol sem 405 z jádra nedojde (metoda je ověřena
+    // výše) — větev je tu pro úplnost, kdyby se routing v budoucnu změnil.
+    logger.warn(`${result.status} ${path}`);
+    send(res, result.status, result.body);
   };
 }
