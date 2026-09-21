@@ -19,7 +19,7 @@ export interface DefaultSkill {
 export const DEFAULT_SKILLS: DefaultSkill[] = [
   {
     name: "debugging",
-    description: "Use whenever something fails, breaks, or behaves unexpectedly — before guessing at a fix.",
+    description: "Použij, kdykoliv něco selže, rozbije se nebo se chová divně — dřív, než začneš hádat opravu.",
     instructions: `## Debugging — find the cause, then fix it once
 
 1. **Reproduce first.** Run the failing thing yourself and read the full error (message + stack + logs). Never fix from a guess about what "probably" broke.
@@ -31,7 +31,7 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   },
   {
     name: "verify-before-done",
-    description: "Use before telling the user anything is done, fixed, or working.",
+    description: "Použij, než uživateli řekneš, že je něco hotové, opravené nebo že to funguje.",
     instructions: `## Verify before done — proof, not promises
 
 - **Run it, don't reason about it.** A fix is done when the failing command now passes in front of you — not when the code "looks right".
@@ -42,7 +42,7 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   },
   {
     name: "web-research",
-    description: "Use when you need current facts, docs, prices, or anything outside your training data.",
+    description: "Použij, když potřebuješ aktuální fakta, dokumentaci, ceny nebo cokoliv mimo svá tréninková data.",
     instructions: `## Web research — search, then read the source
 
 1. **Search first** by fetching \`https://html.duckduckgo.com/html/?q=<query>\` with web_fetch (web_fetch is a page fetcher, not a search engine — the DuckDuckGo HTML endpoint is the search step).
@@ -53,7 +53,7 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   },
   {
     name: "skills-over-memory",
-    description: "Use when deciding where a lesson belongs: a reusable procedure (skill) or a plain fact (memory).",
+    description: "Použij, když se rozhoduješ, kam patří ponaučení: do znovupoužitelného postupu (dovednost), nebo do obyčejného faktu (paměť).",
     instructions: `## Skills over memory — procedures live in skills, facts live in memory
 
 - **A procedure you may repeat → save_skill.** Exact steps, commands, file paths, gotchas — written so following them reproduces the result. Examples: how you deploy project X, how you build the weekly report, how you fixed the VPN last time.

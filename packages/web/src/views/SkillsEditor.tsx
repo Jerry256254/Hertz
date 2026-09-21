@@ -120,9 +120,9 @@ export function SkillsEditor({ agent }: { agent: Agent }) {
 
           <div className="min-w-0 rounded-[20px] border border-border bg-bg-raised p-5">
             {fileLoading ? (
-              <p className="py-8 text-center text-[13.5px] text-fg-subtle">Načítám skill…</p>
+              <p className="py-8 text-center text-[13.5px] text-fg-subtle">Načítám dovednost…</p>
             ) : !selected || !file ? (
-              <p className="py-8 text-center text-[13.5px] text-fg-subtle">Vyber skill ze seznamu.</p>
+              <p className="py-8 text-center text-[13.5px] text-fg-subtle">Vyber dovednost ze seznamu.</p>
             ) : (
               <>
                 <div className="flex items-start gap-2">
@@ -193,11 +193,11 @@ function SkillForm({ agentId, initial, onDone, onCancel }: {
           <input value={name} onChange={(e) => setName(e.target.value)} disabled={!!initial} placeholder="např. tydenni-report" className={`${inputCls} mono disabled:opacity-60`} />
         </div>
         <div>
-          <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">KDY HO POUŽÍT (jedna věta)</p>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="K čemu je skill dobrý, jedna věta" className={inputCls} />
+          <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">KDY JI POUŽÍT (jedna věta)</p>
+          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="K čemu je dovednost dobrá, jedna věta" className={inputCls} />
         </div>
         <div>
-          <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">POSTUP ( Markdown — přesné kroky, příkazy, cesty)</p>
+          <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">POSTUP (Markdown — přesné kroky, příkazy, cesty)</p>
           <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={10} className={`${inputCls} mono resize-y leading-relaxed`} />
         </div>
         <div>
@@ -206,7 +206,7 @@ function SkillForm({ agentId, initial, onDone, onCancel }: {
         </div>
         <div className="flex gap-2">
           <button onClick={() => save.mutate()} disabled={save.isPending || !name.trim() || !description.trim() || !instructions.trim()} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">
-            {save.isPending ? "Ukládám…" : "Uložit skill"}
+            {save.isPending ? "Ukládám…" : "Uložit dovednost"}
           </button>
           <button onClick={onCancel} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
         </div>

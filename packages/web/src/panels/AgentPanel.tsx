@@ -358,7 +358,7 @@ function IdentityTab({ agent, onOpenSoul, onOpenMemory, onRename }: { agent: Age
         <button onClick={onOpenSoul} className="pressable flex w-full items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-left hover:bg-bg-hover">
           <Fingerprint size={16} className="shrink-0 text-fg-muted" />
           <span className="min-w-0 flex-1">
-            <span className="block text-[13.5px] font-[600] text-fg">SOUL.md a skills</span>
+            <span className="block text-[13.5px] font-[600] text-fg">SOUL.md a dovednosti</span>
             <span className="block text-[12px] text-fg-muted">Povaha agenta · od {fmtDate(agent.createdAt)}</span>
           </span>
         </button>
