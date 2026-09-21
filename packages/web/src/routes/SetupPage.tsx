@@ -31,7 +31,7 @@ export function SetupPage() {
         </div>
 
         <h1 className="text-[22px] tracking-[-0.02em] text-fg">Založ admin účet</h1>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">Běží jen u tebe — žádný cloud. V dalším kroku vybereš model a složku pro agenta.</p>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">Běží jen u tebe — žádný cloud. V dalším kroku si vybereš model a dáme si jména.</p>
 
         <div className="mt-6 space-y-3.5">
           <div><Label>EMAIL</Label><Input type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@firma.cz" /></div>

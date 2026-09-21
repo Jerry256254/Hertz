@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type { Agent, ChannelBinding, Project, ProviderConfig } from "../lib/types";
+import { Button, Input, Label } from "../components/ui";
+import { AgentAvatar } from "../components/AgentAvatar";
 import { IconRail, type Module } from "./IconRail";
 import { SideBar } from "./SideBar";
 import { ChatView } from "../chat/ChatView";
@@ -12,8 +14,7 @@ import { SoulEditor } from "../views/SoulEditor";
 import { ChannelView } from "../views/ChannelView";
 import { ApprovalsView } from "../views/ApprovalsView";
 import { SearchOverlay } from "../overlays/SearchOverlay";
-import { SettingsModal } from "../settings/SettingsModal";
-import { DirectoryPicker } from "../components/DirectoryPicker";
+import { SettingsModal, type Section as SettingsSection } from "../settings/SettingsModal";
 import { ProviderCreateForm } from "../components/ProviderCreateForm";
 
 export function HertzShell() {
@@ -26,10 +27,10 @@ export function HertzShell() {
   const [activeBinding, setActiveBinding] = useState<ChannelBinding | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"general" | "connectors">("general");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("agent");
 
   // OAuth round-trip: the provider redirects back to /?connected= / ?oauthError= —
-  // open Nastavení → Konektory so the user sees the result immediately.
+  // open Nastavení → Integrace so the user sees the result immediately.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.has("connected") || q.has("oauthError")) {
@@ -120,7 +121,7 @@ export function HertzShell() {
       {showSidebar && (
         <>
           <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed inset-y-0 left-0 z-40 flex w-[300px] max-w-[86vw] animate-slide-in flex-col border-r border-border bg-bg-sidebar md:static md:z-auto md:shrink-0">
+          <aside className="fixed inset-y-0 left-0 z-40 flex w-[320px] max-w-[86vw] animate-slide-in flex-col border-r border-border bg-bg-sidebar md:static md:z-auto md:shrink-0">
             <SideBar
             agent={agent}
             projectId={projectId}
@@ -191,21 +192,21 @@ export function HertzShell() {
         <SearchOverlay agent={agent} onClose={() => setSearchOpen(false)} onSelect={selectChat} />
       )}
       {settingsOpen && (
-        <SettingsModal agent={agent} projectId={projectId} initialSection={settingsSection} onClose={() => { setSettingsOpen(false); setSettingsSection("general"); }} />
+        <SettingsModal agent={agent} projectId={projectId} initialSection={settingsSection} onClose={() => { setSettingsOpen(false); setSettingsSection("agent"); }} />
       )}
     </div>
   );
 }
 
-/** First-run wizard: provider → project → the single agent. Shown when GET /api/agent 404s. */
+/** Průvodce prvním spuštěním: model → jména → hotovo s avatarem. Bez projektů. */
 function SetupAgentView({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const [providerId, setProviderId] = useState("");
-  const [projectName, setProjectName] = useState("Můj projekt");
-  const [rootPath, setRootPath] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [agentName, setAgentName] = useState("Orion");
+  const [agentName, setAgentName] = useState("");
+  const [userName, setUserName] = useState("");
   const [model, setModel] = useState("");
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [avatarNonce, setAvatarNonce] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -213,13 +214,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
     queryKey: ["providers"],
     queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
   });
-  const { data: projectsData } = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api.get<{ projects: Project[] }>("/projects"),
-  });
   const providers = providersData?.providers ?? [];
-  const projects = projectsData?.projects ?? [];
-  const [projectId, setProjectId] = useState("");
 
   useEffect(() => {
     if (!providerId && providers.length > 0) {
@@ -227,24 +222,82 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
       if (!model && providers[0]!.defaultModel) setModel(providers[0]!.defaultModel);
     }
   }, [providers, providerId, model]);
-  useEffect(() => {
-    if (!projectId && projects.length > 0) setProjectId(projects[0]!.id);
-  }, [projects, projectId]);
 
-  async function finish() {
+  /**
+   * Pracovní prostor pro agenta se zajistí tiše na pozadí — uživatel
+   * o žádném „projektu" neví. Existující se použije, jinak vznikne ~/Hertz.
+   */
+  async function resolveWorkspaceId(): Promise<string> {
+    try {
+      const { projects } = await api.get<{ projects: Project[] }>("/projects");
+      if (projects[0]) return projects[0].id;
+    } catch {
+      /* spadneme k vytvoření nového */
+    }
+    const browse = await api.get<{ path: string; home: string; entries: Array<{ name: string; path: string }> }>(
+      `/fs/browse?path=${encodeURIComponent("")}`,
+    );
+    let rootPath = browse.home;
+    const existing = browse.entries.find((e) => e.name === "Hertz");
+    if (existing) {
+      rootPath = existing.path;
+    } else {
+      try {
+        const created = await api.post<{ path: string }>("/fs/mkdir", { path: browse.home, name: "Hertz" });
+        rootPath = created.path;
+      } catch {
+        rootPath = browse.home;
+      }
+    }
+    const created = await api.post<{ id: string }>("/projects", { name: "Hertz", rootPath });
+    return created.id;
+  }
+
+  function mintAvatarSeed(name: string): string {
+    const bytes = new Uint8Array(6);
+    crypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    const base = (name || "agent").trim().toLowerCase().slice(0, 40) || "agent";
+    return `${base}:${hex}`;
+  }
+
+  async function rerollAvatar() {
+    if (!agentId || busy) return;
     setErr(null);
     setBusy(true);
     try {
-      let pid = projectId;
-      if (!pid) {
-        if (!rootPath) throw new Error("Vyber složku projektu.");
-        const created = await api.post<{ id: string }>("/projects", { name: projectName.trim() || "Můj projekt", rootPath });
-        pid = created.id;
+      const seed = mintAvatarSeed(agentName);
+      await api.patch(`/agents/${agentId}`, { avatar: JSON.stringify({ version: 1, kind: "generative", seed }) });
+      setAvatarNonce((n) => n + 1);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Avatar se nepodařilo vygenerovat.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function finish() {
+    setErr(null);
+    if (!providerId) { setErr("Nejdřív přidej poskytovatele."); return; }
+    if (!model.trim()) { setErr("Zadej model, např. claude-sonnet-4-5."); return; }
+    setBusy(true);
+    try {
+      const projectId = await resolveWorkspaceId();
+      const created = await api.post<{ id: string }>("/agent/ensure", {
+        projectId,
+        providerConfigId: providerId,
+        model: model.trim(),
+        name: agentName.trim() || "Orion",
+      });
+      const seed = mintAvatarSeed(agentName.trim() || "Orion");
+      await api.patch(`/agents/${created.id}`, { avatar: JSON.stringify({ version: 1, kind: "generative", seed }) });
+      const cleanUser = userName.trim();
+      if (cleanUser) {
+        try { localStorage.setItem("hertz.userName", cleanUser); } catch { /* private mode */ }
       }
-      if (!providerId) throw new Error("Přidej nejdřív poskytovatele v Nastavení › Poskytovatelé (nebo se vrať).");
-      if (!model.trim()) throw new Error("Zadej model, např. claude-sonnet-4-5.");
-      await api.post("/agent/ensure", { projectId: pid, providerConfigId: providerId, model: model.trim(), name: agentName.trim() || "Orion" });
-      onDone();
+      setAgentId(created.id);
+      setAvatarNonce((n) => n + 1);
+      setStep(2);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : (e as Error).message);
     } finally {
@@ -252,81 +305,159 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
     }
   }
 
-  const inputCls = "h-11 w-full rounded-full border border-border bg-bg-sunken px-4 text-[14px] text-fg outline-none focus:border-accent disabled:opacity-50";
+  const selectCls =
+    "h-11 w-full appearance-none rounded-full border border-border bg-bg-sunken px-4 text-[14px] text-fg outline-none focus:border-accent disabled:opacity-50";
+  const finalAgentName = agentName.trim() || "Orion";
+  const finalUserName = userName.trim();
 
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg px-4 py-8">
-      <div className="w-full max-w-[480px] rounded-[24px] border border-border bg-bg-raised p-6 md:p-8">
-        <p className="text-[11px] font-[700] tracking-[0.14em] text-fg-subtle">HERTZ · DOKONČIT NASTAVENÍ</p>
-        <h1 className="mt-1 text-[22px] font-[700] tracking-[-0.02em]">
-          {step === 0 ? "Vyber poskytovatele" : step === 1 ? "Vyber projekt" : "Pojmenuj agenta"}
-        </h1>
+    <div className="flex h-full overflow-y-auto bg-bg">
+      <div className="mx-auto flex w-full max-w-[520px] flex-col justify-center px-6 py-12">
+        {step < 2 && (
+          <p className="text-[11px] font-[700] tracking-[0.18em] text-fg-subtle">
+            HERTZ · KROK {step + 1} ZE 2
+          </p>
+        )}
 
         {step === 0 && (
-          <div className="mt-5">
-            {providers.length === 0 ? (
-              <>
-                <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">Zatím nemáš žádného poskytovatele — přidej prvního:</p>
-                <ProviderCreateForm onCreated={(id, defaultModel) => { setProviderId(id); if (defaultModel) setModel(defaultModel); }} />
-              </>
-            ) : (
-              <select value={providerId} onChange={(e) => { setProviderId(e.target.value); const p = providers.find((x) => x.id === e.target.value); setModel(p?.defaultModel ?? ""); }} className={inputCls}>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label} ({p.provider})</option>
-                ))}
-              </select>
-            )}
-          </div>
+          <>
+            <h1 className="mt-4 text-[30px] font-[700] leading-[1.15] tracking-[-0.02em] text-fg">
+              Jaký model mám používat?
+            </h1>
+            <p className="mt-3 max-w-[44ch] text-[14.5px] leading-relaxed text-fg-muted">
+              Běžím jen u tebe — nic neposílám do cloudu. Vyber poskytovatele a model,
+              později ho můžeš kdykoliv změnit v nastavení.
+            </p>
+            <div className="mt-9 space-y-6">
+              <div>
+                <Label>POSKYTOVATEL</Label>
+                {providers.length === 0 ? (
+                  <ProviderCreateForm
+                    onCreated={(id, defaultModel) => {
+                      setProviderId(id);
+                      if (defaultModel) setModel(defaultModel);
+                    }}
+                  />
+                ) : (
+                  <select
+                    value={providerId}
+                    onChange={(e) => {
+                      setProviderId(e.target.value);
+                      const p = providers.find((x) => x.id === e.target.value);
+                      setModel(p?.defaultModel ?? "");
+                    }}
+                    className={selectCls}
+                  >
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label} ({p.provider})</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div>
+                <Label>MODEL</Label>
+                <Input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="např. claude-sonnet-4-5"
+                  className="mono"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+          </>
         )}
 
         {step === 1 && (
-          <div className="mt-5 space-y-3">
-            {projects.length > 0 && (
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={inputCls}>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-                <option value="">+ Nový projekt…</option>
-              </select>
-            )}
-            {(projects.length === 0 || projectId === "") && (
-              <>
-                <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Název projektu" className={inputCls} />
-                <div className="flex gap-2">
-                  <input value={rootPath} readOnly placeholder="Složka projektu…" className={`${inputCls} mono`} />
-                  <button onClick={() => setPickerOpen(true)} className="pressable shrink-0 rounded-full border border-border bg-bg-sunken px-4 text-[13px] font-[600]">Vybrat…</button>
-                </div>
-              </>
-            )}
+          <>
+            <h1 className="mt-4 text-[30px] font-[700] leading-[1.15] tracking-[-0.02em] text-fg">
+              Jak se budeme jmenovat?
+            </h1>
+            <p className="mt-3 max-w-[44ch] text-[14.5px] leading-relaxed text-fg-muted">
+              Dej mi jméno — a řekni mi, jak ti mám říkat.
+            </p>
+            <div className="mt-9 space-y-6">
+              <div>
+                <Label>JMÉNO AGENTA</Label>
+                <Input
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  placeholder="Orion"
+                  autoFocus
+                  autoComplete="off"
+                  maxLength={80}
+                />
+              </div>
+              <div>
+                <Label>TVOJE JMÉNO</Label>
+                <Input
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  placeholder="Jak ti mám říkat?"
+                  autoComplete="given-name"
+                  maxLength={80}
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {step === 2 && agentId && (
+          <div className="flex flex-col items-center text-center">
+            <AgentAvatar key={avatarNonce} seed={agentId} size={104} />
+            <h1 className="mt-7 text-[30px] font-[700] leading-[1.15] tracking-[-0.02em] text-fg">
+              Těší mě{finalUserName ? `, ${finalUserName}` : ""}.
+            </h1>
+            <p className="mt-3 max-w-[40ch] text-[14.5px] leading-relaxed text-fg-muted">
+              Jsem {finalAgentName} — tvůj osobní agent. Tady je můj vzhled,
+              vygenerovaný jen pro tebe.
+            </p>
+            <button
+              onClick={() => void rerollAvatar()}
+              disabled={busy}
+              className="pressable mt-5 rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg-muted hover:text-fg disabled:opacity-50"
+            >
+              {busy ? "Generuji…" : "Vygenerovat jiný vzhled"}
+            </button>
           </div>
         )}
 
-        {step === 2 && (
-          <div className="mt-5 space-y-3">
-            <input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Jméno agenta" className={inputCls} />
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model, např. claude-sonnet-4-5" className={`${inputCls} mono`} />
-          </div>
+        {err && (
+          <p className="mt-6 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">
+            {err}
+          </p>
         )}
 
-        {err && <p className="mt-4 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{err}</p>}
-
-        <div className="mt-6 flex gap-2">
-          {step > 0 && (
-            <button onClick={() => setStep(step - 1)} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2.5 text-[13.5px] font-[600]">Zpět</button>
+        <div className="mt-9 flex gap-2">
+          {step === 1 && (
+            <Button variant="secondary" size="lg" onClick={() => setStep(0)} disabled={busy}>
+              Zpět
+            </Button>
           )}
-          {step < 2 ? (
-            <button onClick={() => setStep(step + 1)} disabled={step === 0 && providers.length === 0} className="pressable flex-1 rounded-full bg-accent py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
+          {step === 0 && (
+            <Button
+              variant="primary"
+              size="lg"
+              className="flex-1"
+              disabled={!providerId || busy}
+              onClick={() => setStep(1)}
+            >
               Pokračovat
-            </button>
-          ) : (
-            <button onClick={() => void finish()} disabled={busy} className="pressable flex-1 rounded-full bg-accent py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
-              {busy ? "Vytvářím…" : "Vytvořit agenta"}
-            </button>
+            </Button>
+          )}
+          {step === 1 && (
+            <Button variant="primary" size="lg" className="flex-1" disabled={busy} onClick={() => void finish()}>
+              {busy ? "Chystám…" : "Vytvořit agenta"}
+            </Button>
+          )}
+          {step === 2 && (
+            <Button variant="primary" size="lg" className="flex-1" onClick={onDone}>
+              Začít
+            </Button>
           )}
         </div>
       </div>
-      <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={setRootPath} />
     </div>
   );
 }
-
