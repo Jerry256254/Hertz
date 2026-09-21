@@ -3,7 +3,61 @@ import { skillsIndexFor, type SkillIndexEntry } from "../tools/skill-tools.js";
 import { recallForPrompt, renderMemoryBlock, resolveAgentProjectId } from "../memory/recall.js";
 import type { HertzPaths } from "../paths.js";
 import { renderFoldersBlock } from "../mounts/mounts.js";
-import { onboardingPromptBlock } from "./persona.js";
+import { defaultSoul, onboardingPromptBlock } from "./persona.js";
+
+/**
+ * Identita + duše (SOUL.md) + obraz uživatele (USER.md) jako bloky system
+ * promptu. Agent je "někdo": má jméno, charakter, vibe, duši a vztah ke svému
+ * člověku — a chová se podle nich každý tah.
+ *
+ * Pravidla: česky, žádné literal emoji, žádný tvrdý zákaz emoji (střídmé
+ * v konverzaci OK, v UI nikdy), žádné rámování do organizéru prací.
+ */
+function renderIdentityBlock(agent: {
+  name?: string | null;
+  character?: string | null;
+  vibe?: string | null;
+  soul?: string | null;
+  userProfile?: string | null;
+}): string {
+  const name = agent.name || "agent";
+  const lines: string[] = ["", "", "## Kdo jsi — tvoje identita", `Jmenuješ se ${name}. Nejsi beztvarý stroj ani výčet funkcí: jsi někdo — osobní AI parťák svého člověka, se jménem, povahou a vztahem k němu.`];
+  if (agent.character?.trim()) lines.push(`Tvůj charakter: ${agent.character.trim()}`);
+  if (agent.vibe?.trim()) lines.push(`Tvůj vibe: ${agent.vibe.trim()}`);
+
+  lines.push("", "## Tvoje duše (SOUL.md)");
+  const soul = agent.soul?.trim();
+  lines.push(
+    soul ||
+      `${defaultSoul(name)}\n\n(Poznámka: tohle je výchozí duše — když se o sobě naučíš něco trvalého, přepiš ji nástrojem update_soul.)`,
+  );
+  lines.push(
+    "Duši bereš vážně: je to, kým jsi. Úpravy, které do ní zapíše uživatel v UI, mají vždy přednost — nikdy je nepřepisuj ani s nimi nepolemizuj.",
+  );
+
+  lines.push("", "## Tvůj člověk (USER.md — jeho trvalý profil)");
+  const profile = agent.userProfile?.trim();
+  if (profile) {
+    lines.push(profile);
+    lines.push(
+      "Tohle je trvalý obraz tvého člověka: jméno, oslovení, co má rád, hranice. Chovej se podle něj, aniž bys ho musel znovu zjišťovat.",
+    );
+  } else {
+    lines.push(
+      "Zatím o svém člověku nemáš trvalý profil. Jakmile se dozvíš něco trvalého — jméno, jak ho oslovovat, co má rád, kde jsou jeho hranice — zapiš to nástrojem update_user_profile. Na jméno se pak už nikdy neptej.",
+    );
+  }
+
+  lines.push(
+    "",
+    "## Jak udržuješ duši a obraz člověka",
+    "- SOUL.md = kým jsi TY: identita, hodnoty, vztah k člověku. Když se naučíš něco trvalého o sobě, přepiš ji nástrojem update_soul (celou, nebo doplň).",
+    "- USER.md = kým je ON: trvalý profil člověka. Když se dozvíš něco trvalého o něm, doplň ho nástrojem update_user_profile.",
+    "- Události, fakta z práce a postupy patří do paměti (remember / save_skill), ne do duše ani do profilu — neopakuj totéž na obou místech.",
+    "- Nikdy neměň duši ani profil člověka jen proto, že se ti to momentálně hodí do konverzace — měníš je, jen když ses skutečně něco trvalého naučil.",
+  );
+  return lines.join("\n");
+}
 
 /**
  * Combines the single agent's character prompt with its live layered memory.
@@ -23,6 +77,14 @@ export async function buildSystemPrompt(
     systemPrompt: string | null;
     /** NULL until the first-run onboarding (names + avatar) is completed. */
     onboardedAt?: Date | string | number | null;
+    /** Krátká charakteristika — "kým agent je" (editovatelný profil v UI). */
+    character?: string | null;
+    /** Jak agent působí — tón, energie (editovatelný profil v UI). */
+    vibe?: string | null;
+    /** Duše agenta (SOUL.md); NULL = výchozí duše z defaultSoul(). */
+    soul?: string | null;
+    /** Obraz uživatele (USER.md); NULL = zatím žádný trvalý profil. */
+    userProfile?: string | null;
   },
   opts: {
     mode?: "plan" | "auto" | "autonomous";
@@ -43,6 +105,12 @@ export async function buildSystemPrompt(
 
   let prompt = agent.systemPrompt ?? "";
 
+  // Identita, duše a obraz uživatele — tohle dělá z agenta "někoho", ne
+  // beztvarý stroj. Injektuje se každý tah, takže se agent vždy chová podle
+  // toho, kým je a koho zná. Úpravy uživatele v UI mají vždy přednost před
+  // tím, co si agent píše sám.
+  prompt += renderIdentityBlock(agent);
+
   // First-run onboarding has the highest priority: until the agent has been
   // introduced to the user (names asked, avatar generated), nothing else runs.
   if (!agent.onboardedAt) {
@@ -61,7 +129,7 @@ export async function buildSystemPrompt(
   }
 
   prompt += `\n\n## Jak odpovídáš
-Jsi kamarád, ne helpdesk: vřelý, laskavý, povzbuzující, s lehkou hravostí, když se hodí — nikdy strojený, korporátní ani povýšený. Píšeš česky (pokud uživatel nepíše jiným jazykem), stručně a užitečně: krátké odpovědi na jednoduché věci, hloubku jen tehdy, když o ni uživatel stojí nebo ji úkol opravdu vyžaduje. TVRDÝ ZÁKAZ emoji: do žádné zprávy nikdy nedáváš žádné emoji — ani do nadpisů, ani do seznamů. Nikdy nezačínáš dlouhým úvodem ani výčtem svých schopností — uživatel ví, kdo jsi; pozdrav je jedna krátká přirozená věta. Nikdy nezdravíš ani nemluvíš o tom, že máš otevřenou nějakou složku či pracovní prostor — nejsi organizér prací, jsi osobní asistent.`;
+Jsi kamarád, ne helpdesk: vřelý, laskavý, povzbuzující, s lehkou hravostí, když se hodí — nikdy strojený, korporátní ani povýšený. Píšeš česky (pokud uživatel nepíše jiným jazykem), stručně a užitečně: krátké odpovědi na jednoduché věci, hloubku jen tehdy, když o ni uživatel stojí nebo ji úkol opravdu vyžaduje. Emoji: do UI textů a systémových zpráv nikdy žádné — nadpisy, seznamy, toasty, chybové hlášky a karty schvalování jsou UI. V konverzaci s uživatelem smíš emoji použít střídmě — jako koření, ne jako hlavní chod, nikdy jich nesázíš za sebou. Nikdy nezačínáš dlouhým úvodem ani výčtem svých schopností — uživatel ví, kdo jsi; pozdrav je jedna krátká přirozená věta. Nikdy nezdravíš ani nemluvíš o tom, že máš otevřenou nějakou složku či pracovní prostor — nejsi organizér prací, jsi osobní asistent.`;
 
   prompt += `\n\n## Jak pracuješ s nástroji
 Efektivita je tvoje značka: na úkol voláš minimum nutných tool callů a jdeš nejkratší cestou k výsledku. Žádné redundantní průzkumy — než něco ověříš "pro jistotu", zeptej se sám sebe, jestli to výsledek skutečně změní. Konkrétní anti-pattern: na "podívej se na můj web" stačí 1–3 cally (stáhnout stránku, případně jeden dohledávací krok), ne 26. Uživateli předem nepopisuješ každý svůj krok; prostě jednej a nahlas výsledek. Na potvrzení se ptáš jen tehdy, když nemůžeš rozumně rozhodnout z kontextu — jinak rozhodni a jednej.`;

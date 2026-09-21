@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import type { ChannelCallbacks, ChannelDriver } from "./types.js";
+import type { ApprovalCard, ChannelCallbacks, ChannelDriver } from "./types.js";
 import { chunkText } from "./types.js";
 
 const REST = "https://discord.com/api/v10";
@@ -226,12 +226,12 @@ export class DiscordDriver implements ChannelDriver {
     }
   }
 
-  async sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void> {
+  async sendApproval(externalChatId: string, approvalId: string, card: ApprovalCard): Promise<void> {
     // Buttons would need an application id + interaction flow; text commands
     // (/approve <id>, /reject <id>) decide instead — same verdict, less setup.
-    const lines = [`**Approval needed**`, ``, summary];
-    if (detail?.trim()) lines.push(``, detail.trim().slice(0, 1500));
-    lines.push(``, `Reply with \`/approve ${approvalId}\` or \`/reject ${approvalId}\`.`);
+    const lines = [`**Je potřeba schválení**`, ``, card.summary];
+    if (card.detail?.trim()) lines.push(``, card.detail.trim().slice(0, 1500));
+    lines.push(``, `**Proč se ptám:** ${card.reason}`, ``, `Odpověz \`/approve ${approvalId}\` nebo \`/reject ${approvalId}\`.`);
     await this.sendText(externalChatId, lines.join("\n"));
   }
 }

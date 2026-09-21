@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { createHash } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
@@ -36,6 +37,14 @@ const updateSchema = z.object({
    * re-roll it with the regenerate_avatar tool.
    */
   avatar: z.string().min(1).max(20_000).nullable().optional(),
+  /** Krátká charakteristika agenta — "kým je" (editovatelný profil identity). */
+  character: z.string().max(200).nullable().optional(),
+  /** Jak agent působí — tón, energie, nálada (editovatelný profil identity). */
+  vibe: z.string().max(200).nullable().optional(),
+  /** Duše agenta (SOUL.md) — trvalý text identity; agent ji čte v system promptu a sám ji přepisuje. */
+  soul: z.string().max(20_000).nullable().optional(),
+  /** Trvalý obraz uživatele (USER.md) — jméno, oslovení, co má rád, hranice. */
+  userProfile: z.string().max(20_000).nullable().optional(),
 });
 
 const ensureChatSchema = z.object({ projectId: z.string().min(1) });
@@ -149,7 +158,64 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         return reply.code(403).send({ error: "No access" });
       }
       const svg = avatarSvgForAgent(agent.avatar, agent.id);
-      return reply.header("content-type", "image/svg+xml; charset=utf-8").send(svg);
+      // The URL is constant per agent, so without cache headers the browser
+      // would keep showing a stale cached copy after regenerate_avatar.
+      // ETag = the stored spec (changes on every re-roll): revalidation is
+      // cheap (304 while unchanged) and a new avatar always yields new bytes.
+      const etag = `"${createHash("sha256").update(agent.avatar ?? `agent:${agent.id}`).digest("hex").slice(0, 32)}"`;
+      if (request.headers["if-none-match"] === etag) {
+        return reply.code(304).send();
+      }
+      return reply
+        .header("content-type", "image/svg+xml; charset=utf-8")
+        .header("etag", etag)
+        .header("cache-control", "no-cache")
+        .send(svg);
+    });
+
+    /**
+     * Re-roll the agent's generative avatar (server-side twin of the agent's
+     * regenerate_avatar tool) — used by the identity profile editor in the UI.
+     */
+    instance.post("/api/agents/:id/avatar/regenerate", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const rows = await ctx.db
+        .select({ id: agents.id, projectId: agents.projectId, name: agents.name })
+        .from(agents)
+        .where(eq(agents.id, id))
+        .limit(1);
+      const agent = rows[0];
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+      if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) {
+        return reply.code(403).send({ error: "No access" });
+      }
+      const { generateAvatarSpec } = await import("../agents/avatar.js");
+      // Mint until the seed actually differs, then verify the write landed —
+      // never report success while the avatar is unchanged (same guarantee
+      // as the agent's regenerate_avatar tool).
+      const prevSeed = parseAvatarSpec(
+        (await ctx.db.select({ avatar: agents.avatar }).from(agents).where(eq(agents.id, id)).limit(1))[0]?.avatar,
+      )?.seed;
+      let spec = generateAvatarSpec(agent.name ?? "agent");
+      for (let i = 0; i < 5 && spec.seed === prevSeed; i++) {
+        spec = generateAvatarSpec(agent.name ?? "agent");
+      }
+      if (spec.seed === prevSeed) {
+        return reply.code(500).send({ error: "Nepodařilo se vygenerovat odlišný avatar." });
+      }
+      await ctx.db
+        .update(agents)
+        .set({ avatar: JSON.stringify(spec) })
+        .where(eq(agents.id, id));
+      const check = await ctx.db
+        .select({ avatar: agents.avatar })
+        .from(agents)
+        .where(eq(agents.id, id))
+        .limit(1);
+      if (parseAvatarSpec(check[0]?.avatar)?.seed !== spec.seed) {
+        return reply.code(500).send({ error: "Avatar se nepodařilo uložit do databáze." });
+      }
+      return { ok: true };
     });
 
     /** Status of the agent's own computer — auto-creates the container when missing. */

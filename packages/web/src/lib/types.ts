@@ -70,6 +70,16 @@ export interface Agent {
   computerBackend: "local" | "docker";
   computerImage: string | null;
   mascot: string | null;
+  /** Stored generative avatar spec (JSON string) — drives avatar cache-busting. */
+  avatar: string | null;
+  /** Krátká charakteristika agenta — "kým je" (profil identity). */
+  character: string | null;
+  /** Jak agent působí — tón, energie, nálada (profil identity). */
+  vibe: string | null;
+  /** Duše agenta (SOUL.md) — trvalý text identity, editovatelný v UI i agentem. */
+  soul: string | null;
+  /** Trvalý obraz uživatele (USER.md) — jméno, oslovení, co má rád, hranice. */
+  userProfile: string | null;
   heartbeatMinutes: number;
   heartbeatPrompt: string | null;
   lastHeartbeatAt: string | null;

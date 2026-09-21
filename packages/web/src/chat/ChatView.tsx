@@ -7,7 +7,7 @@ import { subscribeToSession } from "../lib/ws-client";
 import { firstText, truncate } from "../lib/format";
 import { MessageView } from "../components/MessageView";
 import { Markdown } from "../components/Markdown";
-import { AgentAvatar } from "../components/AgentAvatar";
+import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
 import { ToolStepChecklist, type ToolStep } from "../components/ToolStepChecklist";
 import { SubagentIndicator } from "../components/SubagentIndicator";
 import { IconButton } from "../components/ui";
@@ -120,6 +120,10 @@ export function ChatView({
   onOpenAgent?: () => void;
 }) {
   const queryClient = useQueryClient();
+  // Cache-busting version for the avatar <img> URLs below — changes exactly
+  // when the agent row's avatar spec changes (e.g. after regenerate_avatar),
+  // so the browser fetches the new artwork instead of a stale cached copy.
+  const avatarVersion = avatarVersionOf(agent);
   const [text, setText] = useState("");
   const [images, setImages] = useState<Array<{ mimeType: string; data: string }>>([]);
   const [docFiles, setDocFiles] = useState<Array<{ name: string; mimeType: string; data: string }>>([]);
@@ -189,8 +193,13 @@ export function ChatView({
           desktopNotifiedRef.current = false;
         }
         if (event.status !== "running") setStreamingText("");
-      } else if (event.type === "tool_call" && typeof event.name === "string" && (event.name.startsWith("desktop_") || event.name.startsWith("browser_"))) {
-        if (!desktopNotifiedRef.current) {
+      } else if (event.type === "tool_call" && typeof event.name === "string") {
+        if (event.name === "regenerate_avatar") {
+          // The agent just re-rolled its avatar — refetch the agent row so
+          // every avatar picks up the new seed (?v= cache-buster) at once.
+          void queryClient.invalidateQueries({ queryKey: ["agent"] });
+        }
+        if (!desktopNotifiedRef.current && (event.name.startsWith("desktop_") || event.name.startsWith("browser_"))) {
           desktopNotifiedRef.current = true;
           onDesktopActivity?.();
         }
@@ -413,7 +422,7 @@ export function ChatView({
         </button>
         <span className="flex-1" />
         <button onClick={onOpenAgent} title="Otevřít nastavení agenta" className="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 hover:bg-bg-hover">
-          <AgentAvatar seed={agent.id} mood={mood} size={30} />
+          <AgentAvatar seed={agent.id} version={avatarVersion} mood={mood} size={30} />
           <span className="max-w-[32vw] truncate text-[14px] font-[600] text-fg">{agent.name}</span>
           <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-live pulse-live" : "bg-live"}`} title={isRunning ? "Pracuje" : "Připojeno"} />
         </button>
@@ -440,7 +449,7 @@ export function ChatView({
         )}
         {!isLoading && !isError && !streamingText && renderBlocks.length === 0 && (
           <div className="mx-auto w-full max-w-[760px] px-4 py-10 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center"><AgentAvatar seed={agent.id} size={52} /></div>
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center"><AgentAvatar seed={agent.id} version={avatarVersion} size={52} /></div>
             <p className="text-[15px] font-[700] text-fg">Nová konverzace</p>
             <p className="mx-auto mt-1 max-w-[420px] text-[13px] leading-relaxed text-fg-muted">
               Napiš, s čím ti {agent.name} má pomoct — úkoly, otázky, soubory i počítač. Zůstane to jen mezi vámi.
@@ -472,16 +481,14 @@ export function ChatView({
           ),
         )}
         {streamingText && (
-          <div className="mx-auto flex w-full max-w-[760px] gap-2.5 px-4 py-2">
-            <div className="mt-0.5 shrink-0"><AgentAvatar seed={agent.id} mood="speaking" size={24} /></div>
-            <div className="min-w-0 flex-1 rounded-[20px] rounded-tl-[8px] border border-border bg-bg-raised px-4 py-3">
+          <div className="mx-auto w-full max-w-[760px] px-4 py-2 animate-fade-in">
+            <div className="rounded-[16px] border border-border bg-bg-raised px-4 py-3">
               <Markdown>{streamingText}</Markdown>
             </div>
           </div>
         )}
         {(isRunning || isPaused) && !streamingText && (
           <div className="mx-auto flex w-full max-w-[760px] items-center gap-2 px-4 py-1.5">
-            <AgentAvatar seed={agent.id} mood={isPaused ? "idle" : "working"} size={24} />
             <span className="flex items-center gap-1.5 text-[12px] text-fg-muted">
               <span className={`h-1.5 w-1.5 rounded-full ${isPaused ? "bg-warning" : "bg-live animate-pulse"}`} />
               {isPaused ? "pozastaveno" : "pracuje…"}
@@ -633,7 +640,6 @@ export function BrowserCard({ title, onOpen }: { title: string; onOpen: () => vo
 /** One steps block for a run of consecutive tool-only assistant turns. */
 export function GroupedSteps({
   messages,
-  agentId,
   toolResultsById,
   sessionTitle,
   onOpenPreview,
@@ -641,6 +647,7 @@ export function GroupedSteps({
   settled = false,
 }: {
   messages: PersistedMessage[];
+  /** Kept for API compatibility (unused now that the steps block no longer shows an avatar). */
   agentId: string;
   toolResultsById: Map<string, { content: string; isError?: boolean }>;
   sessionTitle: string;
@@ -658,11 +665,8 @@ export function GroupedSteps({
   const showBrowser = messages.some(hasBrowserTools);
   const images = messages.flatMap(messageImages);
   return (
-    <div className="mx-auto flex w-full max-w-[760px] gap-2 px-4 py-1.5">
-      <div className="mt-0.5 shrink-0">
-        <AgentAvatar seed={agentId} size={24} />
-      </div>
-      <div className="min-w-0 flex-1">
+    <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
+      <div className="min-w-0">
         <details className="group px-0.5 py-1">
           <summary className="flex cursor-pointer list-none items-center gap-0.5 text-[11.5px] font-[600] text-fg-subtle marker:hidden hover:text-fg-muted">
             {steps.length} {steps.length === 1 ? "krok" : steps.length < 5 ? "kroky" : "kroků"}
@@ -697,7 +701,7 @@ export function ArtifactCard({ image, title, bare }: { image: { mimeType: string
   if (bare) return <div className="py-1.5">{inner}</div>;
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-1.5">
-      <div className="ml-[34px]">{inner}</div>
+      {inner}
     </div>
   );
 }

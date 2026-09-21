@@ -1,6 +1,6 @@
 import { MessageCircle, Search, Settings, ShieldCheck } from "lucide-react";
 
-export type Module = "chat" | "approvals" | "soul" | "channel";
+export type Module = "chat" | "approvals" | "soul" | "user-profile" | "channel";
 
 export function IconRail({
   module,

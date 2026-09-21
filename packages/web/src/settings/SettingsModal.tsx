@@ -10,7 +10,7 @@ import type { Agent, ChannelConfig, IntegrationConnector, McpServer, MountList, 
 import { DirectoryPicker } from "../components/DirectoryPicker";
 import { ModelFields } from "../components/ModelFields";
 import { ProviderCreateForm } from "../components/ProviderCreateForm";
-import { AgentAvatar } from "../components/AgentAvatar";
+import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
 import { VaultSection } from "./VaultSection";
 
 export type Section = "agent" | "model" | "folders" | "providers" | "channels" | "connectors" | "vault" | "data" | "about";
@@ -163,7 +163,7 @@ function AgentSection({ agent }: { agent: Agent }) {
     <div className="max-w-[520px]">
       <SectionHead>Základní údaje o tvém agentovi — jak se jmenuje a jak často se sám probouzí.</SectionHead>
       <div className="mb-4 flex items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3">
-        <AgentAvatar seed={agent.id} size={48} />
+        <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={48} />
         <div className="min-w-0">
           <p className="truncate text-[14px] font-[700] tracking-[-0.01em] text-fg">{agent.name}</p>
           <p className="mono truncate text-[12px] text-fg-muted">{agent.model}</p>

@@ -11,6 +11,7 @@ import { AgentPanel, type AgentTab } from "../panels/AgentPanel";
 import { BrowserPanel } from "../panels/BrowserPanel";
 import { useApprovals } from "../panels/Approvals";
 import { SoulEditor } from "../views/SoulEditor";
+import { UserProfileEditor } from "../views/UserProfileEditor";
 import { ChannelView } from "../views/ChannelView";
 import { ApprovalsView } from "../views/ApprovalsView";
 import { SearchOverlay } from "../overlays/SearchOverlay";
@@ -163,6 +164,7 @@ export function HertzShell() {
           />
         )}
         {module === "soul" && <SoulEditor agent={agent} onClose={() => setModule("chat")} />}
+        {module === "user-profile" && <UserProfileEditor agent={agent} onClose={() => setModule("chat")} />}
         {module === "approvals" && <ApprovalsView />}
       </main>
 
@@ -178,6 +180,7 @@ export function HertzShell() {
               onTabChange={setAgentTab}
               onClose={() => setRightPanel(null)}
               onOpenSoul={() => setModule("soul")}
+              onOpenUserProfile={() => setModule("user-profile")}
               onOpenMemory={() => openAgentPanel("memory")}
               onRename={(n) => rename.mutate(n)}
             />
@@ -207,6 +210,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
   const [model, setModel] = useState("");
   const [agentId, setAgentId] = useState<string | null>(null);
   const [avatarNonce, setAvatarNonce] = useState(0);
+  const [avatarSeed, setAvatarSeed] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -268,6 +272,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
     try {
       const seed = mintAvatarSeed(agentName);
       await api.patch(`/agents/${agentId}`, { avatar: JSON.stringify({ version: 1, kind: "generative", seed }) });
+      setAvatarSeed(seed);
       setAvatarNonce((n) => n + 1);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Avatar se nepodařilo vygenerovat.");
@@ -296,6 +301,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
         try { localStorage.setItem("hertz.userName", cleanUser); } catch { /* private mode */ }
       }
       setAgentId(created.id);
+      setAvatarSeed(seed);
       setAvatarNonce((n) => n + 1);
       setStep(2);
     } catch (e) {
@@ -405,7 +411,7 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
 
         {step === 2 && agentId && (
           <div className="flex flex-col items-center text-center">
-            <AgentAvatar key={avatarNonce} seed={agentId} size={104} />
+            <AgentAvatar key={avatarNonce} seed={agentId} version={avatarSeed ?? undefined} size={104} />
             <h1 className="mt-7 text-[30px] font-[700] leading-[1.15] tracking-[-0.02em] text-fg">
               Těší mě{finalUserName ? `, ${finalUserName}` : ""}.
             </h1>

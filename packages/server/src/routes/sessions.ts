@@ -15,18 +15,10 @@ import { checkBudget } from "../usage/quota.js";
 import { stripEmoji } from "../text/strip-emoji.js";
 
 /**
- * Scrub emoji from assistant-produced text blocks on the way out to the web
- * client. The persona hard-bans emoji; this is the safety net for history
- * loaded from the database (the live stream is scrubbed in ws/session-hub.ts).
- * User messages and tool results are never touched.
+ * Conversational assistant history is delivered untouched — sparing emoji in
+ * conversation are allowed by the persona, so no scrub is applied on read.
+ * The pendingQuestion card below is system UI and therefore still scrubbed.
  */
-function scrubAssistantMessage<T extends { role: string; content: ContentBlock[] }>(message: T): T {
-  if (message.role !== "assistant") return message;
-  const content = message.content.map((block) =>
-    block.type === "text" ? { ...block, text: stripEmoji(block.text) } : block,
-  );
-  return { ...message, content };
-}
 
 function clearPendingMetadata(raw: string | null): string | null {
   if (!raw) return null;
@@ -185,7 +177,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (!(await hasProjectAccess(ctx.db, request.user!, session.projectId))) return reply.code(403).send({ error: "No access to this project" });
 
     const adapter = createPersistenceAdapter(ctx.db);
-    const messages = (await adapter.listMessages(id)).map(scrubAssistantMessage);
+    const messages = await adapter.listMessages(id);
     const budget = computeBudget(messages);
 
     const agent = session.agentId

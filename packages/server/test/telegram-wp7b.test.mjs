@@ -81,6 +81,20 @@ async function makeManager(t) {
     paths: resolveHertzPaths(tmp),
     desktop: { start: async () => ({}) },
     fallbackUserId: async () => "user1",
+    providers: {
+      getAdapter: async (providerConfigId) => ({
+        listModels: async () =>
+          providerConfigId === "pc2"
+            ? [
+                { id: "gpt-x", displayName: "GPT X" },
+                { id: "gpt-y", displayName: "GPT Y" },
+              ]
+            : [
+                { id: "claude-x", displayName: "Claude X" },
+                { id: "claude-y", displayName: "Claude Y" },
+              ],
+      }),
+    },
   };
   const manager = new ChannelManager(deps);
   await manager.start();
@@ -169,19 +183,34 @@ describe("Telegram commands (ChannelManager)", () => {
     assert.match(lastBotText(), /demo/);
   });
 
-  it("/model offers an inline picker and the callback switches provider", async (t) => {
+  it("/model offers a two-step inline picker: provider, then model", async (t) => {
     const { db, manager, driver } = await makeManager(t);
     await manager.handleMessage("cfg1", driver, inbound("/model"));
     const sends = botSends();
     const picker = sends[sends.length - 1];
     const buttons = picker.body.reply_markup.inline_keyboard.flat();
-    assert.ok(buttons.some((b) => b.callback_data === "tgcmd:model:pc2"), "picker must offer pc2");
+    assert.ok(buttons.some((b) => b.callback_data === "tgcmd:modelprov:pc2"), "picker must offer pc2");
 
-    await manager.handleCommandCallback("cfg1", driver, "telegram:42", "model", "pc2", "@t");
+    // Step 1: provider chosen — the picker message is edited in place with the model list.
+    await manager.handleCommandCallback("cfg1", driver, "telegram:42", "modelprov", "pc2", "@t", 777);
+    const edits = mock.calls.filter((c) => c.method === "editMessageText");
+    const edit = edits.find((c) => c.body.message_id === 777);
+    assert.ok(edit, "model list must edit the picker message in place");
+    const modelButtons = edit.body.reply_markup.inline_keyboard.flat();
+    assert.ok(modelButtons.length > 0, "models offered as buttons");
+    assert.ok(
+      modelButtons.every((b) => b.callback_data.startsWith("tgcmd:modelpick:")),
+      "model callbacks carry the picker id",
+    );
+    const payload = modelButtons[1].callback_data.split(":")[2];
+
+    // Step 2: model chosen — agent row updated, confirmation edited in place.
+    await manager.handleCommandCallback("cfg1", driver, "telegram:42", "modelpick", payload, "@t", 777);
     const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, "agent1"));
     assert.equal(rows[0].providerConfigId, "pc2");
-    assert.equal(rows[0].model, "gpt-x");
-    assert.match(lastBotText(), /OpenAI/);
+    assert.equal(rows[0].model, "gpt-y");
+    const confirm = mock.calls.filter((c) => c.method === "editMessageText").at(-1);
+    assert.match(confirm.body.text, /OpenAI/);
   });
 
   it("/pauza and /pokracuj pause and resume the loop", async (t) => {

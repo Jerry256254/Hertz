@@ -8,31 +8,17 @@ import { stripEmoji } from "../text/strip-emoji.js";
 import type { AgentLoopEvent } from "@kuclab-hertz/core";
 
 /**
- * Scrub emoji from the agent's outbound chat text before it reaches the web
- * client. The persona hard-bans emoji and the sanitizer is the safety net —
- * applied here on the live stream; the message-history REST endpoint applies
- * the same scrub on read (see routes/sessions.ts).
+ * Sanitize a loop event before it reaches the web client.
  *
- * Only assistant-produced text is touched (text deltas, ask_user questions,
- * saved assistant messages). User messages, tool results, notices and errors
- * pass through unchanged.
+ * Conversational assistant text (text deltas, saved assistant messages)
+ * passes through untouched — sparing emoji in conversation are allowed by
+ * the persona. Only the ask_user question keeps the sanitizer: it is
+ * rendered as a system UI card, which must stay emoji-free.
  */
 function sanitizeEventForWeb(event: AgentLoopEvent): AgentLoopEvent {
-  if (event.type === "text_delta" && event.text) {
-    const clean = stripEmoji(event.text);
-    return clean === event.text ? event : { ...event, text: clean };
-  }
   if (event.type === "awaiting_input" && event.question) {
     const clean = stripEmoji(event.question);
     return clean === event.question ? event : { ...event, question: clean };
-  }
-  if (event.type === "message_saved" && event.message.role === "assistant") {
-    const content = event.message.content.map((block) =>
-      block.type === "text" && typeof block.text === "string"
-        ? { ...block, text: stripEmoji(block.text) }
-        : block,
-    );
-    return { ...event, message: { ...event.message, content } };
   }
   return event;
 }

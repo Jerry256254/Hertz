@@ -1,5 +1,6 @@
-import type { ChannelCallbacks, ChannelDriver, ChannelStartOptions, OutboundStream } from "./types.js";
+import type { ApprovalCard, ChannelCallbacks, ChannelDecision, ChannelDriver, ChannelStartOptions, OutboundStream } from "./types.js";
 import { chunkTelegramHtml, markdownToTelegramHtml, stripTelegramHtml } from "./telegram-format.js";
+import { stripEmoji } from "../text/strip-emoji.js";
 import fs from "node:fs/promises";
 import { MAX_SEND_FILE_BYTES, mimeTypeForFilename } from "../files/attachments.js";
 
@@ -340,12 +341,13 @@ export class TelegramDriver implements ChannelDriver {
 
   private async handleCallbackQuery(cb: ChannelCallbacks, query: TgCallbackQuery): Promise<void> {
     const data = query.data!;
-    const decision = /^(approve|reject):([A-Za-z0-9_-]+)$/.exec(data);
+    const decision = /^(approve-session|approve|reject):([A-Za-z0-9_-]+)$/.exec(data);
     if (decision) {
-      const verdict = decision[1] === "approve" ? ("approved" as const) : ("rejected" as const);
+      const verdict: ChannelDecision =
+        decision[1] === "approve-session" ? "approved-session" : decision[1] === "approve" ? "approved" : "rejected";
       await this.api("answerCallbackQuery", {
         callback_query_id: query.id,
-        text: verdict === "approved" ? "Schváleno" : "Zamítnuto",
+        text: verdict === "approved" ? "Schváleno" : verdict === "approved-session" ? "Schváleno pro tuto session" : "Zamítnuto",
       }).catch(() => {});
       if (query.message) {
         await cb.onDecision(`telegram:${query.message.chat.id}`, decision[2]!, verdict);
@@ -357,7 +359,13 @@ export class TelegramDriver implements ChannelDriver {
     if (cmd && query.message) {
       await this.api("answerCallbackQuery", { callback_query_id: query.id }).catch(() => {});
       if (cb.onCommandCallback) {
-        await cb.onCommandCallback(`telegram:${query.message.chat.id}`, cmd[1]!, cmd[2]!, senderLabel(query.from));
+        await cb.onCommandCallback(
+          `telegram:${query.message.chat.id}`,
+          cmd[1]!,
+          cmd[2]!,
+          senderLabel(query.from),
+          query.message.message_id,
+        );
       }
       return;
     }
@@ -429,15 +437,23 @@ export class TelegramDriver implements ChannelDriver {
     if (!json.ok) throw new Error(`Telegram sendDocument failed: ${json.description ?? res.status}`);
   }
 
-  async sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void> {    const lines = [`Je potřeba schválení`, ``, summary];
-    if (detail?.trim()) lines.push(``, detail.trim().slice(0, 3000));
-    await this.sendFormatted(externalChatId, lines.join("\n"), {
+  /**
+   * Approval card: what the agent wants to do, why it needs the user's
+   * say-so, and three one-tap verdicts. Emoji are stripped — the card is UI
+   * chrome, which stays emoji-free.
+   */
+  async sendApproval(externalChatId: string, approvalId: string, card: ApprovalCard): Promise<void> {
+    const lines = [`**Je potřeba schválení**`, ``, card.summary];
+    if (card.detail?.trim()) lines.push(``, card.detail.trim().slice(0, 3000));
+    lines.push(``, `**Proč se ptám:** ${card.reason}`);
+    await this.sendFormatted(externalChatId, stripEmoji(lines.join("\n")), {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "Schválit", callback_data: `approve:${approvalId}` },
+            { text: "Povolit jednou", callback_data: `approve:${approvalId}` },
             { text: "Zamítnout", callback_data: `reject:${approvalId}` },
           ],
+          [{ text: "Povolit pro session", callback_data: `approve-session:${approvalId}` }],
         ],
       },
     });
@@ -482,7 +498,57 @@ export class TelegramDriver implements ChannelDriver {
 
   /** @internal — used by TelegramOutboundStream for overflow chunks of a long reply. */
   async sendHtmlChunk(externalChatId: string, htmlChunk: string): Promise<void> {
-    await this.api("sendMessage", { chat_id: this.chatId(externalChatId), text: htmlChunk, parse_mode: "HTML" });
+    try {
+      await this.api("sendMessage", { chat_id: this.chatId(externalChatId), text: htmlChunk, parse_mode: "HTML" });
+    } catch (err) {
+      // Same markup fallback as sendFormatted: never drop the overflow text.
+      if (/can't parse entities|parse entities/i.test((err as Error).message)) {
+        await this.api("sendMessage", { chat_id: this.chatId(externalChatId), text: stripTelegramHtml(htmlChunk) });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Re-render a message that carries inline buttons (e.g. the /model picker
+   * advancing from provider choice to model choice) without posting a new one.
+   */
+  async editMessageWithButtons(
+    externalChatId: string,
+    messageId: number,
+    markdown: string,
+    buttons: Array<Array<{ label: string; data: string }>>,
+  ): Promise<void> {
+    const html = markdownToTelegramHtml(markdown);
+    // An empty keyboard removes the buttons; Telegram rejects an explicit
+    // empty inline_keyboard, so reply_markup is omitted entirely then.
+    const reply_markup =
+      buttons.length > 0
+        ? { inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.label, callback_data: b.data }))) }
+        : undefined;
+    try {
+      await this.api("editMessageText", {
+        chat_id: this.chatId(externalChatId),
+        message_id: messageId,
+        text: html,
+        parse_mode: "HTML",
+        reply_markup,
+      });
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (/message is not modified/i.test(msg)) return;
+      if (/can't parse entities|parse entities/i.test(msg)) {
+        await this.api("editMessageText", {
+          chat_id: this.chatId(externalChatId),
+          message_id: messageId,
+          text: stripTelegramHtml(html),
+          reply_markup,
+        });
+        return;
+      }
+      throw err;
+    }
   }
 
   /** @internal — used by TelegramOutboundStream. */

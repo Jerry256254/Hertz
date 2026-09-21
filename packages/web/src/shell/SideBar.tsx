@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import type { Agent, ChannelBinding, ChannelConfig, SessionListItem } from "../lib/types";
 import { relTime, truncate } from "../lib/format";
 import { channelChipClass } from "../lib/channels";
-import { AgentAvatar } from "../components/AgentAvatar";
+import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
 
 export function SideBar({
   agent,
@@ -79,7 +79,7 @@ export function SideBar({
       {/* identity */}
       <div className="flex shrink-0 items-center gap-3 px-5 pb-4 pt-5">
         <span className="shrink-0 rounded-full ring-1 ring-white/10">
-          <AgentAvatar seed={agent.id} size={40} />
+          <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={40} />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-semibold tracking-[-0.01em] text-fg">{agent.name}</span>
@@ -129,8 +129,12 @@ export function SideBar({
           <section aria-label="Hlavní">
             <SectionHeader label="Hlavní" />
             <ChatRow active={activeSessionId === mainChatId} onClick={() => onSelectChat(mainChatId)}>
-              <span className="shrink-0 overflow-hidden rounded-full">
-                <AgentAvatar seed={agent.id} size={36} />
+              <span
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                  activeSessionId === mainChatId ? "bg-accent/15 text-accent" : "bg-bg-sunken text-fg-subtle"
+                }`}
+              >
+                <MessageSquare size={15} />
               </span>
               <RowText
                 title="Hlavní chat"

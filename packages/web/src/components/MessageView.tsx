@@ -1,6 +1,5 @@
 import { ChevronRight, Minimize2 } from "lucide-react";
 import type { PersistedMessage } from "../lib/types";
-import { AgentAvatar } from "./AgentAvatar";
 import { FileAttachmentCard } from "./FileAttachmentCard";
 import { Markdown } from "./Markdown";
 import { ToolStepChecklist, type ToolStep } from "./ToolStepChecklist";
@@ -10,13 +9,13 @@ const NUDGE_PREFIX = "[System nudge — not from the user]";
 export function MessageView({
   message,
   toolResultsById,
-  agentId,
   projectId,
   collapsibleTools = true,
   stepsSettled = false,
 }: {
   message: PersistedMessage;
   toolResultsById?: Map<string, { content: string; isError?: boolean }>;
+  /** Kept for API compatibility (unused now that bubbles no longer show an avatar). */
   agentId: string;
   /** Project id — builds the attachment download URLs. */
   projectId: string;
@@ -76,13 +75,10 @@ export function MessageView({
   // Nothing visible (e.g. image-only turn — artifacts render separately in ChatView): no empty bubble.
   if (textBlocks.length === 0 && toolUses.length === 0 && attachments.length === 0) return null;
   return (
-    <div className="mx-auto flex w-full max-w-[760px] gap-2 px-4 py-1.5 animate-fade-in">
-      <div className="mt-0.5 shrink-0">
-        <AgentAvatar seed={message.senderAgentId ?? agentId} size={24} />
-      </div>
-      <div className="min-w-0 flex-1 space-y-1.5">
+    <div className="mx-auto w-full max-w-[760px] px-4 py-1.5 animate-fade-in">
+      <div className="min-w-0 space-y-1.5">
         {textBlocks.length > 0 && (
-          <div className="rounded-[16px] rounded-tl-[6px] border border-border bg-bg-raised px-3.5 py-2.5">
+          <div className="rounded-[16px] border border-border bg-bg-raised px-3.5 py-2.5">
             {textBlocks.map((block, i) => <Markdown key={i}>{block.text}</Markdown>)}
           </div>
         )}

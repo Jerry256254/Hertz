@@ -1,10 +1,9 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { newId, type Database } from "../db/client.js";
-import { agentMemoryAtoms, agents } from "../db/schema.js";
-import { keywordsFor } from "../memory/tokenize.js";
-import { defaultAgentPrompt } from "../agents/persona.js";
-import { generateAvatarSpec } from "../agents/avatar.js";
+import type { Database } from "../db/client.js";
+import { agents } from "../db/schema.js";
+import { defaultAgentPrompt, defaultUserProfile } from "../agents/persona.js";
+import { generateAvatarSpec, parseAvatarSpec } from "../agents/avatar.js";
 import type { AgentToolDef } from "./tool-def.js";
 
 const completeOnboardingSchema = z.object({
@@ -49,19 +48,13 @@ export function createOnboardingTools(db: Database): AgentToolDef[] {
           name: agentName,
           systemPrompt: defaultAgentPrompt(agentName),
           avatar: JSON.stringify(avatar),
+          // Jméno uživatele patří do trvalého obrazu uživatele (USER.md), ne do
+          // paměťových atomů — paměť jsou události, profil je trvalý. Agent ho
+          // pak sám doplňuje nástrojem update_user_profile.
+          userProfile: defaultUserProfile(userName),
           onboardedAt: now,
         })
         .where(eq(agents.id, agentId));
-      // The user's name is identity-grade memory: importance 5, never re-asked.
-      const note = `Uživatel se jmenuje ${userName}. Oslovuj ho tak.`;
-      await db.insert(agentMemoryAtoms).values({
-        id: newId(),
-        agentId,
-        text: note.slice(0, 500),
-        importance: 5,
-        keywords: keywordsFor(note),
-        createdAt: now,
-      });
       return {
         summary: `Hotovo — odteď se jmenuješ ${agentName} a uživatel je ${userName}. Avatar vygenerován. Už se na jména nikdy neptej.`,
       };
@@ -76,14 +69,32 @@ export function createOnboardingTools(db: Database): AgentToolDef[] {
     async execute(_rawInput, ctx) {
       const agentId = ctx.actor.actorId;
       const rows = await db
-        .select({ name: agents.name })
+        .select({ name: agents.name, avatar: agents.avatar })
         .from(agents)
         .where(eq(agents.id, agentId))
         .limit(1);
       if (!rows[0]) return { summary: "Agent nenalezen.", isError: true };
-      const spec = generateAvatarSpec(rows[0].name ?? "agent");
+      const prevSeed = parseAvatarSpec(rows[0].avatar)?.seed;
+      // Mint until the seed actually differs — a re-rolled avatar must never
+      // silently keep the old artwork.
+      let spec = generateAvatarSpec(rows[0].name ?? "agent");
+      for (let i = 0; i < 5 && spec.seed === prevSeed; i++) {
+        spec = generateAvatarSpec(rows[0].name ?? "agent");
+      }
+      if (spec.seed === prevSeed) {
+        return { summary: "Nepodařilo se vygenerovat odlišný avatar.", isError: true };
+      }
       await db.update(agents).set({ avatar: JSON.stringify(spec) }).where(eq(agents.id, agentId));
-      return { summary: "Avatar přegenerován — nový jedinečný motiv." };
+      // Verify the write really landed — never claim success on a silent no-op.
+      const check = await db
+        .select({ avatar: agents.avatar })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1);
+      if (parseAvatarSpec(check[0]?.avatar)?.seed !== spec.seed) {
+        return { summary: "Avatar se nepodařilo uložit do databáze.", isError: true };
+      }
+      return { summary: `Avatar přegenerován — nový jedinečný motiv (seed ${spec.seed}).` };
     },
   };
 

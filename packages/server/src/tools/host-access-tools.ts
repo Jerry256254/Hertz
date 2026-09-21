@@ -6,6 +6,7 @@ import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { approvals, auditLog, sessions } from "../db/schema.js";
 import type { AgentToolDef } from "./tool-def.js";
+import { hasSessionApproval, sessionApprovalKey } from "./session-approval-grants.js";
 
 export type HostAccessOp = "read" | "rewrite" | "create" | "delete";
 
@@ -177,6 +178,39 @@ export function createHostAccessTools(db: Database): AgentToolDef[] {
       const payload: HostAccessPayload = { op: input.op, hostPath, content: input.content, reason: input.reason };
       const summary = `Host ${input.op} ${hostPath} — ${input.reason.slice(0, 120)}`;
       const id = newId();
+      // "Povolit pro session": pre-approved op+path — the server executes it
+      // right away, exactly like a one-shot approval, without parking.
+      if (hasSessionApproval(sessionId, sessionApprovalKey("host_access", `${input.op}:${hostPath}`))) {
+        await db.insert(auditLog).values({
+          id: newId(),
+          actorId: ctx.actor.actorId,
+          actorType: "agent",
+          sessionId,
+          projectId,
+          action: "host_access.approved",
+          target: hostPath,
+          targetType: "host_path",
+          result: "allowed",
+          detail: JSON.stringify({ op: input.op, hostPath, via: "session_grant" }),
+          at: new Date(),
+        });
+        const opResult = await executeHostAccessOp(payload);
+        await db.insert(approvals).values({
+          id,
+          projectId,
+          agentId: ctx.actor.actorId,
+          sessionId,
+          summary,
+          detail: input.reason,
+          kind: "host_access",
+          payload: JSON.stringify(payload),
+          result: JSON.stringify(opResult),
+          status: "approved",
+          decidedAt: new Date(),
+          createdAt: new Date(),
+        });
+        return { summary: `[Automaticky schváleno pro tuto session] ${formatHostAccessExecutedInbound(payload, opResult)}` };
+      }
       await db.insert(approvals).values({
         id,
         projectId,

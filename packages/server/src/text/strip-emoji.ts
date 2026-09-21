@@ -1,10 +1,12 @@
 /**
- * Emoji sanitizer for the agent's outbound chat text.
+ * Emoji sanitizer for the agent's SYSTEM-FACING text (approval cards,
+ * error and lifecycle messages, pending-question UI cards).
  *
- * The persona hard-bans emoji, but models occasionally slip one in anyway
- * ("Ahoj! 👋 Jsem tady."). This is the safety net: every assistant message is
- * stripped of emoji right before it is delivered to the web UI or a chat
- * channel (Telegram, Discord).
+ * The persona bans emoji in UI text and system messages but allows them
+ * sparingly in conversation with the user — so conversational assistant
+ * text must NOT be stripped. This sanitizer is the safety net only for the
+ * system paths, where emoji are never wanted (a stray emoji would survive
+ * in a static UI template or leak through a generated card).
  *
  * Design goal: remove ONLY emoji. Legitimate text must survive untouched:
  * ©, ®, ™, arrows (→), stars (★), math symbols, currency signs, bullets —

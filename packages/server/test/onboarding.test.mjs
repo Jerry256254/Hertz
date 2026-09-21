@@ -92,7 +92,7 @@ describe("persona (Czech-first, no emoji, no corporate greeting)", () => {
 });
 
 describe("onboarding flow", () => {
-  it("new agent -> complete_onboarding stores names, avatar and onboarding flag", async () => {
+  it("new agent -> complete_onboarding stores names, avatar, user profile and onboarding flag", async () => {
     const { client, db } = await makeDb();
     await seedAgent(db, { onboardedAt: null });
     const [tool] = createOnboardingTools(db);
@@ -111,10 +111,11 @@ describe("onboarding flow", () => {
     assert.ok(spec, "avatar spec must be valid JSON");
     assert.equal(spec.version, 1);
 
+    // The user's name belongs to the permanent user profile (USER.md), not to
+    // memory atoms — memory is events, the profile is durable.
+    assert.match(agent.userProfile ?? "", /Jaroslav/, "userProfile must carry the user's name");
     const atoms = await db.select().from(agentMemoryAtoms).where(eq(agentMemoryAtoms.agentId, "agent-1"));
-    assert.equal(atoms.length, 1);
-    assert.match(atoms[0].text, /Jaroslav/);
-    assert.equal(atoms[0].importance, 5);
+    assert.equal(atoms.length, 0, "onboarding must not write name atoms into memory");
     client.close();
   });
 

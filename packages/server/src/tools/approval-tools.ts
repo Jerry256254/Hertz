@@ -4,6 +4,12 @@ import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import type { AgentToolDef } from "./tool-def.js";
 import { approvals, sessions } from "../db/schema.js";
+import {
+  hasSessionApproval,
+  normalizeApprovalSummary,
+  sessionApprovalKey,
+  sessionGrantInfo,
+} from "./session-approval-grants.js";
 
 const requestSchema = z.object({
   summary: z
@@ -38,6 +44,27 @@ export function createApprovalTools(db: Database): AgentToolDef[] {
       }
 
       const id = newId();
+      // "Povolit pro session": the user pre-approved this exact action — run
+      // it through without parking, but keep the paper trail.
+      const grantKey = sessionApprovalKey("generic", normalizeApprovalSummary(input.summary));
+      if (hasSessionApproval(sessionId, grantKey)) {
+        const grant = sessionGrantInfo(sessionId, grantKey);
+        await db.insert(approvals).values({
+          id,
+          projectId,
+          agentId: ctx.actor.actorId,
+          sessionId,
+          summary: input.summary,
+          detail: input.detail ?? null,
+          status: "approved",
+          decidedByUserId: grant?.grantedBy ?? null,
+          decidedAt: new Date(),
+          createdAt: new Date(),
+        });
+        return {
+          summary: `Automaticky schváleno — uživatel tuto akci pro tuto session předem povolil („${input.summary}"). Pokračuj v práci.`,
+        };
+      }
       await db.insert(approvals).values({
         id,
         projectId,

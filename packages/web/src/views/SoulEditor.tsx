@@ -3,16 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bold, Heading1, Heading2, Heading3, Italic, List, ListOrdered, MoreHorizontal, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Agent, AgentLayeredMemory } from "../lib/types";
-import { AgentAvatar } from "../components/AgentAvatar";
+import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
 import { Markdown } from "../components/Markdown";
 import { SkillsEditor } from "./SkillsEditor";
 
-const DEFAULT_SOUL = `Buď opravdu užitečný. Měj názory. Než se zeptáš, zkus si poradit sám. Jsi hostem v něčím životě — chovej se tak.`;
+const DEFAULT_SOUL_PLACEHOLDER = `Jsem osobní AI parťák svého člověka — ne stroj na úkoly. Mám svoje jméno, svoji povahu a svůj vztah k němu…`;
 
 /**
- * SOUL.md editor — the persona file. The server stores two layers: the
- * agent-maintained L3 persona (shown as context) and the user's system
- * prompt (editable here, saved via PATCH /api/agents/:id).
+ * SOUL.md editor — the agent's soul. Stored in agents.soul, injected into the
+ * system prompt on every turn, and self-maintained by the agent via the
+ * update_soul tool when it learns something durable about itself. The user's
+ * edits here always take priority over what the agent writes itself.
  */
 export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -28,7 +29,7 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
   });
 
   const save = useMutation({
-    mutationFn: (systemPrompt: string) => api.patch(`/agents/${agent.id}`, { systemPrompt }),
+    mutationFn: (soul: string) => api.patch(`/agents/${agent.id}`, { soul }),
     onSuccess: () => {
       setSaved(true);
       setError(null);
@@ -38,8 +39,8 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
     onError: (err) => setError(err instanceof ApiError ? err.message : "Uložení selhalo"),
   });
 
-  const value = text ?? agent.systemPrompt ?? "";
-  const dirty = value !== (agent.systemPrompt ?? "");
+  const value = text ?? agent.soul ?? "";
+  const dirty = value !== (agent.soul ?? "");
 
   function askClose() {
     if (dirty && !window.confirm("Máš neuložené změny. Opravdu zavřít bez uložení?")) return;
@@ -72,7 +73,7 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-[60px] shrink-0 items-center gap-2.5 px-3 md:px-5">
-        <AgentAvatar seed={agent.id} size={30} />
+        <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={30} />
         <div className="flex gap-1 rounded-full border border-border bg-bg-raised p-1">
           <button onClick={() => setTab("soul")} className={`pressable min-h-[44px] rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "soul" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>SOUL.md</button>
           <button onClick={() => setTab("skills")} className={`pressable min-h-[44px] rounded-full px-3.5 py-1.5 text-[12.5px] font-[600] ${tab === "skills" ? "bg-bg-sunken text-fg" : "text-fg-subtle hover:text-fg-muted"}`}>Dovednosti</button>
@@ -108,21 +109,21 @@ export function SoulEditor({ agent, onClose }: { agent: Agent; onClose: () => vo
           ) : (
             <>
               <p className="border-l-2 border-accent pl-3 text-[13px] italic leading-relaxed text-fg-muted">
-                O tomhle souboru: duše agenta — kým je a jak se chová. Tvoje úpravy tu mají přednost před tím, co si agent píše sám.
+                O tomhle souboru: duše agenta — kým je, jeho hodnoty, vztah k tobě. Injektuje se do jeho system promptu při každém tahu, takže se podle ní opravdu chová. Agent ji sám přepisuje, když se o sobě něco trvalého naučí. Tvoje úpravy tu mají přednost před tím, co si agent píše sám.
               </p>
               <h1 className="mb-3 mt-4 text-[22px] font-[700]">SOUL.md</h1>
               {error && <p className="mb-3 rounded-[14px] border border-danger/25 bg-danger-wash px-4 py-2.5 text-[13px] text-danger">{error}</p>}
 
               {preview ? (
                 <div className="rounded-[20px] border border-border bg-bg-raised p-5">
-                  <Markdown>{value || DEFAULT_SOUL}</Markdown>
+                  <Markdown>{value || DEFAULT_SOUL_PLACEHOLDER}</Markdown>
                 </div>
               ) : (
                 <textarea
                   id="soul-textarea"
                   value={value}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder={DEFAULT_SOUL}
+                  placeholder={DEFAULT_SOUL_PLACEHOLDER}
                   rows={16}
                   className="w-full resize-y rounded-[20px] border border-border bg-bg-raised p-5 text-[14px] leading-relaxed text-fg placeholder:text-fg-subtle outline-none focus:border-accent"
                 />

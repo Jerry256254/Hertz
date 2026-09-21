@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { stripEmoji, hasEmoji } from "../dist/text/strip-emoji.js";
 import { defaultAgentPrompt, onboardingPromptBlock } from "../dist/agents/persona.js";
 import { buildSystemPrompt } from "../dist/agents/system-prompt.js";
@@ -49,29 +50,27 @@ describe("stripEmoji", () => {
   });
 });
 
-describe("persona bez projektového rámování a bez emoji", () => {
+describe("persona — nuancované emoji pravidlo", () => {
   const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\uFE0F]/u;
 
-  it("defaultAgentPrompt neobsahuje slovo projekt", () => {
+  it("defaultAgentPrompt má nové pravidlo a NE tvrdý zákaz", () => {
     const p = defaultAgentPrompt("Hertz");
     assert.ok(!/projekt/i.test(p), "persona nesmí obsahovat 'projekt'");
-    assert.ok(!EMOJI_RE.test(p), "persona nesmí obsahovat emoji");
-  });
-
-  it("persona má tvrdý zákaz emoji", () => {
-    const p = defaultAgentPrompt("Hertz");
-    assert.ok(/TVRDÝ ZÁKAZ/.test(p), "persona musí obsahovat tvrdý zákaz emoji");
+    assert.ok(!EMOJI_RE.test(p), "persona nesmí obsahovat literal emoji");
+    assert.ok(!/TVRDÝ ZÁKAZ/.test(p), "persona nesmí obsahovat tvrdý zákaz emoji");
+    assert.ok(/střídmě/i.test(p), "persona musí obsahovat nové pravidlo (střídmé emoji v konverzaci)");
+    assert.ok(/UI|ui|nadpisy/i.test(p), "persona musí zakazovat emoji v UI textech");
     assert.ok(p.includes("Hertz"), "jméno agenta je v personě");
   });
 
-  it("onboardingPromptBlock je bez emoji a bez projektů", () => {
+  it("onboardingPromptBlock je bez tvrdého zákazu a bez literal emoji", () => {
     const b = onboardingPromptBlock("Hertz");
     assert.ok(!/projekt/i.test(b), "onboarding nesmí obsahovat 'projekt'");
-    assert.ok(!EMOJI_RE.test(b), "onboarding nesmí obsahovat emoji");
-    assert.ok(/bez emoji/i.test(b), "onboarding musí zakazovat emoji v pozdravu");
+    assert.ok(!EMOJI_RE.test(b), "onboarding nesmí obsahovat literal emoji");
+    assert.ok(!/TVRDÝ ZÁKAZ/.test(b), "onboarding nesmí obsahovat tvrdý zákaz emoji");
   });
 
-  it("plný system prompt je bez slova projekt i bez emoji", async () => {
+  it("plný system prompt má nové pravidlo a NE tvrdý zákaz", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hertz-emoji-"));
     const { client, db } = openDatabase(path.join(dir, "test.db"));
     try {
@@ -83,10 +82,63 @@ describe("persona bez projektového rámování a bez emoji", () => {
         onboardedAt: new Date(),
       });
       assert.ok(!/projekt/i.test(prompt), "sestavený prompt nesmí obsahovat 'projekt'");
-      assert.ok(!EMOJI_RE.test(prompt), "sestavený prompt nesmí obsahovat emoji");
+      assert.ok(!EMOJI_RE.test(prompt), "sestavený prompt nesmí obsahovat literal emoji");
+      assert.ok(!/TVRDÝ ZÁKAZ/.test(prompt), "sestavený prompt nesmí obsahovat tvrdý zákaz emoji");
+      assert.ok(/střídmě/i.test(prompt), "sestavený prompt musí obsahovat nové pravidlo");
     } finally {
       client.close();
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("sanitizace emoji — konverzace prochází, systém se čistí", () => {
+  const SRC = new URL("../src/", import.meta.url);
+
+  async function readSrc(rel) {
+    return fs.readFile(new URL(rel, SRC), "utf8");
+  }
+
+  /** Extract a class method body by name (2-space indented class). */
+  function methodBody(source, name) {
+    const re = new RegExp(`private async ${name}\\([\\s\\S]*?\\n  \\}`, "g");
+    const m = source.match(re);
+    assert.ok(m && m.length > 0, `metoda ${name} musí existovat`);
+    return m[0];
+  }
+
+  it("channels/manager.ts: konverzační cesty se nečistí", async () => {
+    const manager = await readSrc("channels/manager.ts");
+    assert.ok(!/stripEmoji/.test(methodBody(manager, "broadcast")), "broadcast (konverzace) nesmí čistit emoji");
+    assert.ok(!/stripEmoji/.test(methodBody(manager, "finishStreams")), "finishStreams (konverzace) nesmí čistit emoji");
+    assert.ok(!/stripEmoji/.test(methodBody(manager, "updateStreams")), "updateStreams (konverzace) nesmí čistit emoji");
+  });
+
+  it("channels/manager.ts: systémové cesty se čistí", async () => {
+    const manager = await readSrc("channels/manager.ts");
+    assert.ok(/stripEmoji/.test(methodBody(manager, "broadcastSystem")), "broadcastSystem (chyby) musí čistit emoji");
+    const approvalMatch = manager.match(/buildApprovalCard\(\{[\s\S]*?\}\)/);
+    assert.ok(approvalMatch && /stripEmoji/.test(approvalMatch[0]), "approval karta musí čistit emoji");
+  });
+
+  it("ws/session-hub.ts: konverzační eventy se nečistí", async () => {
+    const hub = await readSrc("ws/session-hub.ts");
+    const sanitizer = hub.match(/function sanitizeEventForWeb\([\s\S]*?\n\}/)?.[0];
+    assert.ok(sanitizer, "sanitizeEventForWeb musí existovat");
+    assert.ok(!/text_delta/.test(sanitizer), "text_delta se nesmí čistit");
+    assert.ok(!/message_saved/.test(sanitizer), "message_saved se nesmí čistit");
+    // Otázka ask_user karty je systémové UI — ta se čistit má.
+    assert.ok(/awaiting_input/.test(sanitizer) && /stripEmoji/.test(sanitizer), "awaiting_input otázka (UI karta) se čistit má");
+  });
+
+  it("routes/sessions.ts: historie asistenta se nečistí, pendingQuestion karta ano", async () => {
+    const routes = await readSrc("routes/sessions.ts");
+    assert.ok(!/scrubAssistantMessage/.test(routes), "scrubAssistantMessage nesmí existovat");
+    assert.ok(/pendingQuestion[\s\S]{0,200}stripEmoji|stripEmoji\(q\)/.test(routes), "pendingQuestion karta se čistit má");
+  });
+
+  it("channels/telegram.ts: approval karta se čistí", async () => {
+    const telegram = await readSrc("channels/telegram.ts");
+    assert.ok(/stripEmoji/.test(telegram), "telegram driver musí čistit systémové karty");
   });
 });

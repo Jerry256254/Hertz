@@ -114,6 +114,27 @@ export const agents = sqliteTable("agents", {
   /** The agent's mascot emoji — its face everywhere in the UI (animated avatar). */
   mascot: text("mascot"),
   /**
+   * Krátká charakteristika agenta — "kým je" (jméno je ve sloupci name).
+   * Spolu s vibe tvoří editovatelný profil identity v UI.
+   */
+  character: text("character"),
+  /** Jak agent působí — tón, energie, nálada (např. "klidný a vtipný"). */
+  vibe: text("vibe"),
+  /**
+   * Duše agenta (SOUL.md): trvalý text o tom, kým agent je — identita, hodnoty,
+   * vztah k uživateli. Injektuje se do system promptu každý tah; agent ji sám
+   * přepisuje nástrojem update_soul, když se něco trvalého naučí. NULL = výchozí
+   * duše z agents/persona.ts.
+   */
+  soul: text("soul"),
+  /**
+   * Obraz uživatele (USER.md): trvalý profil člověka — jméno, jak ho oslovovat,
+   * co má rád, hranice. Agent ho sám doplňuje z konverzace nástrojem
+   * update_user_profile. Paměť (agent_memory_atoms) jsou události a fakta z běhu;
+   * tohle je trvalý profil, ne kronika.
+   */
+  userProfile: text("user_profile"),
+  /**
    * Generative avatar spec (JSON: { version, kind, seed }) — the agent's unique
    * visual identity, minted at onboarding. Rendered via agents/avatar.ts as
    * standalone SVG or a data URL. NULL = render the deterministic fallback.

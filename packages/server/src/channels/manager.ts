@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { AgentLoopEvent, AgentLoopManager, PersistencePort } from "@kuclab-hertz/core";
+import type { AgentLoopEvent, AgentLoopManager, PersistencePort, ProviderPort } from "@kuclab-hertz/core";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { AuditSink } from "@kuclab-hertz/sandbox";
 import type { Database } from "../db/client.js";
@@ -11,6 +11,12 @@ import { decryptSecret } from "../secrets/key-encryption.js";
 import { enqueueAgentRun } from "../runtime/run-jobs.js";
 import type { JobQueue } from "../queue/job-queue.js";
 import { decideApproval } from "../tools/approval-tools.js";
+import { reapExpiredApprovals } from "../tools/approval-reaper.js";
+import {
+  grantSessionApproval,
+  normalizeApprovalSummary,
+  sessionApprovalKey,
+} from "../tools/session-approval-grants.js";
 import { resolveVaultUseApproval } from "../tools/vault-tools.js";
 import {
   executeHostAccessOp,
@@ -18,11 +24,13 @@ import {
   formatHostAccessRejectedInbound,
   parseHostAccessPayload,
 } from "../tools/host-access-tools.js";
+import { parseMcpOpPayload } from "../mcp/tool-policy.js";
 import { TelegramDriver } from "./telegram.js";
 import { DiscordDriver } from "./discord.js";
-import type { ChannelDriver, InboundMessage, OutboundStream } from "./types.js";
+import type { ChannelDecision, ChannelDriver, InboundMessage, OutboundStream } from "./types.js";
 import { isClearCommand, isNewChatCommand, parseDecisionCommand } from "./types.js";
 import { handleTelegramCallback, handleTelegramCommand, type TelegramCommandEnv } from "./telegram-commands.js";
+import { buildApprovalCard } from "./approval-card.js";
 import { stripEmoji } from "../text/strip-emoji.js";
 
 export interface ChannelManagerDeps {
@@ -35,6 +43,8 @@ export interface ChannelManagerDeps {
   paths: HertzPaths;
   desktop: Pick<DesktopManager, "start">;
   fallbackUserId: () => Promise<string>;
+  /** Provider registry for the /model picker. Optional — /model falls back to a message when absent. */
+  providers?: ProviderPort;
 }
 
 interface RunningChannel {
@@ -89,6 +99,8 @@ export class ChannelManager {
   private running = new Map<string, RunningChannel>();
   private taps = new Map<string, SessionTap>();
   private started = false;
+  /** Expiry sweep for approvals nobody decided in time (10 min TTL). */
+  private reaperTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly deps: ChannelManagerDeps) {}
 
@@ -96,10 +108,21 @@ export class ChannelManager {
     if (this.started) return;
     this.started = true;
     await this.reload();
+    // Sweep promptly once at boot (a restart may have left stale pendings),
+    // then every minute.
+    void this.reapApprovals().catch((err) => console.warn(`[hertz] approval reaper failed: ${(err as Error).message}`));
+    this.reaperTimer = setInterval(() => {
+      void this.reapApprovals().catch((err) => console.warn(`[hertz] approval reaper failed: ${(err as Error).message}`));
+    }, 60_000);
+    this.reaperTimer.unref?.();
   }
 
   stop(): void {
     this.started = false;
+    if (this.reaperTimer) {
+      clearInterval(this.reaperTimer);
+      this.reaperTimer = null;
+    }
     for (const channel of this.running.values()) {
       try {
         channel.driver.stop();
@@ -134,8 +157,13 @@ export class ChannelManager {
           onDecision: (externalChatId, approvalId, decision) => this.handleDecision(driver, externalChatId, approvalId, decision),
           ...(driver instanceof TelegramDriver
             ? {
-                onCommandCallback: (externalChatId: string, action: string, payload: string, senderLabel: string) =>
-                  this.handleCommandCallback(config.id, driver, externalChatId, action, payload, senderLabel),
+                onCommandCallback: (
+                  externalChatId: string,
+                  action: string,
+                  payload: string,
+                  senderLabel: string,
+                  messageId?: number,
+                ) => this.handleCommandCallback(config.id, driver, externalChatId, action, payload, senderLabel, messageId),
               }
             : {}),
         });
@@ -270,6 +298,12 @@ export class ChannelManager {
         await this.deps.desktop.start(agentId);
       },
       botPolling: () => (typeof driver.isPolling === "function" ? driver.isPolling() : true),
+      listModels: async (providerConfigId: string) => {
+        if (!this.deps.providers) throw new Error("provider registry not available");
+        const adapter = await this.deps.providers.getAdapter(providerConfigId);
+        const models = await adapter.listModels();
+        return models.map((m) => ({ id: m.id, displayName: m.displayName, contextWindow: m.contextWindow }));
+      },
     };
   }
 
@@ -280,11 +314,12 @@ export class ChannelManager {
     action: string,
     payload: string,
     senderLabel: string,
+    messageId?: number,
   ): Promise<void> {
     const configRows = await this.deps.db.select().from(channelConfigs).where(eq(channelConfigs.id, configId)).limit(1);
     const config = configRows[0];
     if (!config || !config.enabled) return;
-    await handleTelegramCallback(this.commandEnv(configId, driver, config), externalChatId, senderLabel, action, payload);
+    await handleTelegramCallback(this.commandEnv(configId, driver, config), externalChatId, senderLabel, action, payload, messageId);
   }
 
   /** Bound session id without creating one. */
@@ -297,9 +332,17 @@ export class ChannelManager {
     return bindings[0]?.sessionId;
   }
 
-  private async pendingApprovalsFor(sessionId: string): Promise<Array<{ id: string; summary: string; detail: string | null }>> {
+  private async pendingApprovalsFor(sessionId: string): Promise<
+    Array<{ id: string; summary: string; detail: string | null; kind: string; payload: string | null }>
+  > {
     const rows = await this.deps.db
-      .select({ id: approvals.id, summary: approvals.summary, detail: approvals.detail })
+      .select({
+        id: approvals.id,
+        summary: approvals.summary,
+        detail: approvals.detail,
+        kind: approvals.kind,
+        payload: approvals.payload,
+      })
       .from(approvals)
       .where(and(eq(approvals.sessionId, sessionId), eq(approvals.status, "pending")))
       .orderBy(desc(approvals.createdAt));
@@ -448,8 +491,14 @@ export class ChannelManager {
         const rows = await this.deps.db.select().from(approvals).where(eq(approvals.id, pendingApprovalId)).limit(1);
         const approval = rows[0];
         if (approval && approval.status === "pending") {
+          const card = buildApprovalCard({
+            summary: stripEmoji(approval.summary),
+            detail: approval.detail ? stripEmoji(approval.detail) : null,
+            kind: approval.kind,
+            payload: approval.payload,
+          });
           for (const [chatId, driver] of tap.targets) {
-            await driver.sendApproval(chatId, approval.id, stripEmoji(approval.summary), approval.detail ? stripEmoji(approval.detail) : null).catch((err) =>
+            await driver.sendApproval(chatId, approval.id, card).catch((err) =>
               console.warn(`[hertz] channel send failed: ${(err as Error).message}`),
             );
           }
@@ -461,7 +510,7 @@ export class ChannelManager {
     }
     if (event.type === "error") {
       await this.finishStreams(tap);
-      await this.broadcast(tap, event.message ?? "Něco se pokazilo.");
+      await this.broadcastSystem(tap, event.message ?? "Něco se pokazilo.");
       this.dropTap(sessionId);
       return;
     }
@@ -487,13 +536,12 @@ export class ChannelManager {
       if (typeof driver.beginStream !== "function") continue;
       let stream = tap.streams.get(chatId);
       if (!stream) {
-        const opened = await driver.beginStream(chatId, stripEmoji(tap.buffer)).catch(() => undefined);
+        const opened = await driver.beginStream(chatId, tap.buffer).catch(() => undefined);
         if (!opened) continue; // placeholder failed — legacy sendText fallback
         tap.streams.set(chatId, opened);
         stream = opened;
       }
-      // Sanitize the live view too, so an emoji never flashes mid-stream.
-      await stream.update(stripEmoji(tap.buffer)).catch(() => {});
+      await stream.update(tap.buffer).catch(() => {});
     }
   }
 
@@ -502,7 +550,8 @@ export class ChannelManager {
    * buffer to legacy targets. Consumes the buffer.
    */
   private async finishStreams(tap: SessionTap): Promise<void> {
-    const text = stripEmoji(tap.buffer.trim());
+    // Conversational text — emoji pass through untouched (sparing use is allowed).
+    const text = tap.buffer.trim();
     tap.buffer = "";
     for (const [chatId, driver] of tap.targets) {
       const stream = tap.streams.get(chatId);
@@ -527,7 +576,15 @@ export class ChannelManager {
     }
   }
 
+  /** Broadcast conversational assistant text (ask_user question, history fallback) — emoji are allowed. */
   private async broadcast(tap: SessionTap, text: string): Promise<void> {
+    for (const [chatId, driver] of tap.targets) {
+      await driver.sendText(chatId, text).catch((err) => console.warn(`[hertz] channel send failed: ${(err as Error).message}`));
+    }
+  }
+
+  /** Broadcast a system message (e.g. an error) — UI text, so emoji are stripped. */
+  private async broadcastSystem(tap: SessionTap, text: string): Promise<void> {
     const clean = stripEmoji(text);
     for (const [chatId, driver] of tap.targets) {
       await driver.sendText(chatId, clean).catch((err) => console.warn(`[hertz] channel send failed: ${(err as Error).message}`));
@@ -567,12 +624,42 @@ export class ChannelManager {
     driver: ChannelDriver,
     externalChatId: string,
     approvalId: string,
-    decision: "approved" | "rejected",
+    decision: ChannelDecision,
   ): Promise<void> {
     const reply = await this.applyDecision(driver, externalChatId, approvalId, decision);
     await driver
       .sendText(externalChatId, reply ?? "Toto schválení už nečeká (bylo rozhodnuto nebo vypršelo).")
       .catch(() => {});
+  }
+
+  /**
+   * Stable grant key for "Povolit pro session": the approval kind plus a
+   * tool-specific stable scope, so only the same action is pre-approved —
+   * never a blanket pass for everything.
+   */
+  private sessionGrantKeyFor(result: { kind: string; payload: string | null; summary: string }): string | undefined {
+    switch (result.kind) {
+      case "host_access": {
+        const payload = parseHostAccessPayload(result.payload);
+        return payload ? sessionApprovalKey("host_access", `${payload.op}:${payload.hostPath}`) : undefined;
+      }
+      case "vault_use": {
+        try {
+          const parsed = JSON.parse(result.payload ?? "") as { credentialId?: unknown };
+          return typeof parsed?.credentialId === "string"
+            ? sessionApprovalKey("vault_use", parsed.credentialId)
+            : undefined;
+        } catch {
+          return undefined;
+        }
+      }
+      case "mcp_op": {
+        const payload = parseMcpOpPayload(result.payload);
+        return payload ? sessionApprovalKey("mcp_op", `${payload.serverId}:${payload.toolName}`) : undefined;
+      }
+      default:
+        return sessionApprovalKey("generic", normalizeApprovalSummary(result.summary));
+    }
   }
 
   /**
@@ -586,11 +673,31 @@ export class ChannelManager {
     driver: ChannelDriver,
     externalChatId: string,
     approvalId: string,
-    decision: "approved" | "rejected",
+    decision: ChannelDecision,
   ): Promise<string | undefined> {
     const ownerId = await this.deps.fallbackUserId();
-    const result = await decideApproval(this.deps.db, approvalId, decision, ownerId);
+    // "approved-session" resolves as a normal approval; the session grant is
+    // recorded separately below so the next identical request skips the gate.
+    const effectiveDecision = decision === "rejected" ? "rejected" : "approved";
+    const result = await decideApproval(this.deps.db, approvalId, effectiveDecision, ownerId);
     if (!result) return undefined;
+
+    if (decision === "approved-session") {
+      const key = this.sessionGrantKeyFor(result);
+      if (key) grantSessionApproval(result.sessionId, key, ownerId);
+      await this.deps.audit
+        .record({
+          actorId: ownerId,
+          actorType: "user",
+          sessionId: result.sessionId,
+          projectId: result.projectId,
+          action: "approval.session_grant",
+          target: approvalId,
+          targetType: "approval",
+          result: "allowed",
+          detail: { kind: result.kind, summary: result.summary, via: "channel" },
+        });
+    }
 
     // Host-access approvals decided from chat execute the op the same way as
     // the WebUI inbox does — the agent must never be told "approved" without
@@ -600,7 +707,7 @@ export class ChannelManager {
       const payload = parseHostAccessPayload(result.payload);
       if (!payload) {
         inboundText = `[Your host-access request "${result.summary}" (via chat channel) had an unreadable payload — the server could not execute it. Continue inside your own files.]`;
-      } else if (decision === "rejected") {
+      } else if (effectiveDecision === "rejected") {
         await this.deps.audit.record({
           actorId: ownerId,
           actorType: "user",
@@ -649,12 +756,12 @@ export class ChannelManager {
         sessionId: result.sessionId,
         summary: result.summary,
         payload: result.payload,
-        decision,
+        decision: effectiveDecision,
         decidedByUserId: ownerId,
       });
     } else {
       inboundText =
-        decision === "approved"
+        effectiveDecision === "approved"
           ? `[The user APPROVED your request "${result.summary}" (via chat channel).] Proceed exactly as described.`
           : `[The user REJECTED your request "${result.summary}" (via chat channel).] Do not perform it. Continue without it — propose an alternative only if it's essential to the task.`;
     }
@@ -688,7 +795,92 @@ export class ChannelManager {
       // Session already running — the inbound decision above is picked up mid-run.
     }
 
-    return decision === "approved" ? `Schváleno: ${result.summary}` : `Zamítnuto: ${result.summary}`;
+    return decision === "approved"
+      ? `Schváleno: ${result.summary}`
+      : decision === "approved-session"
+        ? `Schváleno pro tuto session: ${result.summary}`
+        : `Zamítnuto: ${result.summary}`;
+  }
+
+  /**
+   * Expiry sweep: approvals nobody decided within the TTL are treated as
+   * rejected — the parked session resumes with an expiry notice and every
+   * bound chat gets a short heads-up. Runs every minute from start().
+   */
+  private async reapApprovals(): Promise<void> {
+    const expired = await reapExpiredApprovals(this.deps.db);
+    if (expired.length === 0) return;
+    const ownerId = await this.deps.fallbackUserId().catch(() => "");
+    for (const item of expired) {
+      await this.deps.audit
+        .record({
+          actorId: ownerId,
+          actorType: "user",
+          sessionId: item.sessionId,
+          action: "approval.expired",
+          target: item.id,
+          targetType: "approval",
+          result: "denied",
+          detail: { summary: item.summary },
+        });
+
+      // Drop the parked "waiting for decision" state.
+      try {
+        const metaRows = await this.deps.db
+          .select({ metadata: sessions.metadata })
+          .from(sessions)
+          .where(eq(sessions.id, item.sessionId))
+          .limit(1);
+        let meta: Record<string, unknown> = {};
+        try {
+          meta = metaRows[0]?.metadata ? (JSON.parse(metaRows[0].metadata) as Record<string, unknown>) : {};
+        } catch {
+          meta = {};
+        }
+        delete meta.pendingQuestion;
+        delete meta.pendingApprovalId;
+        await this.deps.db
+          .update(sessions)
+          .set({ status: "active", metadata: JSON.stringify(meta), updatedAt: new Date() })
+          .where(eq(sessions.id, item.sessionId));
+      } catch {
+        /* the resume below still informs the agent */
+      }
+
+      await this.deps.agentLoop
+        .appendInbound(item.sessionId, [
+          {
+            type: "text",
+            text: `[Požadavek na schválení „${item.summary}" vypršel bez rozhodnutí — beru ho jako ZAMÍTNUTÝ. Neprováděj ho a nepokoušej se ho obejít; pokračuj bez něj.]`,
+          },
+        ])
+        .catch(() => {});
+
+      // Notify every chat bound to the session.
+      const tap = this.ensureTap(item.sessionId);
+      try {
+        const bindings = await this.deps.db
+          .select({ channelId: channelBindings.channelId, externalChatId: channelBindings.externalChatId })
+          .from(channelBindings)
+          .where(eq(channelBindings.sessionId, item.sessionId));
+        for (const binding of bindings) {
+          const channel = this.running.get(binding.channelId);
+          if (!channel) continue;
+          tap.targets.set(binding.externalChatId, channel.driver);
+          await channel.driver
+            .sendText(binding.externalChatId, `Schválení vypršelo bez rozhodnutí — beru to jako zamítnutí: ${item.summary}`)
+            .catch(() => {});
+        }
+      } catch {
+        /* notification is best-effort */
+      }
+
+      try {
+        await enqueueAgentRun(this.deps, { sessionId: item.sessionId, prePersisted: true }, { maxAttempts: 2 });
+      } catch {
+        // Session already running — the inbound expiry notice is picked up mid-run.
+      }
+    }
   }
 
   /** Recent channel-linked chats for the Channels page. */

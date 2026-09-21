@@ -13,14 +13,39 @@ export interface InboundMessage {
 
 export interface ChannelCallbacks {
   onMessage(msg: InboundMessage): Promise<void>;
-  onDecision(externalChatId: string, approvalId: string, decision: "approved" | "rejected"): Promise<void>;
+  /**
+   * "approved" = allow once, "approved-session" = allow once + pre-approve the
+   * same action for the rest of the session, "rejected" = deny.
+   */
+  onDecision(externalChatId: string, approvalId: string, decision: ChannelDecision): Promise<void>;
   /**
    * Platform UI callbacks that are not approvals: inline-picker selections from
    * bot commands (model pickers, chat switchers, confirmations…). Only fired by
-   * drivers whose platform supports callback buttons (Telegram).
+   * drivers whose platform supports callback buttons (Telegram). messageId is
+   * the id of the message carrying the buttons, so the handler can edit it in
+   * place instead of posting a new message.
    */
-  onCommandCallback?(externalChatId: string, action: string, payload: string, senderLabel: string): Promise<void>;
+  onCommandCallback?(
+    externalChatId: string,
+    action: string,
+    payload: string,
+    senderLabel: string,
+    messageId?: number,
+  ): Promise<void>;
 }
+
+/** A pending approval rendered for a chat channel: action preview + why it's gated. */
+export interface ApprovalCard {
+  /** One-line action summary ("Send offer e-mail to Novák"). */
+  summary: string;
+  /** Longer context: what exactly would be done. Null when none. */
+  detail: string | null;
+  /** Plain-language (Czech) explanation of why this action needs approval. */
+  reason: string;
+}
+
+/** Verdicts a chat channel can deliver for an approval. */
+export type ChannelDecision = "approved" | "rejected" | "approved-session";
 
 export interface ChannelStartOptions {
   /**
@@ -67,7 +92,7 @@ export interface ChannelDriver {
     file: { absolutePath: string; filename: string; caption?: string },
   ): Promise<void>;
   /** Approval request with one-tap decision buttons where the platform supports them. */
-  sendApproval(externalChatId: string, approvalId: string, summary: string, detail: string | null): Promise<void>;
+  sendApproval(externalChatId: string, approvalId: string, card: ApprovalCard): Promise<void>;
   /** Best-effort "is typing…" indicator; no-op where the platform lacks one. */
   typing?(externalChatId: string): Promise<void>;
   /** Open a live-updating message; undefined = platform cannot edit messages. */
@@ -155,6 +180,8 @@ const COMMAND_ALIASES: Record<string, string> = {
   skills: "skilly",
   pauza: "pauza",
   pause: "pauza",
+  zastavit: "zastavit",
+  stop: "zastavit",
   pokracuj: "pokracuj",
   resume: "pokracuj",
   continue: "pokracuj",

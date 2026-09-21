@@ -83,6 +83,10 @@ CREATE TABLE IF NOT EXISTS agents (
   mascot TEXT,
   avatar TEXT,
   onboarded_at INTEGER,
+  character TEXT,
+  vibe TEXT,
+  soul TEXT,
+  user_profile TEXT,
   heartbeat_minutes INTEGER NOT NULL DEFAULT 0,
   heartbeat_prompt TEXT,
   last_heartbeat_at INTEGER,
@@ -408,6 +412,10 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE approvals ADD COLUMN result TEXT",
   "ALTER TABLE mcp_servers ADD COLUMN policy_mode TEXT NOT NULL DEFAULT 'read-only'",
   "ALTER TABLE mcp_servers ADD COLUMN policy_tools_json TEXT",
+  "ALTER TABLE agents ADD COLUMN character TEXT",
+  "ALTER TABLE agents ADD COLUMN vibe TEXT",
+  "ALTER TABLE agents ADD COLUMN soul TEXT",
+  "ALTER TABLE agents ADD COLUMN user_profile TEXT",
 ];
 
 /**

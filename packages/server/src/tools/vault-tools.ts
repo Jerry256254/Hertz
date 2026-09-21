@@ -16,6 +16,11 @@ import {
   issueVaultGrant,
   peekVaultGrant,
 } from "../secrets/vault-grants.js";
+import {
+  hasSessionApproval,
+  sessionApprovalKey,
+  sessionGrantInfo,
+} from "./session-approval-grants.js";
 
 export interface VaultUsePayload {
   credentialId: string;
@@ -121,6 +126,37 @@ export function createVaultTools(db: Database, masterKey: Buffer): AgentToolDef[
       const payload: VaultUsePayload = { credentialId: meta.id, purpose: input.purpose };
       const summary = `Použít údaj „${meta.label}" (${meta.service}, ${meta.username}) — ${input.purpose.slice(0, 120)}`;
       const id = newId();
+      // "Povolit pro session": the user pre-approved this credential — mint
+      // the single-use vault grant right away, exactly like a one-shot
+      // approval, without parking the run.
+      const grantKey = sessionApprovalKey("vault_use", meta.id);
+      if (hasSessionApproval(sessionId, grantKey)) {
+        const grant = sessionGrantInfo(sessionId, grantKey);
+        await db.insert(approvals).values({
+          id,
+          projectId,
+          agentId: ctx.actor.actorId,
+          sessionId,
+          summary,
+          detail: `Předem povoleno pro tuto session (trezor: ${meta.label}).`,
+          kind: "vault_use",
+          payload: JSON.stringify(payload),
+          result: null,
+          status: "approved",
+          decidedByUserId: grant?.grantedBy ?? null,
+          decidedAt: new Date(),
+          createdAt: new Date(),
+        });
+        const inbound = await resolveVaultUseApproval(db, masterKey, {
+          approvalId: id,
+          sessionId,
+          summary,
+          payload: JSON.stringify(payload),
+          decision: "approved",
+          decidedByUserId: grant?.grantedBy ?? "",
+        });
+        return { summary: `[Automaticky schváleno pro tuto session] ${inbound}` };
+      }
       await db.insert(approvals).values({
         id,
         projectId,

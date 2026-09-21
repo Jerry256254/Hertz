@@ -6,6 +6,7 @@ import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { approvals, auditLog, mcpServers, sessions } from "../db/schema.js";
 import { decryptSecret } from "../secrets/key-encryption.js";
+import { hasSessionApproval, sessionApprovalKey } from "../tools/session-approval-grants.js";
 import { CONNECTOR_CATALOG, connectorForServerArgs, type ConnectorId } from "./catalog.js";
 import {
   classifyTool,
@@ -299,6 +300,28 @@ export class McpRegistry {
     const summary = `Citlivá operace: ${entry.toolName} (${entry.serverName})`;
     const payload: McpOpPayload = { serverId: entry.serverId, serverName: entry.serverName, toolName: entry.toolName, input };
     const id = newId();
+    // "Povolit pro session": the user pre-approved this exact tool — the
+    // server executes it right away, exactly like a one-shot approval.
+    if (hasSessionApproval(sessionId, sessionApprovalKey("mcp_op", `${entry.serverId}:${entry.toolName}`))) {
+      await this.db.insert(auditLog).values({
+        id: newId(),
+        actorId: agentId,
+        actorType: "agent",
+        sessionId,
+        projectId,
+        action: "mcp_op.approved",
+        target: `${entry.serverName}:${entry.toolName}`,
+        targetType: "mcp_tool",
+        result: "allowed",
+        detail: JSON.stringify({ serverId: entry.serverId, toolName: entry.toolName, via: "session_grant" }),
+        at: new Date(),
+      });
+      const direct = await this.executeApprovedOp(entry.serverId, entry.toolName, input);
+      return {
+        summary: `[Automaticky schváleno pro tuto session] ${direct.summary}`,
+        isError: direct.isError,
+      };
+    }
     await this.db.insert(approvals).values({
       id,
       projectId,

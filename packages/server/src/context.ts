@@ -213,7 +213,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const heartbeatScheduler = new HeartbeatScheduler({ db, queue, agentLoop });
   heartbeatScheduler.start();
 
-  const channels = new ChannelManager({ db, masterKey, agentLoop, persistence, queue, audit, paths, desktop, fallbackUserId });
+  const channels = new ChannelManager({ db, masterKey, agentLoop, persistence, queue, audit, paths, desktop, fallbackUserId, providers });
   await channels.start();
 
   return {

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Brain, Check, Clock, Cpu, Fingerprint, ListTodo, Monitor, Pencil, Plus, ShieldCheck, X, Zap } from "lucide-react";
+import { Activity, Brain, Check, Clock, Cpu, Fingerprint, ListTodo, Monitor, Pencil, Plus, RefreshCw, ShieldCheck, User, X, Zap } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Agent, AgentLayeredMemory, ProviderConfig, Routine, SessionListItem } from "../lib/types";
 import { fmtDate, relTime } from "../lib/format";
-import { AgentAvatar } from "../components/AgentAvatar";
+import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
 import { ModelFields } from "../components/ModelFields";
 import { ApprovalCard, ApprovalHistoryRow, useApprovals } from "./Approvals";
 import { MemoryView } from "../views/MemoryView";
@@ -20,6 +20,7 @@ export function AgentPanel({
   onTabChange,
   onClose,
   onOpenSoul,
+  onOpenUserProfile,
   onOpenMemory,
   onRename,
 }: {
@@ -29,6 +30,7 @@ export function AgentPanel({
   onTabChange: (t: AgentTab) => void;
   onClose: () => void;
   onOpenSoul: () => void;
+  onOpenUserProfile: () => void;
   onOpenMemory: () => void;
   onRename: (name: string) => void;
 }) {
@@ -42,7 +44,7 @@ export function AgentPanel({
         <button onClick={onClose} title="Zavřít panel" aria-label="Zavřít panel" className="pressable absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-full text-fg-muted hover:bg-bg-sunken hover:text-fg">
           <X size={14} />
         </button>
-        <AgentAvatar seed={agent.id} size={48} />
+        <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={48} />
         <p className="mt-1.5 text-[15px] font-[700] tracking-[-0.02em] text-fg">{agent.name}</p>
         <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-fg-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-live" /> Připojeno
@@ -77,7 +79,7 @@ export function AgentPanel({
         {tab === "activity" && <ActivityTab agentId={agent.id} />}
         {tab === "approvals" && <ApprovalsTab />}
         {tab === "routines" && <RoutinesTab agent={agent} projectId={projectId} />}
-        {tab === "identity" && <IdentityTab agent={agent} onOpenSoul={onOpenSoul} onOpenMemory={onOpenMemory} onRename={onRename} />}
+        {tab === "identity" && <IdentityTab agent={agent} onOpenSoul={onOpenSoul} onOpenUserProfile={onOpenUserProfile} onOpenMemory={onOpenMemory} onRename={onRename} />}
         {tab === "skills" && <SkillsEditor agent={agent} />}
         {tab === "memory" && <MemoryView agent={agent} onOpenSoul={onOpenSoul} bare />}
         {tab === "computer" && <ComputerView agent={agent} projectId={projectId} bare />}
@@ -324,7 +326,8 @@ function RoutineRow({ title, desc, enabled, locked = false }: { title: string; d
   );
 }
 
-function IdentityTab({ agent, onOpenSoul, onOpenMemory, onRename }: { agent: Agent; onOpenSoul: () => void; onOpenMemory: () => void; onRename: (n: string) => void }) {
+function IdentityTab({ agent, onOpenSoul, onOpenUserProfile, onOpenMemory, onRename }: { agent: Agent; onOpenSoul: () => void; onOpenUserProfile: () => void; onOpenMemory: () => void; onRename: (n: string) => void }) {
+  const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(agent.name);
   const { data: memory } = useQuery({
@@ -354,12 +357,21 @@ function IdentityTab({ agent, onOpenSoul, onOpenMemory, onRename }: { agent: Age
         )}
       </div>
 
+      <ProfileForm agent={agent} />
+
       <div className="space-y-2">
         <button onClick={onOpenSoul} className="pressable flex w-full items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-left hover:bg-bg-hover">
           <Fingerprint size={16} className="shrink-0 text-fg-muted" />
           <span className="min-w-0 flex-1">
-            <span className="block text-[13.5px] font-[600] text-fg">SOUL.md a dovednosti</span>
-            <span className="block text-[12px] text-fg-muted">Povaha agenta · od {fmtDate(agent.createdAt)}</span>
+            <span className="block text-[13.5px] font-[600] text-fg">SOUL.md — duše agenta</span>
+            <span className="block text-[12px] text-fg-muted">Kým je · upravitelná · od {fmtDate(agent.createdAt)}</span>
+          </span>
+        </button>
+        <button onClick={onOpenUserProfile} className="pressable flex w-full items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-left hover:bg-bg-hover">
+          <User size={16} className="shrink-0 text-fg-muted" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px] font-[600] text-fg">USER.md — obraz uživatele</span>
+            <span className="block text-[12px] text-fg-muted">{agent.userProfile?.trim() ? "Profil vyplněn" : "Zatím prázdný — agent doplní z konverzace"}</span>
           </span>
         </button>
         <button onClick={onOpenMemory} className="pressable flex w-full items-center gap-3 rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-left hover:bg-bg-hover">
@@ -374,6 +386,92 @@ function IdentityTab({ agent, onOpenSoul, onOpenMemory, onRename }: { agent: Age
       <div className="rounded-[16px] border border-border bg-bg-raised px-4 py-3 text-[12.5px] leading-relaxed text-fg-muted">
         <p className="flex items-center gap-1.5"><Check size={13} className="text-live" /> Počítač: {agent.isolated ? "izolovaný kontejner" : "místní běh"}</p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Plnohodnotný editovatelný profil identity: charakter, vibe a avatar.
+ * Jméno se edituje inline v kartě nad formulářem.
+ */
+function ProfileForm({ agent }: { agent: Agent }) {
+  const queryClient = useQueryClient();
+  const [character, setCharacter] = useState(agent.character ?? "");
+  const [vibe, setVibe] = useState(agent.vibe ?? "");
+  const [err, setErr] = useState<string | null>(null);
+  const [savedTick, setSavedTick] = useState(false);
+
+  const dirty = character !== (agent.character ?? "") || vibe !== (agent.vibe ?? "");
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/agents/${agent.id}`, {
+      character: character.trim() ? character.trim() : null,
+      vibe: vibe.trim() ? vibe.trim() : null,
+    }),
+    onSuccess: () => {
+      setErr(null);
+      setSavedTick(true);
+      setTimeout(() => setSavedTick(false), 2000);
+      void queryClient.invalidateQueries({ queryKey: ["agent"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Uložení selhalo"),
+  });
+
+  const regenerate = useMutation({
+    mutationFn: () => api.post(`/agents/${agent.id}/avatar/regenerate`),
+    onSuccess: () => {
+      setErr(null);
+      void queryClient.invalidateQueries({ queryKey: ["agent"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Regenerace selhala"),
+  });
+
+  return (
+    <div className="space-y-2.5 rounded-[16px] border border-border bg-bg-raised p-3.5">
+      <div className="flex items-center gap-3">
+        <AgentAvatar seed={agent.id} version={avatarVersionOf(agent)} size={44} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-[600] text-fg">Avatar</p>
+          <p className="text-[12px] text-fg-muted">Jedinečný vizuální motiv agenta</p>
+        </div>
+        <button
+          onClick={() => regenerate.mutate()}
+          disabled={regenerate.isPending}
+          className="pressable flex items-center gap-1.5 rounded-full border border-border bg-bg-sunken px-3.5 py-2 text-[12.5px] font-[600] text-fg hover:bg-bg-hover disabled:opacity-40"
+        >
+          <RefreshCw size={13} className={regenerate.isPending ? "animate-spin" : ""} />
+          {regenerate.isPending ? "Generuji…" : "Nový avatar"}
+        </button>
+      </div>
+
+      <label className="block">
+        <span className="mb-1 block px-1 text-[12px] font-[600] text-fg-muted">Charakter — kým agent je</span>
+        <input
+          value={character}
+          onChange={(e) => setCharacter(e.target.value)}
+          placeholder="např. trpělivý průvodce, co věci dotahuje do konce"
+          maxLength={200}
+          className="h-10 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent"
+        />
+      </label>
+      <label className="block">
+        <span className="mb-1 block px-1 text-[12px] font-[600] text-fg-muted">Vibe — jak působí</span>
+        <input
+          value={vibe}
+          onChange={(e) => setVibe(e.target.value)}
+          placeholder="např. klidný, vtipný, přímý"
+          maxLength={200}
+          className="h-10 w-full rounded-full border border-border bg-bg-sunken px-4 text-[13px] text-fg outline-none focus:border-accent"
+        />
+      </label>
+
+      {err && <p className="px-1 text-[12px] text-danger">{err}</p>}
+      {savedTick && !dirty && <p className="px-1 text-[12px] font-[600] text-live">Uloženo</p>}
+      {dirty && (
+        <button onClick={() => save.mutate()} disabled={save.isPending} className="pressable w-full rounded-full bg-accent py-2 text-[13px] font-[600] text-white disabled:opacity-40">
+          {save.isPending ? "Ukládám…" : "Uložit profil"}
+        </button>
+      )}
     </div>
   );
 }

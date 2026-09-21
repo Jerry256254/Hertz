@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import type { AgentLoopManager } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
@@ -7,6 +7,7 @@ import {
   agents,
   channelBindings,
   channelConfigs,
+  messages,
   providerConfigs,
   sessions,
 } from "../db/schema.js";
@@ -17,7 +18,15 @@ import { removeAtomVector } from "../memory/vector-store.js";
 import { skillsIndexFor } from "../tools/skill-tools.js";
 import { parseChannelCommand, type InboundMessage } from "./types.js";
 import type { TelegramDriver } from "./telegram.js";
+import { buildApprovalCard } from "./approval-card.js";
 import { screenLinkFor } from "./screen-link.js";
+
+/** Model entry for the /model picker — a subset of the provider's ModelInfo. */
+export interface PickerModel {
+  id: string;
+  displayName: string;
+  contextWindow?: number;
+}
 
 /**
  * Everything the bot can manage over Telegram, in Czech, without emoji.
@@ -49,11 +58,19 @@ export interface TelegramCommandEnv {
    * reply text, or undefined when the approval is no longer pending.
    */
   decide(externalChatId: string, approvalId: string, decision: "approved" | "rejected"): Promise<string | undefined>;
-  pendingApprovals(sessionId: string): Promise<Array<{ id: string; summary: string; detail: string | null }>>;
+  pendingApprovals(sessionId: string): Promise<
+    Array<{ id: string; summary: string; detail: string | null; kind: string; payload: string | null }>
+  >;
   /** Best-effort: make sure the agent's desktop (noVNC) is up. */
   startDesktop(agentId: string): Promise<void>;
   /** True while the long-poll loop is up. */
   botPolling(): boolean;
+  /**
+   * Live model list for a provider config (drives the /model picker).
+   * Throws when the provider can't be reached — the caller falls back to a
+   * plain message instead of buttons.
+   */
+  listModels(providerConfigId: string): Promise<PickerModel[]>;
 }
 
 /** Commands that must be alone on the line — with args the text goes to the agent. */
@@ -69,6 +86,7 @@ const NO_ARG_COMMANDS = new Set([
   "skilly",
   "pauza",
   "pokracuj",
+  "zastavit",
   "schvaleni",
   "obrazovka",
 ]);
@@ -77,26 +95,36 @@ export function telegramHelpText(): string {
   return [
     `**Co umím**`,
     ``,
-    `/stav — stav bota, agenta a chatu`,
-    `/obrazovka — odkaz na živý náhled počítače agenta`,
-    `/novy — začít nový chat`,
+    `Piš normálně jako do chatu — všechno ostatní beru jako zprávu pro agenta.`,
+    ``,
+    `**Chat**`,
+    `/novy — začít nový chat s čistým stolem`,
     `/vycistit — smazat historii chatu (paměť zůstává)`,
-    `/jmeno <jméno> — přejmenovat agenta`,
-    `/model [model-id] — změnit model / poskytovatele`,
-    `/rezim <plan|auto|autonomni> — režim práce agenta`,
     `/chaty — přepínat mezi chaty`,
+    `/stop — zastavit probíhající práci`,
+    ``,
+    `**Agent**`,
+    `/stav — model, poskytovatel a stav chatu`,
+    `/model — vybrat poskytovatele a model`,
+    `/rezim <plan|auto|autonomni> — jak samostatně pracuji`,
+    `/jmeno <jméno> — přejmenovat agenta`,
+    `/obrazovka — živý náhled počítače agenta`,
+    ``,
+    `**Paměť a skilly**`,
     `/pamet — vypsat paměť`,
     `/zapamatuj <text> — uložit do paměti`,
     `/zapomen <id> — zapomenout poznámku`,
     `/hledej <dotaz> — hledat v paměti`,
-    `/skilly — seznam skillů`,
-    `/pauza, /pokracuj — pozastavit / obnovit práci`,
+    `/skilly — co umím navíc`,
+    ``,
+    `**Schvalování**`,
     `/schvaleni — čekající schválení`,
     `/schvalit <id>, /zamitnout <id> — rozhodnout schválení`,
+    ``,
+    `**Bot**`,
+    `/pauza, /pokracuj — pozastavit / obnovit práci`,
     `/restart — restartovat příjem zpráv`,
     `/odpojit — odpojit bota`,
-    ``,
-    `Všechno ostatní beru jako zprávu pro agenta.`,
   ].join("\n");
 }
 
@@ -136,6 +164,37 @@ async function cmdPomoc(env: TelegramCommandEnv, msg: InboundMessage): Promise<v
   await env.driver.sendText(msg.externalChatId, telegramHelpText());
 }
 
+function formatTokens(n: number): string {
+  return Math.round(n).toLocaleString("cs-CZ");
+}
+
+/** Rough context usage for /stav: tokens over recent history vs the model's window. */
+async function contextLine(env: TelegramCommandEnv, sessionId: string, providerConfigId: string, modelId: string): Promise<string> {
+  try {
+    const rows = await env.db
+      .select({ tokensIn: messages.tokensIn, tokensOut: messages.tokensOut })
+      .from(messages)
+      .where(eq(messages.sessionId, sessionId))
+      .orderBy(desc(messages.createdAt))
+      .limit(200);
+    const used = rows.reduce((sum, r) => sum + (r.tokensIn ?? 0) + (r.tokensOut ?? 0), 0);
+    let window: number | undefined;
+    try {
+      const models = await env.listModels(providerConfigId);
+      window = models.find((m) => m.id === modelId)?.contextWindow;
+    } catch {
+      /* model list is best-effort — the token count alone still helps */
+    }
+    if (window && window > 0) {
+      const pct = Math.min(99, Math.round((used / window) * 100));
+      return `Kontext: ~${formatTokens(used)} z ${formatTokens(window)} tokenů (${pct} %)`;
+    }
+    return `Kontext: ~${formatTokens(used)} tokenů v posledních ${rows.length} zprávách`;
+  } catch {
+    return `Kontext: nelze zjistit`;
+  }
+}
+
 async function cmdStav(env: TelegramCommandEnv, msg: InboundMessage): Promise<void> {
   const sessionId = await env.boundSessionId(msg.externalChatId);
   const lines = [`**Stav**`, ``, `Bot: ${env.configLabel} (${env.botPolling() ? "příjem běží" : "příjem neběží"})`];
@@ -148,6 +207,7 @@ async function cmdStav(env: TelegramCommandEnv, msg: InboundMessage): Promise<vo
         `Model: ${info.provider ? `${info.provider.label} (${info.provider.provider})` : "?"}, ${info.agent.model}`,
         `Režim: ${MODE_LABELS[info.session.mode] ?? info.session.mode}`,
         `Chat: ${info.session.title} (${info.session.status})`,
+        await contextLine(env, sessionId, info.agent.providerConfigId, info.agent.model),
         pending.length > 0 ? `Čekající schválení: ${pending.length} (viz /schvaleni)` : `Čekající schválení: žádná`,
       );
     }
@@ -179,7 +239,10 @@ async function cmdNovy(env: TelegramCommandEnv, msg: InboundMessage): Promise<vo
   await env.db
     .delete(channelBindings)
     .where(and(eq(channelBindings.channelId, env.configId), eq(channelBindings.externalChatId, msg.externalChatId)));
-  await env.driver.sendText(msg.externalChatId, "Začínám nový chat — o čem si budeme povídat?");
+  await env.driver.sendText(
+    msg.externalChatId,
+    "Nový chat je připravený — začínáme s čistým stolem. Historie je prázdná, paměť a nastavení zůstávají. O čem si budeme povídat?",
+  );
 }
 
 async function cmdVycistit(env: TelegramCommandEnv, msg: InboundMessage): Promise<void> {
@@ -202,6 +265,66 @@ async function cmdJmeno(env: TelegramCommandEnv, msg: InboundMessage, args: stri
   const name = args.slice(0, 60);
   await env.db.update(agents).set({ name }).where(eq(agents.id, info.agent.id));
   await env.driver.sendText(msg.externalChatId, `Hotovo, od teď jsem **${name}**.`);
+}
+
+/**
+ * Pending /model pickers: pickerId → provider + model ids. Callback data is
+ * capped at 64 bytes by Telegram, so the button carries only the picker id
+ * and the model index — the full ids live here for 10 minutes.
+ */
+interface ModelPickerState {
+  providerConfigId: string;
+  models: string[];
+  expiresAt: number;
+}
+const modelPickers = new Map<string, ModelPickerState>();
+const MODEL_PICKER_TTL_MS = 10 * 60 * 1000;
+const MODEL_PICKER_PAGE = 12;
+
+function rememberModelPicker(providerConfigId: string, models: string[]): string {
+  const id = newId();
+  modelPickers.set(id, { providerConfigId, models, expiresAt: Date.now() + MODEL_PICKER_TTL_MS });
+  // Opportunistic cleanup of stale pickers.
+  if (modelPickers.size > 200) {
+    const now = Date.now();
+    for (const [key, state] of modelPickers) {
+      if (state.expiresAt < now) modelPickers.delete(key);
+    }
+  }
+  return id;
+}
+
+/** Second step of /model: show the provider's models as buttons (edited in place when possible). */
+async function sendModelPicker(
+  env: TelegramCommandEnv,
+  externalChatId: string,
+  pc: { id: string; label: string; provider: string },
+  messageId?: number,
+): Promise<void> {
+  let models: PickerModel[];
+  try {
+    models = await env.listModels(pc.id);
+  } catch {
+    models = [];
+  }
+  if (models.length === 0) {
+    const text = `Seznam modelů pro ${pc.label} se nepodařilo načíst — zkus to později, nebo zadej id modelu ručně: /model <id>.`;
+    if (messageId) await env.driver.editMessageWithButtons(externalChatId, messageId, text, []).catch(() => {});
+    else await env.driver.sendText(externalChatId, text);
+    return;
+  }
+  const pickerId = rememberModelPicker(pc.id, models.map((m) => m.id));
+  const buttons = models.slice(0, MODEL_PICKER_PAGE).map((m, i) => [
+    { label: (m.displayName || m.id).slice(0, 40), data: `tgcmd:modelpick:${pickerId}_${i}` },
+  ]);
+  const text =
+    `Vyber model — **${pc.label}** (${pc.provider}):` +
+    (models.length > MODEL_PICKER_PAGE ? `\n(zobrazuji prvních ${MODEL_PICKER_PAGE} z ${models.length}; přesné id zadáš příkazem /model <id>)` : ``);
+  if (messageId) {
+    await env.driver.editMessageWithButtons(externalChatId, messageId, text, buttons).catch(() => {});
+  } else {
+    await env.driver.sendButtons(externalChatId, text, buttons);
+  }
 }
 
 async function cmdModel(env: TelegramCommandEnv, msg: InboundMessage, args: string): Promise<void> {
@@ -229,8 +352,13 @@ async function cmdModel(env: TelegramCommandEnv, msg: InboundMessage, args: stri
     );
     return;
   }
-  const buttons = configs.map((c) => [{ label: `${c.label} (${c.provider})`, data: `tgcmd:model:${c.id}` }]);
-  await env.driver.sendButtons(msg.externalChatId, "Vyber model / poskytovatele:", buttons);
+  if (configs.length === 1) {
+    // Single provider — skip straight to the model choice.
+    await sendModelPicker(env, msg.externalChatId, configs[0]!);
+    return;
+  }
+  const buttons = configs.map((c) => [{ label: `${c.label} (${c.provider})`.slice(0, 40), data: `tgcmd:modelprov:${c.id}` }]);
+  await env.driver.sendButtons(msg.externalChatId, "Vyber poskytovatele:", buttons);
 }
 
 async function cmdRezim(env: TelegramCommandEnv, msg: InboundMessage, args: string): Promise<void> {
@@ -379,6 +507,16 @@ async function cmdSkilly(env: TelegramCommandEnv, msg: InboundMessage): Promise<
   await env.driver.sendText(msg.externalChatId, lines.join("\n"));
 }
 
+async function cmdZastavit(env: TelegramCommandEnv, msg: InboundMessage): Promise<void> {
+  const sessionId = await env.boundSessionId(msg.externalChatId);
+  if (!sessionId || !env.agentLoop.isRunning(sessionId)) {
+    await env.driver.sendText(msg.externalChatId, "Teď nic neběží — není co zastavovat.");
+    return;
+  }
+  await env.agentLoop.pause(sessionId);
+  await env.driver.sendText(msg.externalChatId, "Zastaveno. Až budeš chtít, pokračujeme příkazem /pokracuj.");
+}
+
 async function cmdPauza(env: TelegramCommandEnv, msg: InboundMessage): Promise<void> {
   const sessionId = await env.boundSessionId(msg.externalChatId);
   if (!sessionId || !env.agentLoop.isRunning(sessionId)) {
@@ -414,7 +552,8 @@ async function cmdSchvaleni(env: TelegramCommandEnv, msg: InboundMessage): Promi
     return;
   }
   for (const a of pending) {
-    await env.driver.sendApproval(msg.externalChatId, a.id, a.summary, a.detail);
+    const card = buildApprovalCard({ summary: a.summary, detail: a.detail, kind: a.kind, payload: a.payload });
+    await env.driver.sendApproval(msg.externalChatId, a.id, card);
   }
 }
 
@@ -498,6 +637,7 @@ export async function handleTelegramCommand(env: TelegramCommandEnv, msg: Inboun
     case "hledej": return void (await cmdHledej(env, msg, parsed.args)), true;
     case "skilly": return void (await cmdSkilly(env, msg)), true;
     case "pauza": return void (await cmdPauza(env, msg)), true;
+    case "zastavit": return void (await cmdZastavit(env, msg)), true;
     case "pokracuj": return void (await cmdPokracuj(env, msg)), true;
     case "schvaleni": return void (await cmdSchvaleni(env, msg)), true;
     case "schvalit": return void (await cmdRozhodnuti(env, msg, parsed.args, "approved")), true;
@@ -533,6 +673,7 @@ export async function handleTelegramCallback(
   senderLabel: string,
   action: string,
   payload: string,
+  messageId?: number,
 ): Promise<void> {
   switch (action) {
     case "odpojit": {
@@ -545,6 +686,54 @@ export async function handleTelegramCallback(
       } else {
         await env.driver.sendText(externalChatId, "Zrušeno — bot běží dál.");
       }
+      return;
+    }
+    case "modelprov": {
+      // Step 1 of /model: provider chosen — show its models, editing the
+      // picker message in place when we know its id.
+      const pcRows = await env.db.select().from(providerConfigs).where(eq(providerConfigs.id, payload)).limit(1);
+      const pc = pcRows[0];
+      if (!pc) {
+        const text = "Tento poskytovatel už neexistuje — zkus /model znovu.";
+        if (messageId) await env.driver.editMessageWithButtons(externalChatId, messageId, text, []).catch(() => {});
+        else await env.driver.sendText(externalChatId, text);
+        return;
+      }
+      await sendModelPicker(env, externalChatId, pc, messageId);
+      return;
+    }
+    case "modelpick": {
+      // Step 2 of /model: model chosen from the provider's list.
+      const pick = /^([A-Za-z0-9_-]+)_(\d+)$/.exec(payload);
+      const picker = pick ? modelPickers.get(pick[1]!) : undefined;
+      const finishText = async (text: string) => {
+        if (messageId) await env.driver.editMessageWithButtons(externalChatId, messageId, text, []).catch(() => {});
+        else await env.driver.sendText(externalChatId, text);
+      };
+      if (!picker || picker.expiresAt < Date.now()) {
+        await finishText("Výběr vypršel — zkus /model znovu.");
+        return;
+      }
+      const modelId = picker.models[Number(pick![2])];
+      if (!modelId) {
+        await finishText("Tento model už v nabídce není — zkus /model znovu.");
+        return;
+      }
+      const sessionId = await needSession(env, { externalChatId, senderLabel, senderId: "", text: "" });
+      if (!sessionId) return;
+      const info = await sessionAgent(env, sessionId);
+      const pcRows = await env.db.select().from(providerConfigs).where(eq(providerConfigs.id, picker.providerConfigId)).limit(1);
+      const pc = pcRows[0];
+      if (!info || !pc) {
+        await finishText("Tento poskytovatel už neexistuje — zkus /model znovu.");
+        return;
+      }
+      await env.db
+        .update(agents)
+        .set({ providerConfigId: pc.id, model: modelId })
+        .where(eq(agents.id, info.agent.id));
+      modelPickers.delete(pick![1]!);
+      await finishText(`Model nastaven: **${pc.label}** (${pc.provider}), ${modelId}.`);
       return;
     }
     case "model": {
