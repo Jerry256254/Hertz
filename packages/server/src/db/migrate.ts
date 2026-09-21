@@ -1,5 +1,5 @@
 import type { Client } from "@libsql/client";
-import { defaultAgentPrompt } from "../agents/persona.js";
+import { defaultAgentPrompt, seedSoul } from "../agents/persona.js";
 import { generateAvatarSpec, parseAvatarSpec } from "../agents/avatar.js";
 
 /**
@@ -508,6 +508,13 @@ export async function runMigrations(client: Client): Promise<void> {
   // carry a valid spec keep it (regenerated/customized avatars are never
   // clobbered), everyone else gets a freshly minted generative avatar.
   await backfillAvatarSpecs(client);
+
+  // Every agent must have a soul (SOUL.md) from the first minute — no
+  // soulless agents, no empty "Osobnost" states. Runs on every startup
+  // (idempotent): agents that already have a soul keep it (agent- or
+  // user-written souls are never clobbered), everyone else gets a soul
+  // generated from their name, character and vibe.
+  await backfillSouls(client);
 }
 
 /**
@@ -557,5 +564,30 @@ async function backfillAvatarSpecs(client: Client): Promise<void> {
   }
   if (fixed > 0) {
     console.log(`[migrate] minted generative avatars for ${fixed} agent(s)`);
+  }
+}
+
+/**
+ * Idempotent soul backfill: any agent whose soul column is missing (NULL) or
+ * blank gets a soul generated from their name, character and vibe
+ * (agents/persona.ts seedSoul). Agents that already carry a soul — written by
+ * the agent itself via update_soul or by the user in the SOUL.md editor — are
+ * left untouched, so customized souls survive every restart. Runs on every
+ * startup, so a pre-existing agent can never stay soulless.
+ */
+async function backfillSouls(client: Client): Promise<void> {
+  const rows = await client.execute("SELECT id, name, character, vibe, soul FROM agents");
+  let fixed = 0;
+  for (const row of rows.rows) {
+    const r = row as unknown as { id: string; name: string | null; character: string | null; vibe: string | null; soul: string | null };
+    if (typeof r.soul === "string" && r.soul.trim()) continue;
+    await client.execute({
+      sql: "UPDATE agents SET soul = ? WHERE id = ?",
+      args: [seedSoul(r.name?.trim() || "agent", r.character, r.vibe), r.id],
+    });
+    fixed++;
+  }
+  if (fixed > 0) {
+    console.log(`[migrate] seeded souls for ${fixed} agent(s)`);
   }
 }

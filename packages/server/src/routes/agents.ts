@@ -429,7 +429,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
 
     instance.get("/api/agents/:id/memory", async (request, reply) => {
       const { id } = request.params as { id: string };
-      const agentRows = await ctx.db.select({ id: agents.id, projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
+      const agentRows = await ctx.db.select({ id: agents.id, projectId: agents.projectId, soul: agents.soul }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!agentRows[0]) return reply.code(404).send({ error: "Agent not found" });
       if (!(await hasProjectAccess(ctx.db, request.user!, agentRows[0].projectId))) return reply.code(403).send({ error: "No access" });
 
@@ -444,7 +444,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         ...atoms.map((a) => ({ id: a.id, agentId: a.agentId, note: a.text, createdAt: a.createdAt })),
         ...legacy.map((l) => ({ id: l.id, agentId: l.agentId, note: l.note, createdAt: l.createdAt })),
       ];
-      return { notes, persona, scenarios, atoms };
+      // The soul is seeded at agent creation and at every server startup, so
+      // it is always present — the Osobnost tab never shows an empty state.
+      return { notes, persona, scenarios, atoms, soul: agentRows[0].soul ?? "" };
     });
 
     instance.delete("/api/agents/:id/memory/:noteId", async (request, reply) => {

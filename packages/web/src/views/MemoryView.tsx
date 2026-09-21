@@ -55,8 +55,23 @@ export function MemoryView({ agent, onOpenSoul, bare = false }: { agent: Agent; 
             </div>
           )}
           {data && tab === "persona" && (
-            <div className="rounded-[20px] border border-border bg-bg-raised p-5">
-              {data.persona ? <Markdown>{data.persona}</Markdown> : <p className="text-[13.5px] text-fg-subtle">Agent si zatím nevytvořil osobnost. Vznikne sama z konverzací.</p>}
+            <div className="space-y-3">
+              <div className="rounded-[20px] border border-border bg-bg-raised p-5">
+                {data.soul ? (
+                  <Markdown>{data.soul}</Markdown>
+                ) : (
+                  <p className="text-[13.5px] text-fg-subtle">Duše se právě načítá…</p>
+                )}
+                <button onClick={onOpenSoul} className="pressable mt-4 inline-flex min-h-[44px] items-center rounded-full border border-border bg-bg-sunken px-4 py-2 text-[13px] font-[600] text-fg hover:bg-bg-hover">
+                  Upravit duši
+                </button>
+              </div>
+              {data.persona.trim() && (
+                <div className="rounded-[20px] border border-border bg-bg-raised p-5">
+                  <p className="mb-2 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">CO SI O SOBĚ PÍŠE AGENT SÁM (JEN KE ČTENÍ)</p>
+                  <Markdown>{data.persona}</Markdown>
+                </div>
+              )}
             </div>
           )}
           {data && tab === "scenarios" && (

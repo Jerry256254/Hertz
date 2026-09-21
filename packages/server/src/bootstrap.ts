@@ -4,7 +4,7 @@ import { newId } from "./db/client.js";
 import { agents, users, providerConfigs } from "./db/schema.js";
 import { hashPassword } from "./auth/password.js";
 import { encryptSecret } from "./secrets/key-encryption.js";
-import { defaultAgentPrompt } from "./agents/persona.js";
+import { defaultAgentPrompt, seedSoul } from "./agents/persona.js";
 import { generateAvatarSpec } from "./agents/avatar.js";
 
 /** The agent's character prompt — defined in agents/persona.ts (Czech-first). */
@@ -87,6 +87,10 @@ export async function ensureAgent(ctx: AppContext, input: EnsureAgentInput): Pro
     name: agentName,
     model: input.model,
     systemPrompt: defaultAgentPrompt(agentName),
+    // The agent's soul (SOUL.md) is seeded at birth from the onboarding name —
+    // no agent ever starts soulless. It lives in the DB, is injected into the
+    // system prompt every turn, and the agent evolves it with update_soul.
+    soul: seedSoul(agentName),
     // Mint the generative avatar at birth — no agent ever starts avatar-less.
     avatar: JSON.stringify(generateAvatarSpec(agentName)),
     createdAt: new Date(),

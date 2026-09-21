@@ -120,6 +120,8 @@ export interface AgentLayeredMemory {
   persona: string;
   scenarios: AgentMemoryScenario[];
   atoms: AgentMemoryAtom[];
+  /** Duše agenta (SOUL.md) z agents.soul — seeduje se při vytvoření agenta. */
+  soul: string;
 }
 
 export interface HertzSession {

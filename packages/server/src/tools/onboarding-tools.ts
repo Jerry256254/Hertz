@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { agents } from "../db/schema.js";
-import { defaultAgentPrompt, defaultUserProfile } from "../agents/persona.js";
+import { defaultAgentPrompt, defaultUserProfile, seedSoul } from "../agents/persona.js";
 import { generateAvatarSpec, parseAvatarSpec } from "../agents/avatar.js";
 import type { AgentToolDef } from "./tool-def.js";
 
@@ -26,7 +26,7 @@ export function createOnboardingTools(db: Database): AgentToolDef[] {
       const input = completeOnboardingSchema.parse(rawInput);
       const agentId = ctx.actor.actorId;
       const rows = await db
-        .select({ id: agents.id, name: agents.name, onboardedAt: agents.onboardedAt })
+        .select({ id: agents.id, name: agents.name, onboardedAt: agents.onboardedAt, soul: agents.soul })
         .from(agents)
         .where(eq(agents.id, agentId))
         .limit(1);
@@ -52,6 +52,11 @@ export function createOnboardingTools(db: Database): AgentToolDef[] {
           // paměťových atomů — paměť jsou události, profil je trvalý. Agent ho
           // pak sám doplňuje nástrojem update_user_profile.
           userProfile: defaultUserProfile(userName),
+          // Duše patří agentovi od první minuty: když ji z nějakého důvodu
+          // ještě nemá (starší agent, ruční zásah), vygeneruj ji ze jména.
+          // Existující duši — ať už ji napsal agent sám, nebo uživatel v UI —
+          // nikdy nepřepisujeme.
+          soul: agent.soul?.trim() ? agent.soul : seedSoul(agentName),
           onboardedAt: now,
         })
         .where(eq(agents.id, agentId));
