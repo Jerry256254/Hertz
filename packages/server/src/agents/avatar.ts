@@ -164,13 +164,27 @@ function motifRings(r: Rng, p: AvatarPalette): MotifArt {
   return { defs: "", body: out.join("") };
 }
 
-/** Tilted orbital ellipses with satellites. */
+/** Tilted orbital ellipses with satellites and a starfield. */
 function motifOrbit(r: Rng, p: AvatarPalette): MotifArt {
   const S = AVATAR_SIZE;
   const cx = S / 2;
   const cy = S / 2;
   const out: string[] = [];
   const sats: string[] = [];
+  // Starfield backdrop so the artwork is always rich, whatever the orbits do.
+  for (let i = 0, n = r.int(48, 64); i < n; i++) {
+    out.push(
+      `<circle cx="${f(r.range(20, S - 20))}" cy="${f(r.range(20, S - 20))}" r="${f(r.range(1, 3.4))}" fill="${r.pick([p.dot, p.dot, p.line2])}" opacity="${r.range(0.25, 0.85).toFixed(2)}"/>`,
+    );
+  }
+  // Thin dashed guide rings for depth.
+  const guideR = r.range(150, 210);
+  out.push(
+    `<circle cx="${cx}" cy="${cy}" r="${f(guideR)}" fill="none" stroke="${p.line2}" stroke-width="1.4" stroke-dasharray="2 9" opacity="0.5"/>`,
+  );
+  out.push(
+    `<circle cx="${cx}" cy="${cy}" r="${f(guideR * r.range(0.55, 0.7))}" fill="none" stroke="${p.line}" stroke-width="1.2" stroke-dasharray="1 7" opacity="0.35"/>`,
+  );
   for (let i = 0, n = r.int(5, 8); i < n; i++) {
     const rx = r.range(70, 225);
     const ry = rx * r.range(0.28, 0.62);
@@ -178,17 +192,25 @@ function motifOrbit(r: Rng, p: AvatarPalette): MotifArt {
     out.push(
       `<ellipse cx="${cx}" cy="${cy}" rx="${f(rx)}" ry="${f(ry)}" transform="rotate(${f(rot)} ${cx} ${cy})" fill="none" stroke="${i % 3 === 2 ? p.accent : p.line}" stroke-width="${r.range(1.5, 3.5).toFixed(1)}" opacity="${r.range(0.4, 0.75).toFixed(2)}"/>`,
     );
-    if (r() < 0.7) {
+    const satCount = r.int(1, 3);
+    for (let k = 0; k < satCount; k++) {
       const t = r.range(0, Math.PI * 2);
       const ex = rx * Math.cos(t);
       const ey = ry * Math.sin(t);
       const rad = (rot * Math.PI) / 180;
       const x = cx + ex * Math.cos(rad) - ey * Math.sin(rad);
       const y = cy + ex * Math.sin(rad) + ey * Math.cos(rad);
-      sats.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(r.range(5, 13))}" fill="${r.pick([p.accent, p.dot, p.line2])}"/>`);
+      const sr = r.range(4, 12);
+      sats.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(sr)}" fill="${r.pick([p.accent, p.dot, p.line2])}"/>`);
+      sats.push(
+        `<circle cx="${f(x)}" cy="${f(y)}" r="${f(sr * 2.1)}" fill="none" stroke="${p.line2}" stroke-width="1" opacity="0.45"/>`,
+      );
     }
   }
   out.push(`<circle cx="${cx}" cy="${cy}" r="${f(r.range(10, 20))}" fill="${p.accent}"/>`);
+  out.push(
+    `<circle cx="${cx}" cy="${cy}" r="${f(r.range(26, 34))}" fill="none" stroke="${p.accent}" stroke-width="1.6" opacity="0.6"/>`,
+  );
   return { defs: "", body: out.join("") + sats.join("") };
 }
 
