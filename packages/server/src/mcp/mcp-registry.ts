@@ -103,6 +103,14 @@ export class McpRegistry {
     if (pending) void pending.then((s) => s.connection?.close()).catch(() => {});
   }
 
+  /** Close every live MCP connection (stdio child processes, SSE streams). Call on app/test teardown. */
+  async shutdown(): Promise<void> {
+    const pending = [...this.cache.values()];
+    this.cache.clear();
+    this.invalidateIndex();
+    await Promise.all(pending.map((p) => p.then((s) => s.connection?.close()).catch(() => {})));
+  }
+
   /** Rebuild the name indexes (call after a policy change; listToolDefinitions also refreshes them). */
   invalidateIndex(): void {
     this.nameIndex.clear();

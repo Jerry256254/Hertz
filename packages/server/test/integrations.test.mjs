@@ -92,7 +92,12 @@ before(async () => {
 });
 
 after(async () => {
-  await new Promise((resolve) => mockServer.close(resolve));
+  // closeAllConnections: undici fetch keep-alive sockets would otherwise keep
+  // server.close()'s callback pending forever and hang the suite.
+  await new Promise((resolve) => {
+    mockServer.closeAllConnections();
+    mockServer.close(resolve);
+  });
 });
 
 const MASTER_KEY = crypto.randomBytes(32);
@@ -275,6 +280,7 @@ describe("mcp registry: connect/disconnect lifecycle", () => {
   });
 
   after(async () => {
+    await registry.shutdown();
     try { await client.close(); } catch {}
     await fs.rm(dir, { recursive: true, force: true });
   });
@@ -396,10 +402,14 @@ describe("oauth routes: one-click connect/disconnect end-to-end", () => {
   });
 
   after(async () => {
+    await registry.shutdown();
     try { await app.close(); } catch {}
     try { await client.close(); } catch {}
     await fs.rm(dir, { recursive: true, force: true });
   });
+
+  const post = (url, payload) =>
+    app.inject({ method: "POST", url, headers: { ...auth, "content-type": "application/json" }, payload });
 
   it("missing OAuth app redirects with a Czech setup hint, not a JSON error", async () => {
     const res = await app.inject({ method: "GET", url: "/api/oauth/github/start?catalogId=github", headers: auth });
@@ -564,6 +574,7 @@ describe("apiKey connectors: credentials route end-to-end", () => {
   });
 
   after(async () => {
+    await registry.shutdown();
     try { await app.close(); } catch {}
     try { await client.close(); } catch {}
     await fs.rm(dir, { recursive: true, force: true });

@@ -191,7 +191,7 @@ describe("mcp registry: vynucení politiky", () => {
   });
 
   after(async () => {
-    try { await registry.closeAll?.(); } catch {}
+    try { await registry.shutdown(); } catch {}
     try { await client.close(); } catch {}
     await rm(dir, { recursive: true, force: true });
   });
@@ -311,6 +311,7 @@ describe("integrations routes: politika a lokální konektor", () => {
   });
 
   after(async () => {
+    await registry.shutdown();
     try { await app.close(); } catch {}
     try { await client.close(); } catch {}
     await rm(dir, { recursive: true, force: true });
