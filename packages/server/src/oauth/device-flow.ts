@@ -7,8 +7,15 @@
  * https://www.google.com/device a server na pozadí polluje token endpoint,
  * dokud uživatel souhlas neudělí (nebo kód nevyprší).
  *
+ * Požadavek na https://oauth2.googleapis.com/device/code je podle Google
+ * docs form-urlencoded `client_id` + `scope` — žádný client_secret se
+ * neposílá (používá se až při pollingu token endpointu, a jen když je
+ * nakonfigurovaný). TV klient secret ignoruje/nevyžaduje.
+ *
  * BEZPEČNOST: nikde se neloguje client_secret, device_code ani tokeny —
- * ani v error objektech. Všechny zprávy pro uživatele jsou česky.
+ * ani v error objektech. Chybové popisy od Googlu (`error_description`)
+ * se zalogují na serveru vždy až po redakci citlivých hodnot.
+ * Všechny zprávy pro uživatele jsou česky.
  */
 import { googleTokenUrl } from "./oauth-service.js";
 
@@ -23,7 +30,28 @@ export interface DeviceAuthorizationResponse {
   interval: number;
 }
 
-export type DeviceFlowErrorCode = "access_denied" | "expired_token" | "provider_error" | "network_error";
+export type DeviceFlowErrorCode =
+  | "missing_client_id"
+  | "invalid_client_type"
+  | "access_denied"
+  | "expired_token"
+  | "provider_error"
+  | "network_error";
+
+/**
+ * Kódy chyb, které znamenají špatnou konfiguraci OAuth klienta — frontend
+ * k nim smí zobrazit odkaz na návod (guideUrl).
+ */
+export const DEVICE_FLOW_GUIDED_ERRORS: DeviceFlowErrorCode[] = ["missing_client_id", "invalid_client_type"];
+
+/**
+ * Kam poslat správce serveru, když device flow selže na konfiguraci OAuth
+ * klienta (vytvoření TV klienta, zapnutí API). Odpovídá setupUrl v katalogu.
+ */
+export const GOOGLE_DEVICE_CLIENT_GUIDE_URL = "https://console.cloud.google.com/apis/credentials";
+
+/** Logger pro serverovou diagnostiku (volitelný — bez něj se nic neloguje). */
+export type DeviceFlowLogger = (msg: string) => void;
 
 export class DeviceFlowError extends Error {
   readonly code: DeviceFlowErrorCode;
@@ -58,6 +86,24 @@ const DEFAULT_EXPIRES_IN_SEC = 600;
 const DEFAULT_INTERVAL_SEC = 5;
 const SLOW_DOWN_STEP_SEC = 5;
 
+/** Vysvětlení pro případ, že Google odmítne přihlašovací údaj (špatný typ klienta). */
+export const INVALID_CLIENT_TYPE_MESSAGE =
+  "Google tento přihlašovací údaj odmítl — OAuth klient musí být typu „TVs and Limited Input devices“, ne typu „Web“. " +
+  "Vytvoř v Google Cloud Console nového klienta správného typu a vlož jeho Client ID.";
+
+/** Vymaže citlivé hodnoty z textu určeného do logu. */
+function redactForLog(text: string, sensitive: string[]): string {
+  let out = text;
+  for (const s of sensitive) {
+    if (s) out = out.split(s).join("[redacted]");
+  }
+  return out;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 /**
  * Krok 1 device flow: požádá Google o device_code a user_code pro zadané
  * scope. Vrací kódy k zobrazení uživateli — device_code drží jen server.
@@ -65,9 +111,16 @@ const SLOW_DOWN_STEP_SEC = 5;
 export async function requestDeviceCode(
   clientId: string,
   scopes: string[],
-  opts?: { fetchImpl?: FetchImpl },
+  opts?: { fetchImpl?: FetchImpl; log?: DeviceFlowLogger },
 ): Promise<DeviceAuthorizationResponse> {
+  if (!clientId || !clientId.trim()) {
+    throw new DeviceFlowError(
+      "missing_client_id",
+      "Nejdřív vlož Client ID TV klienta v Nastavení → Konektory (krok pro správce serveru).",
+    );
+  }
   const fetchImpl = opts?.fetchImpl ?? fetch;
+  const log = opts?.log;
   let res: Response;
   try {
     res = await fetchImpl(googleDeviceCodeUrl(), {
@@ -78,14 +131,39 @@ export async function requestDeviceCode(
   } catch {
     throw new DeviceFlowError(
       "network_error",
-      "Spojení s Googlem se nezdařilo — zkontrolujte připojení k internetu a zkuste to znovu.",
+      "Server se teď nedostal ke Googlu, zkus to prosím za chvíli znovu.",
     );
   }
   if (!res.ok) {
-    throw new DeviceFlowError(
-      "provider_error",
-      "Google teď nevydal kód pro spárování — zkuste to prosím za chvíli znovu.",
+    let googleError = "";
+    let googleDescription = "";
+    try {
+      const errBody: unknown = await res.json();
+      if (isRecord(errBody)) {
+        if (typeof errBody.error === "string") googleError = errBody.error;
+        if (typeof errBody.error_description === "string") googleDescription = errBody.error_description;
+      }
+    } catch {
+      // Nečitelná chybová odpověď — padne do default větve níže.
+    }
+    // error_description se zaloguje pro diagnostiku, ale až po redakci
+    // citlivých hodnot (může obsahovat client_id).
+    log?.(
+      `[oauth-device] device/code odmítnuto: error=${googleError || "neznámá"} status=${res.status} ` +
+        `popis=${redactForLog(googleDescription, [clientId])}`,
     );
+    switch (googleError) {
+      case "invalid_client":
+      case "unauthorized_client":
+        // Typicky klient typu „Web" místo „TVs and Limited Input devices" —
+        // Google device flow pro web klienty odmítá.
+        throw new DeviceFlowError("invalid_client_type", INVALID_CLIENT_TYPE_MESSAGE);
+      default:
+        throw new DeviceFlowError(
+          "provider_error",
+          "Google teď nevydal kód pro spárování — zkuste to prosím za chvíli znovu.",
+        );
+    }
   }
   let body: Record<string, unknown>;
   try {
@@ -121,10 +199,8 @@ export interface PollDeviceTokenOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Injektovatelné pro testy (jinak Date.now). */
   now?: () => number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  /** Serverový log pro diagnostiku (error_description se loguje redakčně). */
+  log?: DeviceFlowLogger;
 }
 
 /**
@@ -198,9 +274,13 @@ export async function pollDeviceToken(opts: PollDeviceTokenOptions): Promise<Dev
     }
 
     let errorCode = "";
+    let errorDescription = "";
     try {
       const errBody: unknown = await res.json();
-      if (isRecord(errBody) && typeof errBody.error === "string") errorCode = errBody.error;
+      if (isRecord(errBody)) {
+        if (typeof errBody.error === "string") errorCode = errBody.error;
+        if (typeof errBody.error_description === "string") errorDescription = errBody.error_description;
+      }
     } catch {
       // Nečitelná chybová odpověď — padne do default větve níže.
     }
@@ -219,13 +299,26 @@ export async function pollDeviceToken(opts: PollDeviceTokenOptions): Promise<Dev
           "expired_token",
           "Platnost kódu pro spárování vypršela — vraťte se a začněte připojení znovu.",
         );
+      case "invalid_client":
+      case "unauthorized_client":
+        // Chybný typ OAuth klienta (např. „Web" místo „TVs and Limited
+        // Input devices") — dál pollovat nemá smysl.
+        opts.log?.(
+          `[oauth-device] token polling odmítnut: error=${errorCode} status=${res.status} ` +
+            `popis=${redactForLog(errorDescription, [opts.clientId, opts.clientSecret ?? "", opts.deviceCode])}`,
+        );
+        throw new DeviceFlowError("invalid_client_type", INVALID_CLIENT_TYPE_MESSAGE);
       default:
-        // Fatální chyba poskytovatele (např. invalid_client) — dál pollovat
-        // nemá smysl. Tělo odpovědi se do zprávy nekopíruje (mohlo by nést
-        // citlivá data), uživatel dostane jen lidské vysvětlení.
+        // Jiná fatální chyba poskytovatele — dál pollovat nemá smysl.
+        // error_description se zaloguje (redakčně) pro diagnostiku, tělo
+        // odpovědi se do zprávy pro uživatele nekopíruje.
+        opts.log?.(
+          `[oauth-device] token polling selhal: error=${errorCode || "neznámá"} status=${res.status} ` +
+            `popis=${redactForLog(errorDescription, [opts.clientId, opts.clientSecret ?? "", opts.deviceCode])}`,
+        );
         throw new DeviceFlowError(
           "provider_error",
-          "Google párování odmítl — zkontrolujte nastavení OAuth klienta (typ „Desktop“ nebo „TV a zařízení s omezeným vstupem“) a zkuste to znovu.",
+          "Google párování odmítl — zkontrolujte nastavení OAuth klienta (typ „TV a zařízení s omezeným vstupem“) a zkuste to znovu.",
         );
     }
   }

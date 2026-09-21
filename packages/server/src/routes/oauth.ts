@@ -30,8 +30,12 @@ import {
 } from "../oauth/oauth-service.js";
 import {
   DeviceFlowError,
+  DEVICE_FLOW_GUIDED_ERRORS,
+  GOOGLE_DEVICE_CLIENT_GUIDE_URL,
   pollDeviceToken,
   requestDeviceCode,
+  type DeviceFlowErrorCode,
+  type DeviceFlowLogger,
   type DeviceSessionStatus,
 } from "../oauth/device-flow.js";
 import {
@@ -241,6 +245,8 @@ interface DeviceSession {
   status: DeviceSessionStatus;
   /** Česká zpráva pro uživatele (jen u koncových stavů). */
   message?: string;
+  /** Typovaný kód chyby pro frontend (hlavně u stavu "error"). */
+  code?: DeviceFlowErrorCode;
   finishedAt?: number;
 }
 
@@ -264,7 +270,7 @@ function pruneDeviceSessions(): void {
  * stejnou cestou jako web callback. Nikdy neloguje secret, device_code
  * ani tokeny; do session.message jde jen česká zpráva pro uživatele.
  */
-async function runDevicePolling(ctx: AppContext, session: DeviceSession): Promise<void> {
+async function runDevicePolling(ctx: AppContext, session: DeviceSession, log?: DeviceFlowLogger): Promise<void> {
   try {
     const tokens = await pollDeviceToken({
       clientId: session.clientId,
@@ -272,6 +278,7 @@ async function runDevicePolling(ctx: AppContext, session: DeviceSession): Promis
       deviceCode: session.deviceCode,
       intervalSec: session.intervalSec,
       expiresInSec: session.expiresInSec,
+      log,
     });
     const env: Record<string, string> = {
       GOOGLE_CLIENT_ID: session.clientId,
@@ -291,9 +298,11 @@ async function runDevicePolling(ctx: AppContext, session: DeviceSession): Promis
     if (err instanceof DeviceFlowError) {
       session.status = err.code === "access_denied" ? "denied" : err.code === "expired_token" ? "expired" : "error";
       session.message = err.message;
+      session.code = err.code;
     } else {
       session.status = "error";
       session.message = "Párování se nezdařilo z neočekávaného důvodu — zkuste to prosím znovu.";
+      session.code = "provider_error";
     }
   } finally {
     session.finishedAt = Date.now();
@@ -432,18 +441,28 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       const creds = await resolveAppCredentials(ctx, "google");
       if (!creds) {
         return reply.code(400).send({
-          error:
-            "Nejdřív vložte Client ID a Client secret v Nastavení → Konektory (krok pro správce serveru) — " +
-            "OAuth klient v Google Cloud Console musí být typu „Desktop“ nebo „TV a zařízení s omezeným vstupem“. " +
-            "Návod na vytvoření: https://developers.google.com/identity/protocols/oauth2/native-app#creatingcred",
+          code: "missing_client_id",
+          error: "Nejdřív vlož Client ID TV klienta v Nastavení → Konektory (krok pro správce serveru).",
+          guideUrl: GOOGLE_DEVICE_CLIENT_GUIDE_URL,
         });
       }
 
       let authz;
       try {
-        authz = await requestDeviceCode(creds.clientId, googleScopesFor(cid));
+        authz = await requestDeviceCode(creds.clientId, googleScopesFor(cid), {
+          log: (msg) => instance.log.warn(msg),
+        });
       } catch (err) {
-        return reply.code(502).send({ error: (err as Error).message });
+        const code: DeviceFlowErrorCode = err instanceof DeviceFlowError ? err.code : "provider_error";
+        const error =
+          err instanceof DeviceFlowError
+            ? err.message
+            : "Kód pro spárování se nepodařilo připravit — zkuste to prosím znovu.";
+        return reply.code(502).send({
+          code,
+          error,
+          ...(DEVICE_FLOW_GUIDED_ERRORS.includes(code) ? { guideUrl: GOOGLE_DEVICE_CLIENT_GUIDE_URL } : {}),
+        });
       }
 
       pruneDeviceSessions();
@@ -461,7 +480,7 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       };
       deviceSessions.set(session.id, session);
       // Polling na pozadí — nečekáme na něj, klient polluje /device/status.
-      void runDevicePolling(ctx, session);
+      void runDevicePolling(ctx, session, (msg) => instance.log.warn(msg));
 
       return {
         user_code: authz.userCode,
@@ -479,7 +498,12 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
           .code(404)
           .send({ error: "Relace pro párování neexistuje nebo vypršela — začněte připojení znovu." });
       }
-      return s.message ? { status: s.status, message: s.message } : { status: s.status };
+      return {
+        status: s.status,
+        ...(s.message ? { message: s.message } : {}),
+        ...(s.code ? { code: s.code } : {}),
+        ...(s.code && DEVICE_FLOW_GUIDED_ERRORS.includes(s.code) ? { guideUrl: GOOGLE_DEVICE_CLIENT_GUIDE_URL } : {}),
+      };
     });
 
     // The provider redirects the browser back here after the user consents (or declines).

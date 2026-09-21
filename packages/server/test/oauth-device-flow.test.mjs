@@ -4,6 +4,8 @@ import {
   requestDeviceCode,
   pollDeviceToken,
   DeviceFlowError,
+  DEVICE_FLOW_GUIDED_ERRORS,
+  GOOGLE_DEVICE_CLIENT_GUIDE_URL,
   googleDeviceCodeUrl,
 } from "../dist/oauth/device-flow.js";
 
@@ -141,15 +143,93 @@ describe("requestDeviceCode", () => {
       }));
     assert.ok(err instanceof DeviceFlowError);
     assert.equal(err.code, "network_error");
-    assert.match(err.message, /Spojení s Googlem se nezdařilo/);
+    assert.match(err.message, /Server se teď nedostal ke Googlu/);
     assertNoSecretsLeaked("requestDeviceCode network");
   });
 
-  it("neplatná odpověď providera → provider_error s českou zprávou", async () => {
-    const err = await catchError(      requestDeviceCode("mock-client-id", ["scope-a"], { fetchImpl: mockFetch([jsonResponse(200, { user_code: "x" })]) }));
+  it("chybějící Client ID → missing_client_id s českou výzvou", async () => {
+    for (const badId of ["", "   "]) {
+      const err = await catchError(requestDeviceCode(badId, ["scope-a"], { fetchImpl: mockFetch([]) }));
+      assert.ok(err instanceof DeviceFlowError);
+      assert.equal(err.code, "missing_client_id");
+      assert.match(err.message, /Nejdřív vlož Client ID TV klienta/);
+      for (const s of SENSITIVE) assert.ok(!err.message.includes(s));
+    }
+    assertNoSecretsLeaked("requestDeviceCode missing client id");
+  });
+
+  it("invalid_client → invalid_client_type s návodem na TV klienta", async () => {
+    const err = await catchError(
+      requestDeviceCode("mock-client-id", ["scope-a"], {
+        fetchImpl: mockFetch([
+          jsonResponse(400, { error: "invalid_client", error_description: "The OAuth client was not found." }),
+        ]),
+      }),
+    );
+    assert.ok(err instanceof DeviceFlowError);
+    assert.equal(err.code, "invalid_client_type");
+    assert.match(err.message, /TVs and Limited Input devices/);
+    assertNoSecretsLeaked("requestDeviceCode invalid_client");
+  });
+
+  it("unauthorized_client → invalid_client_type", async () => {
+    const err = await catchError(
+      requestDeviceCode("mock-client-id", ["scope-a"], {
+        fetchImpl: mockFetch([jsonResponse(400, { error: "unauthorized_client" })]),
+      }),
+    );
+    assert.ok(err instanceof DeviceFlowError);
+    assert.equal(err.code, "invalid_client_type");
+    assert.match(err.message, /TVs and Limited Input devices/);
+    assertNoSecretsLeaked("requestDeviceCode unauthorized_client");
+  });
+
+  it("jiná chyba providera → provider_error, error_description se zaloguje redakčně", async () => {
+    const logs = [];
+    const err = await catchError(
+      requestDeviceCode("mock-client-id", ["scope-a"], {
+        fetchImpl: mockFetch([
+          jsonResponse(429, {
+            error: "rate_limit_exceeded",
+            // popis od Googlu může obsahovat naše client_id → musí se redigovat
+            error_description: "Kvóta pro klienta mock-client-id vyčerpána, zkuste to později",
+          }),
+        ]),
+        log: (m) => logs.push(m),
+      }),
+    );
     assert.ok(err instanceof DeviceFlowError);
     assert.equal(err.code, "provider_error");
-    assertNoSecretsLeaked("requestDeviceCode invalid");
+    assert.match(err.message, /nevydal kód pro spárování/);
+    // Log existuje, ale client_id je redigované.
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /rate_limit_exceeded/);
+    assert.ok(!logs[0].includes("mock-client-id"), "log nesmí nést citlivá data");
+    for (const s of SENSITIVE) assert.ok(!err.message.includes(s));
+    assertNoSecretsLeaked("requestDeviceCode rate_limit");
+  });
+
+  it("nečitelná chybová odpověď (non-ok, bez JSON) → provider_error", async () => {
+    const fetchImpl = async () => ({
+      ok: false,
+      status: 503,
+      json: async () => {
+        throw new Error("no json");
+      },
+    });
+    const err = await catchError(requestDeviceCode("mock-client-id", ["scope-a"], { fetchImpl }));
+    assert.ok(err instanceof DeviceFlowError);
+    assert.equal(err.code, "provider_error");
+    assertNoSecretsLeaked("requestDeviceCode non-json");
+  });
+});
+
+describe("chybový kontrakt", () => {
+  it("guideUrl a seznam naváděných chybových kódů jsou exportované", () => {
+    assert.equal(GOOGLE_DEVICE_CLIENT_GUIDE_URL, "https://console.cloud.google.com/apis/credentials");
+    assert.ok(DEVICE_FLOW_GUIDED_ERRORS.includes("missing_client_id"));
+    assert.ok(DEVICE_FLOW_GUIDED_ERRORS.includes("invalid_client_type"));
+    assert.ok(!DEVICE_FLOW_GUIDED_ERRORS.includes("network_error"));
   });
 });
 
@@ -233,15 +313,44 @@ describe("pollDeviceToken", () => {
     assertNoSecretsLeaked("poll expirace");
   });
 
-  it("neznámá chyba providera (např. invalid_client) → provider_error, tělo se nepropisuje", async () => {
+  it("invalid_client při pollingu → invalid_client_type s návodem na TV klienta", async () => {
     const clock = manualClock();
+    const logs = [];
     const fetchImpl = mockFetch([jsonResponse(400, { error: "invalid_client", error_description: "LEAK-" + SECRET })]);
+    const err = await catchError(pollDeviceToken({ ...basePollOpts(clock, fetchImpl), log: (m) => logs.push(m) }));
+    assert.ok(err instanceof DeviceFlowError);
+    assert.equal(err.code, "invalid_client_type");
+    assert.match(err.message, /TVs and Limited Input devices/);
+    for (const s of SENSITIVE) assert.ok(!err.message.includes(s), "chybová zpráva nesmí nést citlivá data");
+    // error_description se zalogoval, ale secret/device_code v něm jsou redigované.
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /invalid_client/);
+    for (const s of SENSITIVE) assert.ok(!logs[0].includes(s), "log nesmí nést citlivá data");
+    assertNoSecretsLeaked("poll invalid_client");
+  });
+
+  it("unauthorized_client při pollingu → invalid_client_type", async () => {
+    const clock = manualClock();
+    const fetchImpl = mockFetch([jsonResponse(403, { error: "unauthorized_client" })]);
     const err = await catchError(pollDeviceToken(basePollOpts(clock, fetchImpl)));
+    assert.ok(err instanceof DeviceFlowError);
+    assert.equal(err.code, "invalid_client_type");
+    assert.match(err.message, /TVs and Limited Input devices/);
+    assertNoSecretsLeaked("poll unauthorized_client");
+  });
+
+  it("jiná chyba providera při pollingu → provider_error s popisem v logu", async () => {
+    const clock = manualClock();
+    const logs = [];
+    const fetchImpl = mockFetch([jsonResponse(500, { error: "server_error", error_description: "vnitřní chyba Googlu" })]);
+    const err = await catchError(pollDeviceToken({ ...basePollOpts(clock, fetchImpl), log: (m) => logs.push(m) }));
     assert.ok(err instanceof DeviceFlowError);
     assert.equal(err.code, "provider_error");
     assert.match(err.message, /Google párování odmítl/);
-    for (const s of SENSITIVE) assert.ok(!err.message.includes(s), "chybová zpráva nesmí nést citlivá data");
-    assertNoSecretsLeaked("poll invalid_client");
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /server_error/);
+    for (const s of SENSITIVE) assert.ok(!logs[0].includes(s), "log nesmí nést citlivá data");
+    assertNoSecretsLeaked("poll provider_error");
   });
 
   it("přechodný výpadek sítě během čekání → pokračuje dál", async () => {

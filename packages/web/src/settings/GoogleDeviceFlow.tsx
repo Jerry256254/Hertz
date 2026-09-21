@@ -3,9 +3,11 @@ import { CopyButton } from "../components/CopyButton";
 import { api, ApiError } from "../lib/api";
 import {
   DEVICE_POLL_INTERVAL_MS,
+  deviceStartAction,
   deviceStatusText,
   pollDeviceStatus,
   startDeviceFlow,
+  type DeviceStartErrorInfo,
   type DeviceStartResponse,
   type DeviceTerminalStatus,
   type DeviceFlowTransport,
@@ -20,8 +22,8 @@ type Phase =
   | { kind: "starting" }
   | { kind: "waiting"; start: DeviceStartResponse }
   | { kind: "connected" }
-  | { kind: "startError"; message: string }
-  | { kind: "failed"; status: Exclude<DeviceTerminalStatus, "connected">; message: string | null };
+  | { kind: "startError"; error: DeviceStartErrorInfo }
+  | { kind: "failed"; status: Exclude<DeviceTerminalStatus, "connected">; message: string | null; code?: string; guideUrl?: string };
 
 /** Z textu udělá klikací odkazy (server může v hlášce poslat URL návodu). */
 function linkify(text: string): React.ReactNode[] {
@@ -38,6 +40,65 @@ function linkify(text: string): React.ReactNode[] {
 }
 
 /**
+ * Chybová karta startu (i selhání po startu): zobrazí český text ze serveru,
+ * případný odkaz na návod a správnou primární akci — opakování, nebo vložení
+ * údajů klienta. Generická „zkus to za chvíli“ se neukazuje tam, kde známe
+ * příčinu (chybějící/neplatné údaje TV klienta).
+ */
+function StartErrorCard({
+  error,
+  onRetry,
+  onEnterCredentials,
+  onClose,
+}: {
+  error: DeviceStartErrorInfo;
+  onRetry: () => void;
+  onEnterCredentials: () => void;
+  onClose: () => void;
+}) {
+  const action = deviceStartAction(error);
+  const showGuide = !!error.guideUrl && !error.message.includes(error.guideUrl);
+  return (
+    <div>
+      <p className="text-[13px] font-[600] text-fg">
+        {action === "enter_credentials" ? "Nejdřív vlož údaje klienta" : "Kód se nepodařilo připravit"}
+      </p>
+      <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">{linkify(error.message)}</p>
+      {showGuide && (
+        <p className="mt-1.5 text-[12.5px]">
+          <a href={error.guideUrl} target="_blank" rel="noreferrer" className="font-[600] text-accent underline">
+            Otevřít návod k nastavení
+          </a>
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {action === "enter_credentials" ? (
+          <button
+            onClick={onEnterCredentials}
+            className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
+          >
+            Vložit údaje
+          </button>
+        ) : (
+          <button
+            onClick={onRetry}
+            className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
+          >
+            Zkusit znovu
+          </button>
+        )}
+        <button
+          onClick={onClose}
+          className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg"
+        >
+          Zavřít
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Primární cesta připojení Googlu: „Připojit kódem“ (OAuth 2.0 Device flow).
  * Kliknutí → start endpoint → karta s velkým kódem → polling statusu na pozadí.
  * Web/relay cesta zůstává jako sekundární odkaz pod kartou.
@@ -46,12 +107,15 @@ export function GoogleDeviceFlow({
   relayUrl,
   onConnected,
   onClose,
+  onEnterCredentials,
 }: {
   /** Stávající web/relay přihlášení — sekundární možnost. */
   relayUrl: string;
   /** Zavolá se po úspěšném připojení (obnovení seznamu konektorů). */
   onConnected: () => void;
   onClose: () => void;
+  /** Otevře formulář pro vložení údajů TV klienta (při chybě údajů). */
+  onEnterCredentials: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [starting, setStarting] = useState(false);
@@ -68,11 +132,15 @@ export function GoogleDeviceFlow({
         start = await startDeviceFlow(transport);
       } catch (e) {
         if (runId.current !== id) return;
-        // Server vrací lidské české vysvětlení (vč. chybějících TV credentials
-        // a odkazu na návod) — zobrazíme ho tak, jak je, bez technického erroru.
-        const message = e instanceof ApiError ? e.message : "Nepodařilo se připravit kód. Zkus to prosím znovu.";
+        // Server vrací strukturovanou českou chybu (kód, text, případně odkaz
+        // na návod a doporučenou akci) — zobrazíme ji tak, jak je, bez
+        // technického erroru a bez generické hlášky tam, kde známe příčinu.
+        const error: DeviceStartErrorInfo =
+          e instanceof ApiError
+            ? { code: e.code, message: e.message, guideUrl: e.guideUrl, action: e.action }
+            : { message: "Nepodařilo se připravit kód. Zkus to prosím znovu." };
         setStarting(false);
-        setPhase({ kind: "startError", message });
+        setPhase({ kind: "startError", error });
         return;
       }
       if (runId.current !== id || ctrl.signal.aborted) return;
@@ -88,13 +156,13 @@ export function GoogleDeviceFlow({
           setPhase({ kind: "connected" });
           onConnected();
         } else {
-          setPhase({ kind: "failed", status: final.status, message: final.message ?? null });
+          setPhase({ kind: "failed", status: final.status, message: final.message ?? null, code: final.code, guideUrl: final.guideUrl });
         }
       } catch (e) {
         // Přerušeno odmountováním / restartem — ticho, nic nezobrazovat.
         if (e instanceof DOMException && e.name === "AbortError") return;
         if (runId.current !== id) return;
-        setPhase({ kind: "startError", message: "Spojení se serverem selhalo. Zkus to prosím znovu." });
+        setPhase({ kind: "startError", error: { message: "Spojení se serverem selhalo. Zkus to prosím znovu." } });
       }
     },
     [onConnected],
@@ -133,24 +201,12 @@ export function GoogleDeviceFlow({
       )}
 
       {phase.kind === "startError" && (
-        <div>
-          <p className="text-[13px] font-[600] text-fg">Kód se nepodařilo připravit</p>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">{linkify(phase.message)}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={retry}
-              className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full bg-accent px-5 text-[13px] font-[600] text-white"
-            >
-              Zkusit znovu
-            </button>
-            <button
-              onClick={onClose}
-              className="pressable inline-flex min-h-[44px] items-center justify-center rounded-full border border-border bg-bg-sunken px-5 text-[13px] font-[600] text-fg"
-            >
-              Zavřít
-            </button>
-          </div>
-        </div>
+        <StartErrorCard
+          error={phase.error}
+          onRetry={retry}
+          onEnterCredentials={onEnterCredentials}
+          onClose={onClose}
+        />
       )}
 
       {phase.kind === "waiting" && (
@@ -204,7 +260,16 @@ export function GoogleDeviceFlow({
         </div>
       )}
 
-      {phase.kind === "failed" && (
+      {phase.kind === "failed" && phase.status === "error" && (
+        <StartErrorCard
+          error={{ code: phase.code, message: phase.message?.trim() || deviceStatusText("error"), guideUrl: phase.guideUrl }}
+          onRetry={retry}
+          onEnterCredentials={onEnterCredentials}
+          onClose={onClose}
+        />
+      )}
+
+      {phase.kind === "failed" && phase.status !== "error" && (
         <div>
           <p className="text-[13px] font-[600] text-fg">Připojení se nezdařilo</p>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">

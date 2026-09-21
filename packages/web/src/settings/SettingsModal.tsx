@@ -708,6 +708,12 @@ function OneClickConnectors() {
       setClientSecret("");
       setSaveErr(null);
       refresh();
+      if (c.id === "google") {
+        // Po uložení údajů TV klienta pokračovat rovnou device flow —
+        // web redirect je pro TV klienta bez návratové adresy nevhodný.
+        setDeviceFor(c.id);
+        return;
+      }
       // Po uložení rovnou na souhlas poskytovatele — žádné další klikání.
       window.location.href = `/api/oauth/${c.service}/start?catalogId=${c.id}`;
     },
@@ -806,18 +812,26 @@ function OneClickConnectors() {
                 <button onClick={() => openPanel(c)} className={ctaCls}>
                   Připojit
                 </button>
+              ) : c.id === "google" && c.oauthReady ? (
+                // Google: primární cesta je device flow („Připojit kódem“),
+                // web/relay přihlášení zůstává jako sekundární možnost uvnitř panelu.
+                <button onClick={() => { setPanelFor(null); setDeviceFor(c.id); }} className={ctaCls}>
+                  Připojit kódem
+                </button>
+              ) : c.id === "google" ? (
+                // Google bez údajů TV klienta: předem jasně říct, co chybí.
+                // Tlačítko je neaktivní s vysvětlením, primární akcí je vložení údajů.
+                <button
+                  disabled
+                  title="Nejdřív vlož Client ID a Secret klienta typu TV — bez nich kód nejde připravit."
+                  className={ctaCls}
+                >
+                  Připojit kódem
+                </button>
               ) : c.oauthReady ? (
-                c.id === "google" ? (
-                  // Google: primární cesta je device flow („Připojit kódem“),
-                  // web/relay přihlášení zůstává jako sekundární možnost uvnitř panelu.
-                  <button onClick={() => { setPanelFor(null); setDeviceFor(c.id); }} className={ctaCls}>
-                    Připojit kódem
-                  </button>
-                ) : (
-                  <a href={`/api/oauth/${c.service}/start?catalogId=${c.id}`} className={ctaCls}>
-                    Připojit
-                  </a>
-                )
+                <a href={`/api/oauth/${c.service}/start?catalogId=${c.id}`} className={ctaCls}>
+                  Připojit
+                </a>
               ) : (
                 <button onClick={() => openPanel(c)} className={ctaCls}>
                   Připojit
@@ -825,6 +839,14 @@ function OneClickConnectors() {
               )}
             </div>
             <p className="mt-2 text-[12.5px] leading-relaxed text-fg-muted">{c.description}</p>
+            {c.id === "google" && !c.oauthReady && !c.connected && (
+              <p className="mt-2 rounded-[12px] border border-border bg-bg px-3 py-2 text-[12.5px] leading-relaxed text-fg-muted">
+                Nejdřív vlož Client ID a Secret klienta typu TV — bez nich kód nejde připravit.{" "}
+                <button onClick={() => openPanel(c)} className="font-[600] text-accent underline">
+                  Vložit údaje
+                </button>
+              </p>
+            )}
             <p className="mt-1.5 text-[12px] leading-relaxed text-fg-subtle">{c.capabilities.join(" · ")}</p>
             {failed && (
               <p className="mt-2 rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">
@@ -927,6 +949,7 @@ function OneClickConnectors() {
                   relayUrl={`/api/oauth/${c.service}/start?catalogId=${c.id}`}
                   onConnected={refresh}
                   onClose={() => setDeviceFor(null)}
+                  onEnterCredentials={() => { setDeviceFor(null); openPanel(c); }}
                 />
               </div>
             )}

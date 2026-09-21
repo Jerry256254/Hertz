@@ -1,9 +1,22 @@
+/** Akce, kterou má UI nabídnout po chybě endpointu. */
+export type ApiErrorAction = "enter_credentials" | "retry";
+
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
+  public status: number;
+  /** Strojový kód chyby ze serveru (např. "missing_client_id"), pokud ho poslal. */
+  public readonly code?: string;
+  /** Odkaz na návod k nápravě, pokud ho server poslal. */
+  public readonly guideUrl?: string;
+  /** Akce doporučená serverem, pokud ji poslal. */
+  public readonly action?: ApiErrorAction;
+  constructor(status: number, message: string, details?: { code?: unknown; guideUrl?: unknown; action?: unknown }) {
     super(message);
+    // Bez parameter properties — soubor se importuje i v node strip-only
+    // režimu (testy), který je nepodporuje.
+    this.status = status;
+    if (typeof details?.code === "string" && details.code) this.code = details.code;
+    if (typeof details?.guideUrl === "string" && details.guideUrl) this.guideUrl = details.guideUrl;
+    if (details?.action === "enter_credentials" || details?.action === "retry") this.action = details.action;
   }
 }
 
@@ -39,13 +52,24 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       }
     }
     let message = res.statusText;
+    let code: unknown;
+    let guideUrl: unknown;
+    let action: unknown;
     try {
       const data = await res.json();
-      message = data.error ?? message;
+      if (data && typeof data === "object") {
+        // Server posílá český text v `error`; `message` akceptujeme pro
+        // kompatibilitu s novým strukturovaným kontraktem chyb.
+        if (typeof data.error === "string" && data.error) message = data.error;
+        else if (typeof data.message === "string" && data.message) message = data.message;
+        code = data.code ?? data.error_code;
+        guideUrl = data.guideUrl ?? data.guide_url;
+        action = data.action;
+      }
     } catch {
       // ignore
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, { code, guideUrl, action });
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

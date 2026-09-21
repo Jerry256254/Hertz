@@ -3,11 +3,19 @@
  * Transport (HTTP volání) se předává zvenčí, takže jde celý flow
  * otestovat s mock fetch bez prohlížeče.
  *
- * Serverový kontrakt (paralelní etapa):
+ * Serverový kontrakt:
  *   POST /api/oauth/google/device/start
  *     → { user_code, verification_url, expires_in, device_session_id }
+ *     → chyba: { code, error, guideUrl? }
  *   GET  /api/oauth/google/device/status?session=<id>
- *     → { status: "pending"|"connected"|"denied"|"expired"|"error", message? }
+ *     → { status: "pending"|"connected"|"denied"|"expired"|"error", message?, code?, guideUrl? }
+ *
+ * Kódy chyb (DeviceFlowErrorCode na serveru):
+ *   "missing_client_id"   — nejsou zadané údaje TV klienta → vložit údaje
+ *   "invalid_client_type" — Google údaj odmítl (klient není typu TV) → vložit údaje
+ *   "provider_error"      — chyba na straně Googlu → zkusit znovu
+ *   "network_error"       — výpadek spojení → zkusit znovu
+ * ("access_denied"/"expired_token" se mapují na stavy denied/expired.)
  */
 
 export interface DeviceStartResponse {
@@ -24,6 +32,39 @@ export interface DeviceStatusResponse {
   status: DeviceStatus;
   /** Lidská česká hláška od serveru (hlavně pro "error"). */
   message?: string;
+  /** Strojový kód chyby (např. "invalid_client_type"), pokud ho server poslal. */
+  code?: string;
+  /** Odkaz na návod k nápravě (u konfiguračních chyb). */
+  guideUrl?: string;
+}
+
+/** Akce, kterou má UI po chybě startu nabídnout. */
+export type DeviceStartAction = "enter_credentials" | "retry";
+
+/** Strukturovaná chyba startu device flow (z ApiError nebo fallback). */
+export interface DeviceStartErrorInfo {
+  /** Strojový kód chyby ze serveru. */
+  code?: string;
+  /** Český lidský text chyby. */
+  message: string;
+  /** Odkaz na návod k nápravě. */
+  guideUrl?: string;
+  /** Akce doporučená serverem. */
+  action?: DeviceStartAction;
+}
+
+/** Kódy, u kterých je nápravou vložení údajů klienta (nikoli opakování). */
+const CREDENTIAL_ERROR_CODES = new Set(["missing_client_id", "invalid_client_type"]);
+
+/**
+ * Rozhodne, jakou primární akci UI po chybě startu nabídne.
+ * Explicitní `action` ze serveru má přednost; známé kódy chybějících/
+ * neplatných údajů vedou na vložení údajů, zbytek na opakování.
+ */
+export function deviceStartAction(e: DeviceStartErrorInfo): DeviceStartAction {
+  if (e.action === "enter_credentials" || e.action === "retry") return e.action;
+  if (e.code && CREDENTIAL_ERROR_CODES.has(e.code)) return "enter_credentials";
+  return "retry";
 }
 
 /** Stav, ve kterém už polling končí (cokoliv kromě "pending"). */
@@ -32,6 +73,10 @@ export type DeviceTerminalStatus = Exclude<DeviceStatus, "pending">;
 export interface DeviceTerminalStatusResponse {
   status: DeviceTerminalStatus;
   message?: string;
+  /** Strojový kód chyby (např. "invalid_client_type"), pokud ho server poslal. */
+  code?: string;
+  /** Odkaz na návod k nápravě (u konfiguračních chyb). */
+  guideUrl?: string;
 }
 
 /** Minimální HTTP transport — v aplikaci se napojí na `api` z lib/api. */
