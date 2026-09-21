@@ -8,7 +8,7 @@ import { mcpServers, oauthApps } from "../db/schema.js";
 import { newId } from "../db/client.js";
 import { requireAuth } from "../auth/plugin.js";
 import { decryptSecret, encryptSecret, maskKey } from "../secrets/key-encryption.js";
-import { CONNECTOR_CATALOG, getConnector, humanizeConnectorError, type ConnectorId } from "../mcp/catalog.js";
+import { CONNECTOR_CATALOG, getConnector, humanizeConnectorError, setupHelpFor, adminSetupHelpFor, copyableRelayUrlsFor, type ConnectorId } from "../mcp/catalog.js";
 import { serverOAuthApp } from "../oauth/oauth-service.js";
 import type { OAuthService } from "../oauth/oauth-service.js";
 import { POLICY_MODE_CZ, TOOL_CLASS_CZ } from "../mcp/tool-policy.js";
@@ -87,9 +87,13 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
             capabilities: def.capabilities,
             setupUrl: def.setupUrl ?? null,
             setupUrlLabel: def.setupUrlLabel ?? null,
-            setupHelp: def.setupHelp ?? null,
+            setupHelp: setupHelpFor(def) ?? null,
             // Návod pro správce serveru (zapnutí OAuth přihlašování) — vidí ho jen admin.
-            adminSetupHelp: def.adminSetupHelp ?? null,
+            adminSetupHelp: adminSetupHelpFor(def) ?? null,
+            // URL ke zkopírování v UI (tlačítko řeší frontend): když je zapnutý
+            // OAuth relay, je to bounce URL jako redirect URI pro konzoli
+            // poskytovatele. Jinak prázdné pole.
+            copyableUrls: copyableRelayUrlsFor(def),
             appConfigured: !!appRow,
             // "Připojit" může vést rovnou na souhlas poskytovatele, když má
             // server přihlašovací údaje (uložené v DB, nebo od správce přes

@@ -25,12 +25,14 @@ import {
   slackAuthUrl,
   verifyState,
   type OAuthService,
+  type OAuthStatePayload,
 } from "../oauth/oauth-service.js";
 import {
   checkRedirectUri,
   localNetworkOAuthBlockedMessage,
   PROVIDERS_REQUIRING_PUBLIC_REDIRECT,
 } from "../oauth/redirect-check.js";
+import { oauthRelayBounceUrl, signRelayState } from "../oauth/relay-state.js";
 import { providerConfigs } from "../db/schema.js";
 import { getConnector, type ConnectorId } from "../mcp/catalog.js";
 
@@ -102,6 +104,76 @@ async function resolveAppCredentials(
   return serverOAuthApp(service);
 }
 
+export interface OAuthStartParams {
+  service: OAuthService;
+  /** Přímá callback URL této instance (bez relay) — základ i pro relay target. */
+  instanceCallbackUri: string;
+  /** Podepsaný Hertz state (služba, konektor, uživatel); u Mistralu včetně PKCE verifieru. */
+  statePayload: OAuthStatePayload;
+  masterKey: Buffer;
+}
+
+export type OAuthStartPlan =
+  | { ok: true; redirectUri: string; state: string; viaRelay: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Rozhodne, kam míří redirect_uri a jak vypadá state pro OAuth start.
+ * Čistá funkce (závisí jen na env proměnných) — testovatelná bez Fastify/DB.
+ *
+ * Když je nastavené HERTZ_OAUTH_RELAY_URL a služba je google/notion, jede
+ * start přes relay: redirect_uri je `<relay>/bounce` a state je podepsaný
+ * relay token, jehož target je callback URL instance s vnitřním podepsaným
+ * Hertz state v query (`?state=…`) — callback endpoint pak po bounci funguje
+ * beze změny. Kontrola privátní adresy se v tom případě přeskakuje:
+ * poskytovatel privátní adresu instance vůbec nevidí.
+ * Jinak (nebo pro ostatní služby) zůstává přímý flow včetně existujícího
+ * varování pro privátní síť z redirect-check.ts.
+ */
+export function planOAuthStart(p: OAuthStartParams): OAuthStartPlan {
+  const relayBounceUrl = p.service === "google" || p.service === "notion" ? oauthRelayBounceUrl() : undefined;
+  if (relayBounceUrl) {
+    const stateSecret = process.env.HERTZ_OAUTH_STATE_SECRET?.trim();
+    if (!stateSecret) {
+      return {
+        ok: false,
+        error:
+          "Přihlášení teď nejde spustit: na serveru je zapnutý OAuth relay (HERTZ_OAUTH_RELAY_URL), ale chybí tajný klíč HERTZ_OAUTH_STATE_SECRET — musí být stejný jako na relay serveru. Popros správce serveru, ať ho nastaví, pak to zkus znovu.",
+      };
+    }
+    const hertzState = signState(p.masterKey, p.statePayload);
+    const target = `${p.instanceCallbackUri}?state=${encodeURIComponent(hertzState)}`;
+    // relayBounceUrl je definované jen pro google/notion (viz výše), takže cast je bezpečný.
+    const relayService = p.service as "google" | "notion";
+    return {
+      ok: true,
+      redirectUri: relayBounceUrl,
+      state: signRelayState(target, relayService, stateSecret),
+      viaRelay: true,
+    };
+  }
+  if (PROVIDERS_REQUIRING_PUBLIC_REDIRECT.has(p.service) && !checkRedirectUri(p.instanceCallbackUri).ok) {
+    return { ok: false, error: localNetworkOAuthBlockedMessage({ service: p.service, redirectUri: p.instanceCallbackUri }) };
+  }
+  return {
+    ok: true,
+    redirectUri: p.instanceCallbackUri,
+    state: signState(p.masterKey, p.statePayload),
+    viaRelay: false,
+  };
+}
+
+/**
+ * redirect_uri pro výměnu autorizačního kódu za tokeny (callback endpoint).
+ * KRITICKÉ: při relay flow musí být úplně stejná jako při autorizaci —
+ * tedy bounce URL relay, ne přímá callback adresa instance. Google/Notion
+ * by jinak výměnu odmítly chybou redirect_uri_mismatch.
+ */
+export function callbackRedirectUri(service: OAuthService, protocol: string, host: string | undefined): string {
+  const relayBounceUrl = service === "google" || service === "notion" ? oauthRelayBounceUrl() : undefined;
+  return relayBounceUrl ?? `${protocol}://${host}/api/oauth/${service}/callback`;
+}
+
 export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
   void app.register(async (instance) => {
     instance.addHook("preHandler", requireAuth);
@@ -156,16 +228,9 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         );
       }
 
-      const redirectUri = `${request.protocol}://${request.headers.host}/api/oauth/${service}/callback`;
+      const instanceCallbackUri = `${request.protocol}://${request.headers.host}/api/oauth/${service}/callback`;
 
-      // Google (a Notion) odmítají návratové adresy z lokální sítě kryptickou
-      // chybou 400 — místo redirectu na poskytovatele vrať rovnou srozumitelné
-      // vysvětlení s návodem (karta chyby v Nastavení → Konektory).
-      if (PROVIDERS_REQUIRING_PUBLIC_REDIRECT.has(service) && !checkRedirectUri(redirectUri).ok) {
-        return fail(localNetworkOAuthBlockedMessage({ service, redirectUri }));
-      }
-
-      const statePayload = {
+      const statePayload: OAuthStatePayload = {
         service,
         catalogId: catalogId ?? getConnector(service as ConnectorId)?.catalogId ?? "",
         agentId: agentId ?? null,
@@ -173,13 +238,21 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         userId: request.user!.id,
         nonce: randomUUID(),
       };
-      let state = signState(ctx.masterKey, statePayload);
+      // Mistral (PKCE): verifier musí být součástí podepsaného state ještě před plánováním startu.
+      const pkce = service === "mistral" ? generatePkcePair() : null;
+      const plan = planOAuthStart({
+        service,
+        instanceCallbackUri,
+        statePayload: pkce ? { ...statePayload, codeVerifier: pkce.verifier } : statePayload,
+        masterKey: ctx.masterKey,
+      });
+      if (!plan.ok) return fail(plan.error);
+      const { redirectUri, state } = plan;
 
       let url: string;
       if (service === "mistral") {
-        const pkce = generatePkcePair();
-        state = signState(ctx.masterKey, { ...statePayload, codeVerifier: pkce.verifier });
-        url = mistralAuthUrl({ clientId: creds.clientId, redirectUri, state, challenge: pkce.challenge });
+        // pkce je pro mistral vždy nastavené (viz výše).
+        url = mistralAuthUrl({ clientId: creds.clientId, redirectUri, state, challenge: pkce!.challenge });
       } else if (service === "google") {
         url = googleAuthUrl({ clientId: creds.clientId, redirectUri, catalogId: catalogId ?? "", state });
       } else if (service === "notion") {
@@ -280,7 +353,10 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         return reply.redirect("/providers?mistralConnected=1");
       }
       const clientSecret = creds.clientSecret;
-      const redirectUri = `${request.protocol}://${request.headers.host}/api/oauth/${service}/callback`;
+      // Při relay flow je redirect_uri pro výměnu kódu bounce URL relay —
+      // musí být stejná jako při autorizaci, jinak poskytovatel vrátí
+      // redirect_uri_mismatch. Bez relay zůstává přímá callback adresa.
+      const redirectUri = callbackRedirectUri(service, request.protocol, request.headers.host);
 
       let env: Record<string, string>;
       try {

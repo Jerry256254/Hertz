@@ -10,6 +10,7 @@ import type { Agent, ChannelConfig, IntegrationConnector, McpServer, MountList, 
 import { DirectoryPicker } from "../components/DirectoryPicker";
 import { ModelFields } from "../components/ModelFields";
 import { ProviderCreateForm } from "../components/ProviderCreateForm";
+import { CopyButton } from "../components/CopyButton";
 import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
 import { VaultSection } from "./VaultSection";
 
@@ -1002,6 +1003,24 @@ function AdminOAuthForm({
           {c.setupUrlLabel}
         </a>
       )}
+      {/* TODO(oauth-relay): server má v datech konektoru dodávat
+          copyableUrls: { label, url }[] (redirect URI pro konzoli poskytovatele
+          + relay bounce URL). Dokud pole nepřijde, tlačítka se nezobrazují —
+          frontend je připravený, čeká jen na serverovou část. */}
+      {(c.copyableUrls ?? []).map((u) => (
+        <div
+          key={u.url}
+          className="flex items-center gap-2 rounded-[12px] border border-border bg-bg-sunken px-3 py-1.5"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-[11.5px] font-[600] text-fg-muted">{u.label}</p>
+            <p className="mono truncate text-[12.5px] text-fg" title={u.url}>
+              {u.url}
+            </p>
+          </div>
+          <CopyButton value={u.url} ariaLabel={`Zkopírovat ${u.label}: ${u.url}`} />
+        </div>
+      ))}
       {saveErr && <p className="rounded-[12px] border border-danger/25 bg-danger-wash px-3 py-2 text-[12.5px] text-danger">{saveErr}</p>}
       <Field label="Client ID">
         <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="např. 123….apps.googleusercontent.com" className={`${inputCls} mono`} />

@@ -294,6 +294,14 @@ export interface IntegrationCredentialField {
   required?: boolean;
 }
 
+/** Jedna URL ke zkopírování v návodu pro správce (např. redirect URI, relay bounce URL). */
+export interface CopyableConnectorUrl {
+  /** Lidský popisek, např. „Redirect URI pro Google Cloud Console“. */
+  label: string;
+  /** URL, kterou má správce zkopírovat a vložit do konzole poskytovatele. */
+  url: string;
+}
+
 export interface IntegrationConnector {
   id: "google" | "notion" | "github" | "presentation" | "gitlab" | "todoist" | "openweather" | "rss";
   service: "google" | "notion" | "github" | "local";
@@ -312,6 +320,13 @@ export interface IntegrationConnector {
   setupHelp: string | null;
   /** Návod pro správce serveru (zapnutí OAuth přihlašování) — jen pro adminy. */
   adminSetupHelp: string | null;
+  /**
+   * URL ke zkopírování v návodu pro správce (redirect URI, relay bounce URL).
+   * Plní server v datech konektoru (paralelní OAuth relay etapa); dokud pole
+   * nedorazí, frontend tlačítka nezobrazuje. Nepovinné, aby starší servery
+   * frontend nerozbily.
+   */
+  copyableUrls?: CopyableConnectorUrl[] | null;
   appConfigured: boolean;
   /** OAuth jde spustit rovnou (server má přihlašovací údaje) — jinak jen krok pro správce. */
   oauthReady: boolean | null;

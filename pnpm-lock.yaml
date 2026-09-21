@@ -215,6 +215,15 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/oauth-relay:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/providers:
     devDependencies:
       '@types/node':

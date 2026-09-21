@@ -1,4 +1,5 @@
 import type { OAuthService } from "../oauth/oauth-service.js";
+import { oauthRelayBounceUrl } from "../oauth/relay-state.js";
 
 export type ConnectorId = "google" | "notion" | "github" | "presentation" | "gitlab" | "todoist" | "openweather" | "rss";
 
@@ -60,11 +61,23 @@ export interface ConnectorDefinition {
    */
   setupHelp?: string;
   /**
+   * Varianta setupHelp pro případ, že je zapnutý OAuth relay
+   * (HERTZ_OAUTH_RELAY_URL): krátký návod bez zmínek o SSH tunelu —
+   * přihlášení přes relay prostě projde jedním kliknutím.
+   */
+  relaySetupHelp?: string;
+  /**
    * One-off setup instructions for the SERVER ADMIN (enabling OAuth login).
    * Shown only to admins, may use technical terms. Not needed when the
    * server already has the credentials (env vars or saved app).
    */
   adminSetupHelp?: string;
+  /**
+   * Varianta adminSetupHelp pro OAuth relay: návod pro správce, kam patří
+   * bounce URL relay jako redirect URI u poskytovatele. Může obsahovat
+   * zástupný text `{bounce}`, který se nahradí skutečnou bounce URL.
+   */
+  relayAdminSetupHelp?: string;
   /** Matches the MCP server package this connector spawns (…/dist/server.js suffix). */
   serverDistSuffix: string;
   /** catalogId used for the OAuth start/callback round-trip. */
@@ -100,6 +113,15 @@ export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
       "Když se k Hertzi připojuješ přes lokální síť (adresa jako 192.168.x.x), Google takové přihlášení odmítne — " +
       "pak pomůže SSH tunel (otevři Hertz na http://localhost:4173) nebo veřejná adresa se zabezpečeným spojením (https); " +
       "návratovou adresu pak přidej v Google Cloud Console.",
+    relaySetupHelp:
+      "Klikni na „Připojit“, přihlas se Googlem a potvrď souhlas — propojení proběhne samo.",
+    relayAdminSetupHelp:
+      "Jednorázové nastavení pro správce serveru: " +
+      "1. V Google Cloud Console vytvoř projekt a OAuth klienta typu „Webová aplikace“. " +
+      "2. Jako autorizovanou adresu pro návrat přidej {bounce} — přihlášení probíhá přes OAuth relay, protože tento Hertz běží na lokální síti (přímou adresu serveru by Google odmítl). " +
+      "3. Povol API: Gmail, Calendar, Drive, Sheets, Docs a Slides. " +
+      "4. Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_GOOGLE_CLIENT_ID a HERTZ_OAUTH_GOOGLE_CLIENT_SECRET. " +
+      "5. Na serveru musí být nastavené HERTZ_OAUTH_RELAY_URL a HERTZ_OAUTH_STATE_SECRET (stejný klíč jako na relay serveru).",
     adminSetupHelp:
       "Jednorázové nastavení pro správce serveru: " +
       "1. V Google Cloud Console vytvoř projekt a OAuth klienta typu „Webová aplikace“. " +
@@ -126,6 +148,15 @@ export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
       "Klikni na „Připojit“, vyber svůj Notion pracovní prostor a potvrď. " +
       "Pozor: funguje to jen přes localhost nebo veřejnou adresu se zabezpečeným spojením (https) — " +
       "přes lokální síť (adresa jako 192.168.x.x) Notion přihlášení odmítne, pak pomůže SSH tunel nebo veřejná doména.",
+    relaySetupHelp:
+      "Klikni na „Připojit“, vyber svůj Notion pracovní prostor a potvrď — propojení proběhne samo.",
+    relayAdminSetupHelp:
+      "Jednorázové nastavení pro správce serveru: " +
+      "1. Na stránce My integrations vytvoř novou „public“ integraci. " +
+      "2. Jako adresu pro návrat nastav {bounce} — přihlášení probíhá přes OAuth relay, protože tento Hertz běží na lokální síti (přímou adresu serveru by Notion odmítlo). " +
+      "3. V nastavení integrace povol čtení i zápis obsahu a čtení uživatelů. " +
+      "4. Client ID a Client secret vlož níže a ulož — nebo je nastav přímo na serveru přes proměnné prostředí HERTZ_OAUTH_NOTION_CLIENT_ID a HERTZ_OAUTH_NOTION_CLIENT_SECRET. " +
+      "5. Na serveru musí být nastavené HERTZ_OAUTH_RELAY_URL a HERTZ_OAUTH_STATE_SECRET (stejný klíč jako na relay serveru).",
     adminSetupHelp:
       "Jednorázové nastavení pro správce serveru: " +
       "1. Na stránce My integrations vytvoř novou „public“ integraci. " +
@@ -274,6 +305,60 @@ export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
 
 export function getConnector(id: string): ConnectorDefinition | undefined {
   return CONNECTOR_CATALOG.find((c) => c.id === id);
+}
+
+/**
+ * Návod pro běžného uživatele s ohledem na OAuth relay: když je relay
+ * zapnutý (HERTZ_OAUTH_RELAY_URL) a konektor má relay variantu textu
+ * (google/notion), použije se zkrácený návod bez SSH tunelu — přihlášení
+ * přes relay prostě projde jedním kliknutím. Jinak původní text.
+ */
+export function setupHelpFor(def: ConnectorDefinition): string | undefined {
+  if (oauthRelayBounceUrl() && def.relaySetupHelp) return def.relaySetupHelp;
+  return def.setupHelp;
+}
+
+/**
+ * Návod pro správce serveru s ohledem na OAuth relay: když je relay
+ * zapnutý, patří do konzole poskytovatele bounce URL relay jako redirect
+ * URI (zástupný text `{bounce}` se nahradí skutečnou adresou).
+ */
+export function adminSetupHelpFor(def: ConnectorDefinition): string | undefined {
+  const bounce = oauthRelayBounceUrl();
+  if (bounce && def.relayAdminSetupHelp) return def.relayAdminSetupHelp.split("{bounce}").join(bounce);
+  return def.adminSetupHelp;
+}
+
+/**
+ * Bounce URL OAuth relay pro daný konektor (data pro UI — adresa, která
+ * patří do Google Cloud Console / Notion integrace jako redirect URI;
+ * tlačítko pro zkopírování řeší frontend). Jen google/notion umí relay,
+ * jinak null.
+ */
+export function relayBounceUrlFor(def: ConnectorDefinition): string | null {
+  if (def.service !== "google" && def.service !== "notion") return null;
+  return oauthRelayBounceUrl() ?? null;
+}
+
+/** Jedna URL ke zkopírování v UI — tvar očekávaný frontendem (copyableUrls). */
+export interface CopyableConnectorUrl {
+  /** Lidský popisek, např. „Redirect URI pro Google Cloud Console“. */
+  label: string;
+  /** URL, kterou má správce zkopírovat a vložit do konzole poskytovatele. */
+  url: string;
+}
+
+/**
+ * URL k zobrazení s tlačítkem pro zkopírování v Nastavení → Konektory:
+ * když je zapnutý OAuth relay (HERTZ_OAUTH_RELAY_URL), je to bounce URL
+ * jako redirect URI pro konzoli poskytovatele. Jinak prázdné pole.
+ */
+export function copyableRelayUrlsFor(def: ConnectorDefinition): CopyableConnectorUrl[] {
+  const bounce = relayBounceUrlFor(def);
+  if (!bounce) return [];
+  const label =
+    def.service === "notion" ? "Redirect URI pro Notion integraci" : "Redirect URI pro Google Cloud Console";
+  return [{ label, url: bounce }];
 }
 
 /**
