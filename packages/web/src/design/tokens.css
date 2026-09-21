@@ -126,6 +126,15 @@ details > summary { display: flex; min-height: var(--tap-min); align-items: cent
 .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 
+/* Všechny vnitřní seznamy patří sobě: scroll uvnitř seznamu nesmí řetězit
+   na stránku (gumový efekt / pull-to-refresh na mobilu), -webkit-overflow-scrolling
+   drží setrvačnost na starších iOS. */
+.overflow-y-auto,
+.overflow-auto {
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Na telefonech nikdy nezmenšovat text ve formulářových polích pod 16 px —
    iOS Safari by při focusu automaticky přibližoval celou stránku. */
 @media (max-width: 639px) {

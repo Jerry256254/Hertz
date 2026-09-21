@@ -41,7 +41,7 @@ export function ChannelView({
           <p className="truncate text-[12px] text-fg-muted">{binding.sessionTitle || binding.externalChatId} · jen zobrazení</p>
         </div>
       </div>
-      <div className="min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatView
           sessionId={binding.sessionId}
           agent={agent}
