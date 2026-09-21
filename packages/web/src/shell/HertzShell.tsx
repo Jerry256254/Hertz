@@ -14,6 +14,7 @@ import { ApprovalsView } from "../views/ApprovalsView";
 import { SearchOverlay } from "../overlays/SearchOverlay";
 import { SettingsModal } from "../settings/SettingsModal";
 import { DirectoryPicker } from "../components/DirectoryPicker";
+import { ProviderCreateForm } from "../components/ProviderCreateForm";
 
 export function HertzShell() {
   const queryClient = useQueryClient();
@@ -253,7 +254,10 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
         {step === 0 && (
           <div className="mt-5">
             {providers.length === 0 ? (
-              <InlineProviderCreate onCreated={(id, defaultModel) => { setProviderId(id); if (defaultModel) setModel(defaultModel); }} />
+              <>
+                <p className="mb-3 text-[13px] leading-relaxed text-fg-muted">Zatím nemáš žádného poskytovatele — přidej prvního:</p>
+                <ProviderCreateForm onCreated={(id, defaultModel) => { setProviderId(id); if (defaultModel) setModel(defaultModel); }} />
+              </>
             ) : (
               <select value={providerId} onChange={(e) => { setProviderId(e.target.value); const p = providers.find((x) => x.id === e.target.value); if (p?.defaultModel) setModel(p.defaultModel); }} className={inputCls}>
                 {providers.map((p) => (
@@ -315,52 +319,3 @@ function SetupAgentView({ onDone }: { onDone: () => void }) {
   );
 }
 
-function InlineProviderCreate({ onCreated }: { onCreated: (id: string, defaultModel?: string) => void }) {
-  const queryClient = useQueryClient();
-  const [provider, setProvider] = useState<ProviderConfig["provider"]>("anthropic");
-  const [label, setLabel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [defaultModel, setDefaultModel] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const inputCls = "h-11 w-full rounded-full border border-border bg-bg-sunken px-4 text-[14px] text-fg outline-none focus:border-accent";
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.post<{ id: string }>("/providers", {
-        provider,
-        label: label.trim(),
-        apiKey,
-        ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
-        ...(defaultModel.trim() ? { defaultModel: defaultModel.trim() } : {}),
-      }),
-    onSuccess: (res) => {
-      setErr(null);
-      void queryClient.invalidateQueries({ queryKey: ["providers"] });
-      onCreated(res.id, defaultModel.trim() || undefined);
-    },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Přidání selhalo"),
-  });
-
-  return (
-    <div className="space-y-2.5">
-      <p className="text-[13px] leading-relaxed text-fg-muted">Zatím nemáš žádného poskytovatele — přidej prvního:</p>
-      <select value={provider} onChange={(e) => setProvider(e.target.value as ProviderConfig["provider"])} className={inputCls}>
-        <option value="anthropic">Anthropic</option>
-        <option value="openai">OpenAI</option>
-        <option value="google">Google</option>
-        <option value="openai-compatible">OpenAI-kompatibilní (vlastní URL)</option>
-      </select>
-      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Název, např. Můj Anthropic" className={inputCls} />
-      <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" placeholder="API klíč" className={inputCls} />
-      {provider === "openai-compatible" && (
-        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="Base URL" className={inputCls} />
-      )}
-      <input value={defaultModel} onChange={(e) => setDefaultModel(e.target.value)} placeholder="Výchozí model (nepovinné)" className={`${inputCls} mono`} />
-      {err && <p className="text-[13px] text-danger">{err}</p>}
-      <button onClick={() => create.mutate()} disabled={create.isPending || !label.trim()} className="pressable w-full rounded-full bg-accent py-2.5 text-[13.5px] font-[600] text-white disabled:opacity-40">
-        {create.isPending ? "Přidávám…" : "Přidat poskytovatele"}
-      </button>
-    </div>
-  );
-}

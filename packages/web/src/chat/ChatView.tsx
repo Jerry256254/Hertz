@@ -141,7 +141,7 @@ export function ChatView({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => api.get<SessionDetail>(`/sessions/${sessionId}`),
   });
@@ -165,6 +165,8 @@ export function ChatView({
         setStreamingText("");
         void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
+        // The server may have auto-corrected a stale model id mid-run — refresh the agent so the UI shows the real one.
+        void queryClient.invalidateQueries({ queryKey: ["agent"] });
       } else if (event.type === "status") {
         setIsRunning(event.status === "running");
         setIsPaused(event.status === "paused");
@@ -187,6 +189,7 @@ export function ChatView({
         setIsPaused(false);
         void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         void queryClient.invalidateQueries({ queryKey: ["sessions", "all"] });
+        void queryClient.invalidateQueries({ queryKey: ["agent"] });
       }
     });
     return unsub;
@@ -379,6 +382,12 @@ export function ChatView({
 
       {/* messages */}
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto py-3">
+        {isLoading && (
+          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-fg-muted">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-accent" />
+            Načítám konverzaci…
+          </div>
+        )}
         {renderBlocks.map((block) =>
           block.grouped ? (
             <GroupedSteps
@@ -415,7 +424,7 @@ export function ChatView({
             <AgentAvatar seed={agent.id} mood="working" size={24} />
             <span className="flex items-center gap-1.5 text-[12px] text-fg-muted">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-live" />
-              {isPaused ? "pozastaveno — bude pokračovat" : "pracuje…"}
+              {isPaused ? "pozastaveno" : "pracuje…"}
             </span>
             {!readOnly && (
               <span className="flex items-center gap-1">
@@ -511,7 +520,7 @@ export function ChatView({
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={onKeyDown}
                 onPaste={(e) => void onFiles(e.clipboardData.files)}
-                placeholder={title ? `Napiš ${agent.name}…` : "Napiš zprávu…"}
+                placeholder={`Napiš ${agent.name}…`}
                 rows={1}
                 className="max-h-[160px] min-h-[48px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[14px] leading-6 text-fg placeholder:text-fg-subtle outline-none"
               />

@@ -4,6 +4,7 @@ import { MessageCircle, Plus, Search, Send, Trash2, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { Agent, ChannelBinding, ChannelConfig, SessionListItem } from "../lib/types";
 import { relTime, truncate } from "../lib/format";
+import { channelChipClass } from "../lib/channels";
 import { AgentAvatar } from "../components/AgentAvatar";
 
 export function SideBar({
@@ -117,7 +118,7 @@ export function SideBar({
             onClick={() => onSelectChannel(b)}
             className={`pressable flex w-full items-center gap-2.5 rounded-[14px] px-3 py-2.5 text-left ${activeChannelBinding?.id === b.id ? "bg-bg-sunken" : "hover:bg-bg-sunken/50"}`}
           >
-            <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-[#25d366]/15 text-[#25d366]">
+            <span className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full ${channelChipClass(channels.find((c) => c.id === b.channelId)?.kind ?? "")}`}>
               <Send size={14} />
             </span>
             <span className="min-w-0 flex-1">

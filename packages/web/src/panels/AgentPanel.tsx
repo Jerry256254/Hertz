@@ -5,7 +5,7 @@ import { api, ApiError } from "../lib/api";
 import type { Agent, AgentLayeredMemory, ProviderConfig, Routine, SessionListItem } from "../lib/types";
 import { fmtDate, relTime } from "../lib/format";
 import { AgentAvatar } from "../components/AgentAvatar";
-import { ModelPicker } from "../components/ModelPicker";
+import { ModelFields } from "../components/ModelFields";
 import { ApprovalCard, ApprovalHistoryRow, useApprovals } from "./Approvals";
 import { MemoryView } from "../views/MemoryView";
 import { ComputerView } from "../views/ComputerView";
@@ -131,28 +131,7 @@ function ModelRow({ agent }: { agent: Agent }) {
 
   return (
     <div className="mt-2.5 w-full rounded-[16px] border border-border bg-bg-raised p-3">
-      <p className="mb-1.5 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">POSKYTOVATEL</p>
-      <select
-        value={providerId}
-        onChange={(e) => {
-          setProviderId(e.target.value);
-          const p = providers.find((x) => x.id === e.target.value);
-          if (p?.defaultModel) setModel(p.defaultModel);
-        }}
-        className="h-10 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[13px] text-fg outline-none focus:border-accent"
-      >
-        {providers.map((p) => (
-          <option key={p.id} value={p.id}>{p.label} ({p.provider})</option>
-        ))}
-      </select>
-      <p className="mb-1.5 mt-3 text-[11px] font-[700] tracking-[0.06em] text-fg-subtle">MODEL</p>
-      <ModelPicker providerConfigId={providerId} value={model} onChange={setModel} />
-      <input
-        value={model}
-        onChange={(e) => setModel(e.target.value)}
-        placeholder="…nebo napiš ID modelu ručně"
-        className="mono mt-2 h-10 w-full rounded-[12px] border border-border bg-bg-sunken px-3 text-[12.5px] text-fg outline-none focus:border-accent"
-      />
+      <ModelFields providerId={providerId} onProviderIdChange={setProviderId} model={model} onModelChange={setModel} idPrefix="panel" />
       {currentProvider && <p className="mt-1.5 text-[11.5px] text-fg-subtle">Nyní: {currentProvider.label} · {agent.model}</p>}
       {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
       <div className="mt-2.5 flex gap-2">

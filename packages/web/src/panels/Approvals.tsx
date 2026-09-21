@@ -70,7 +70,7 @@ export function ApprovalCard({ approval, compact = false }: { approval: Approval
           <div className="flex flex-wrap items-center gap-1.5">
             {payload && opMeta && (
               <span className={`rounded-full border px-2 py-0.5 text-[11px] font-[700] ${opMeta.cls}`}>
-                {payload.op} · {opMeta.label}
+                {opMeta.label}
               </span>
             )}
             <p className="text-[13.5px] font-[600] leading-snug text-fg">{approval.summary}</p>
@@ -94,7 +94,7 @@ export function ApprovalCard({ approval, compact = false }: { approval: Approval
 
       {payload && (
         <div className="mt-2.5 space-y-2">
-          <p className="mono break-all rounded-[12px] bg-[#101014] px-3 py-2 text-[12px] text-fg">{payload.hostPath}</p>
+          <p className="mono break-all rounded-[12px] bg-bg-sunken px-3 py-2 text-[12px] text-fg">{payload.hostPath}</p>
           <div className="rounded-[12px] border border-border bg-bg-sunken/60 px-3 py-2">
             <p className="text-[11px] font-[700] tracking-[0.05em] text-fg-subtle">PROČ TO AGENT CHCE</p>
             <p className="mt-0.5 text-[12.5px] leading-relaxed text-fg-muted">{payload.reason}</p>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Globe, Maximize, Monitor, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Maximize, Monitor, RefreshCw, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { Agent } from "../lib/types";
 import { Button, IconButton } from "../components/ui";
@@ -104,11 +104,6 @@ export function BrowserPanel({ agent, onClose, onTakeoverDone }: { agent: Agent;
             </p>
           </div>
           <IconButton title="Zavřít" onClick={onClose}><X size={15} /></IconButton>
-        </div>
-        <div className="mt-2 flex gap-1.5 overflow-x-auto">
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[12px] text-fg-muted">
-            <Globe size={12} /> desktop
-          </span>
         </div>
         <Button size="sm" variant="primary" className="mt-2.5 w-full" onClick={openInNewTab}>
           Převzít kontrolu nad prohlížečem

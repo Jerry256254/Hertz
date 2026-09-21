@@ -49,7 +49,7 @@ export function ModelPicker({
   }, [scanned, query, value]);
 
   if (!providerConfigId) {
-    return <p className="text-xs text-fg-subtle">Select a provider first.</p>;
+    return <p className="text-xs text-fg-subtle">Nejdřív vyber poskytovatele.</p>;
   }
   if (modelsQuery.isLoading) {
     return <p className="text-xs text-fg-muted">Načítám dostupné modely…</p>;

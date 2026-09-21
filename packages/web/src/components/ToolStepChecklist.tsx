@@ -5,6 +5,7 @@ import {
   Globe,
   ListChecks,
   Loader2,
+  Monitor,
   Search,
   Terminal,
   TriangleAlert,
@@ -31,6 +32,8 @@ export interface ToolStep {
 
 function iconFor(name: string): LucideIcon {
   if (name.startsWith("mcp__")) return Globe;
+  if (name.startsWith("browser_")) return Globe;
+  if (name.startsWith("desktop_")) return Monitor;
   return TOOL_ICONS[name] ?? Terminal;
 }
 function labelFor(name: string): string {

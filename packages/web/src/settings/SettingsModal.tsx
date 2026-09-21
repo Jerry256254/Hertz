@@ -9,7 +9,8 @@ import { useAuth } from "../lib/auth";
 import type { Agent, ApprovalItem, ChannelConfig, McpServer, MountList, ProviderConfig, Routine, UsageRecord } from "../lib/types";
 import { relTime } from "../lib/format";
 import { DirectoryPicker } from "../components/DirectoryPicker";
-import { ModelPicker } from "../components/ModelPicker";
+import { ModelFields } from "../components/ModelFields";
+import { ProviderCreateForm } from "../components/ProviderCreateForm";
 import { AgentAvatar } from "../components/AgentAvatar";
 import { ApprovalCard } from "../panels/Approvals";
 
@@ -115,11 +116,14 @@ function GeneralSection({ agent }: { agent: Agent }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const { data: providersData } = useQuery({
-    queryKey: ["providers"],
-    queryFn: () => api.get<{ providers: ProviderConfig[] }>("/providers"),
-  });
-  const providers = providersData?.providers ?? [];
+  // The server can correct the stored model mid-run (stale id → scanned
+  // fallback); keep the form in sync so it never shows a dead value.
+  useEffect(() => {
+    setName(agent.name);
+    setModel(agent.model);
+    setProviderId(agent.providerConfigId);
+    setHeartbeat(String(agent.heartbeatMinutes));
+  }, [agent.id, agent.name, agent.model, agent.providerConfigId, agent.heartbeatMinutes]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -150,17 +154,9 @@ function GeneralSection({ agent }: { agent: Agent }) {
       <Field label="Jméno agenta">
         <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
       </Field>
-      <Field label="Poskytovatel" hint="Kde se platí za modely. Nového přidáš v záložce Poskytovatelé.">
-        <select value={providerId} onChange={(e) => setProviderId(e.target.value)} className={inputCls}>
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>{p.label} ({p.provider})</option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Model" hint="Přesný název modelu u poskytovatele, nebo vyber ze seznamu.">
-        <input value={model} onChange={(e) => setModel(e.target.value)} className={`${inputCls} mono`} placeholder="např. claude-sonnet-4-5" />
-        <div className="mt-2 rounded-[16px] border border-border bg-bg-raised p-3">
-          <ModelPicker providerConfigId={providerId} value={model} onChange={setModel} />
+      <Field label="Poskytovatel a model" hint="Kde se platí za modely. Nového poskytovatele přidáš v záložce Poskytovatelé.">
+        <div className="rounded-[16px] border border-border bg-bg-raised p-3">
+          <ModelFields providerId={providerId} onProviderIdChange={setProviderId} model={model} onModelChange={setModel} idPrefix="settings" />
         </div>
       </Field>
       <Field label="Heartbeat (minut)" hint="Jak často se agent sám probudí a zkontroluje práci. 0 = vypnuto.">
@@ -303,11 +299,6 @@ function FoldersSection({ projectId }: { projectId: string }) {
 function ProvidersSection({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
-  const [provider, setProvider] = useState<ProviderConfig["provider"]>("anthropic");
-  const [label, setLabel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [defaultModel, setDefaultModel] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   const { data } = useQuery({
@@ -316,26 +307,6 @@ function ProvidersSection({ agent }: { agent: Agent }) {
   });
   const providers = data?.providers ?? [];
 
-  const create = useMutation({
-    mutationFn: () =>
-      api.post("/providers", {
-        provider,
-        label: label.trim(),
-        apiKey,
-        ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
-        ...(defaultModel.trim() ? { defaultModel: defaultModel.trim() } : {}),
-      }),
-    onSuccess: () => {
-      setShowAdd(false);
-      setLabel("");
-      setApiKey("");
-      setBaseUrl("");
-      setDefaultModel("");
-      setErr(null);
-      void queryClient.invalidateQueries({ queryKey: ["providers"] });
-    },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Přidání selhalo"),
-  });
   const remove = useMutation({
     mutationFn: (id: string) => api.delete(`/providers/${id}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["providers"] }),
@@ -375,25 +346,15 @@ function ProvidersSection({ agent }: { agent: Agent }) {
       ))}
 
       {showAdd ? (
-        <div className="mt-3 space-y-2.5 rounded-[16px] border border-accent/40 bg-bg-raised p-4">
-          <Field label="Typ">
-            <select value={provider} onChange={(e) => setProvider(e.target.value as ProviderConfig["provider"])} className={inputCls}>
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-              <option value="google">Google</option>
-              <option value="openai-compatible">OpenAI-kompatibilní (vlastní URL)</option>
-            </select>
-          </Field>
-          <Field label="Název"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="např. Můj Anthropic" className={inputCls} /></Field>
-          <Field label="API klíč"><input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" placeholder="sk-…" className={inputCls} /></Field>
-          {provider === "openai-compatible" && (
-            <Field label="Base URL"><input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…" className={inputCls} /></Field>
-          )}
-          <Field label="Výchozí model (nepovinné)"><input value={defaultModel} onChange={(e) => setDefaultModel(e.target.value)} placeholder="např. claude-sonnet-4-5" className={`${inputCls} mono`} /></Field>
-          <div className="flex gap-2">
-            <button onClick={() => create.mutate()} disabled={create.isPending || !label.trim()} className="pressable rounded-full bg-accent px-5 py-2 text-[13px] font-[600] text-white disabled:opacity-40">Přidat</button>
-            <button onClick={() => setShowAdd(false)} className="pressable rounded-full border border-border bg-bg-sunken px-5 py-2 text-[13px] font-[600] text-fg">Zrušit</button>
-          </div>
+        <div className="mt-3 rounded-[16px] border border-accent/40 bg-bg-raised p-4">
+          <ProviderCreateForm
+            submitLabel="Přidat"
+            onCreated={() => {
+              setShowAdd(false);
+              setErr(null);
+            }}
+            onCancel={() => setShowAdd(false)}
+          />
         </div>
       ) : (
         <button onClick={() => setShowAdd(true)} className="pressable mt-3 flex items-center gap-2 rounded-full border border-border bg-bg-raised px-5 py-2.5 text-[13.5px] font-[600] text-fg hover:bg-bg-hover">
