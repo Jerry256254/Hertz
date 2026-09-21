@@ -19,6 +19,8 @@ import { RoutineScheduler } from "./routines/routine-scheduler.js";
 import { ShellManager } from "./shells/shell-manager.js";
 import { JobQueue } from "./queue/job-queue.js";
 import { createAgentRunHandler, type RunJobsDeps } from "./runtime/run-jobs.js";
+import { enqueueAgentRun } from "./runtime/run-jobs.js";
+import { SubagentManager } from "./agents/subagents.js";
 import { reconcileOnBoot } from "./runtime/reconcile.js";
 import { ComputerManager } from "./computer/computer-manager.js";
 import { DesktopManager } from "./computer/desktop-manager.js";
@@ -44,6 +46,8 @@ export interface AppContext {
   desktop: DesktopManager;
   heartbeatScheduler: HeartbeatScheduler;
   channels: ChannelManager;
+  /** Background subagent army: spawn/track/stop, with completion handoff to the parent session. */
+  subagents: SubagentManager;
 }
 
 export async function createAppContext(dataDir?: string): Promise<AppContext> {
@@ -121,6 +125,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   // agent loop needs a ToolPort to be constructed — break the cycle with a lazy
   // getter, filled in once agentLoop exists below.
   let agentLoopRef: AgentLoopManager | undefined;
+  let subagentsRef: SubagentManager | undefined;
   const tools = createToolPort({
     db,
     paths,
@@ -135,6 +140,10 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     getAgentLoop: () => {
       if (!agentLoopRef) throw new Error("AgentLoopManager not initialized yet");
       return agentLoopRef;
+    },
+    getSubagents: () => {
+      if (!subagentsRef) throw new Error("SubagentManager not initialized yet");
+      return subagentsRef;
     },
   });
 
@@ -151,6 +160,22 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     return rows[0]?.id ?? "";
   };
 
+  // Background subagent army: isolated child sessions under the same agentId
+  // (same permissions/project/approval flow — no escalation possible), with a
+  // bounded concurrency queue and completion handoff back to the parent.
+  const subagents = new SubagentManager({
+    db,
+    agentLoop,
+    persistence,
+    queue,
+    enqueueAgentRun: (payload) => enqueueAgentRun({ queue }, payload),
+    fallbackUserId,
+  });
+  subagentsRef = subagents;
+  await subagents.recover().catch((err) => {
+    console.warn("[hertz] subagent recovery failed:", (err as Error).message);
+  });
+
   const runJobsDeps: RunJobsDeps = {
     db,
     providers,
@@ -163,6 +188,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     computer,
     audit,
     fallbackUserId,
+    subagents,
   };
   queue.register("agent_run", createAgentRunHandler(runJobsDeps));
 
@@ -187,7 +213,7 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
   const heartbeatScheduler = new HeartbeatScheduler({ db, queue, agentLoop });
   heartbeatScheduler.start();
 
-  const channels = new ChannelManager({ db, masterKey, agentLoop, persistence, queue, audit, fallbackUserId });
+  const channels = new ChannelManager({ db, masterKey, agentLoop, persistence, queue, audit, paths, desktop, fallbackUserId });
   await channels.start();
 
   return {
@@ -205,5 +231,6 @@ export async function createAppContext(dataDir?: string): Promise<AppContext> {
     desktop,
     heartbeatScheduler,
     channels,
+    subagents,
   };
 }

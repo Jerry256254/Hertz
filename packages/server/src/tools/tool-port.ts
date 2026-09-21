@@ -15,6 +15,8 @@ import { createSkillTools } from "./skill-tools.js";
 import { createBrowserTools } from "./browser-tools.js";
 import { createDesktopTools } from "./desktop-tools.js";
 import { createContextTools } from "./context-tools.js";
+import { createSubagentTools } from "./subagent-tools.js";
+import type { SubagentManager } from "../agents/subagents.js";
 import { recordToolStep } from "../memory/short-term.js";
 import { resolveAgentProjectId } from "../memory/recall.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
@@ -37,6 +39,8 @@ export interface ToolPortDeps {
   desktop: DesktopManager;
   /** Lazy: AgentLoopManager depends on ToolPort, so ToolPort can't depend on a concrete instance at construction time. */
   getAgentLoop: () => AgentLoopManager;
+  /** Lazy for the same reason: SubagentManager needs the AgentLoopManager. */
+  getSubagents: () => SubagentManager;
 }
 
 function toJsonSchema(schema: import("zod").ZodTypeAny): Record<string, unknown> {
@@ -76,8 +80,9 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const browserTools = createBrowserTools();
   const desktopTools = createDesktopTools(deps.db, deps.masterKey, deps.desktop);
   const contextTools = createContextTools(deps.db);
+  const subagentTools = createSubagentTools(deps.getSubagents);
   const allByName = new Map(
-    [...memoryTools, ...onboardingTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...vaultTools, ...skillTools, ...browserTools, ...desktopTools, ...contextTools, ASK_USER_DEF].map((t) => [t.name, t]),
+    [...memoryTools, ...onboardingTools, ...shellTools, ...approvalTools, ...hostAccessTools, ...vaultTools, ...skillTools, ...browserTools, ...desktopTools, ...contextTools, ...subagentTools, ASK_USER_DEF].map((t) => [t.name, t]),
   );
 
   const baseDefs = toProviderToolDefinitions(ALL_TOOLS);
@@ -89,12 +94,13 @@ export function createToolPort(deps: ToolPortDeps): ToolPort {
   const skillDefs = toDefs(skillTools);
   const computerDefs = [...toDefs(browserTools), ...toDefs(desktopTools)];
   const contextDefs = toDefs(contextTools);
+  const subagentDefs = toDefs(subagentTools);
   const askUserDefs = toDefs([ASK_USER_DEF]);
 
   return {
     async listDefinitions(agentId) {
       const mcpDefs = await deps.mcpRegistry.listToolDefinitions(agentId);
-      let defs = [...baseDefs, ...memoryDefs, ...onboardingDefs, ...shellDefs, ...approvalDefs, ...vaultDefs, ...skillDefs, ...computerDefs, ...contextDefs, ...mcpDefs, ...askUserDefs];
+      let defs = [...baseDefs, ...memoryDefs, ...onboardingDefs, ...shellDefs, ...approvalDefs, ...vaultDefs, ...skillDefs, ...computerDefs, ...contextDefs, ...subagentDefs, ...mcpDefs, ...askUserDefs];
       // complete_onboarding is single-use: hide it once the agent is onboarded
       // so it never wastes context or gets called twice.
       const rows = await deps.db

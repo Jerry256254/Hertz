@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronRight, Globe, Image as ImageIcon, MonitorUp, Paperclip, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
-import type { Agent, Budget, HertzSession, PersistedMessage } from "../lib/types";
+import type { Agent, Budget, HertzSession, PersistedMessage, SubagentInfo } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
 import { firstText, truncate } from "../lib/format";
 import { MessageView } from "../components/MessageView";
 import { Markdown } from "../components/Markdown";
 import { AgentAvatar } from "../components/AgentAvatar";
 import { ToolStepChecklist, type ToolStep } from "../components/ToolStepChecklist";
+import { SubagentIndicator } from "../components/SubagentIndicator";
 import { IconButton } from "../components/ui";
 
 export interface SessionDetail {
@@ -20,6 +21,7 @@ export interface SessionDetail {
   pendingQuestion: string | null;
   agent?: { id: string; name: string; mascot?: string | null } | null;
   pendingTakeover?: { reason?: string } | null;
+  subagents?: SubagentInfo[];
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -124,6 +126,7 @@ export function ChatView({
   const [fileWarning, setFileWarning] = useState<string | undefined>(undefined);
   const [takeoverError, setTakeoverError] = useState<string | undefined>(undefined);
   const [answerText, setAnswerText] = useState("");
+  const [subagents, setSubagents] = useState<SubagentInfo[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -152,12 +155,14 @@ export function ChatView({
     if (data) {
       setIsRunning(data.running);
       setIsPaused(data.paused);
+      setSubagents(data.subagents ?? []);
     }
   }, [data]);
 
   useEffect(() => {
     desktopNotifiedRef.current = false;
     stickToBottomRef.current = true;
+    setSubagents([]);
   }, [sessionId]);
 
   useEffect(() => {
@@ -188,6 +193,9 @@ export function ChatView({
         setIsRunning(false);
         setIsPaused(false);
         void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      } else if (event.type === "subagents") {
+        // Background subagents changed state — refresh the "pracují podagenti" indicator live.
+        setSubagents(event.subagents);
       } else if (event.type === "error") setRunError(event.message);
       else if (event.type === "done") {
         setIsRunning(false);
@@ -403,6 +411,9 @@ export function ChatView({
           <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-live pulse-live" : "bg-live"}`} title={isRunning ? "Pracuje" : "Připojeno"} />
         </button>
       </header>
+
+      {/* background subagents indicator */}
+      <SubagentIndicator subagents={subagents} />
 
       {/* messages */}
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto py-3">

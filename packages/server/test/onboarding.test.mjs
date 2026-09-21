@@ -168,6 +168,7 @@ describe("onboarding flow", () => {
       masterKey: Buffer.alloc(32),
       desktop: {},
       getAgentLoop: () => ({}),
+      getSubagents: () => ({}),
     });
     const beforeNames = (await port.listDefinitions("agent-1")).map((d) => d.name);
     assert.ok(beforeNames.includes("complete_onboarding"), "fresh agent must see complete_onboarding");

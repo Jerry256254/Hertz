@@ -59,6 +59,17 @@ export const DEFAULT_MAX_TURNS = 50;
 export const DEFAULT_MAX_TOKENS = 8192;
 export const DEFAULT_MAX_AUTO_CONTINUATIONS = 20;
 
+/** Compact subagent snapshot pushed to the parent session's stream so the UI can show live "background agents" state without polling. */
+export interface SubagentSummary {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "done" | "failed" | "interrupted";
+  /** Human-readable progress hint, e.g. the last tool the subagent used. */
+  progress?: string;
+  startedAt?: number;
+  finishedAt?: number;
+}
+
 export type AgentLoopEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_call"; id: string; name: string; input: unknown }
@@ -68,6 +79,7 @@ export type AgentLoopEvent =
   | { type: "awaiting_input"; question: string }
   | { type: "notice"; message: string }
   | { type: "error"; message: string }
+  | { type: "subagents"; subagents: SubagentSummary[] }
   | { type: "done" };
 
 function safeJsonParse(raw: string): unknown {
@@ -332,6 +344,15 @@ export class AgentLoopManager {
 
   private emit(sessionId: string, event: AgentLoopEvent): void {
     this.getEmitter(sessionId).emit("event", event);
+  }
+
+  /**
+   * Emits an out-of-band event to a session's stream without touching the run
+   * state — used by the server-side SubagentManager to push subagent lifecycle
+   * updates to the parent session the user is watching.
+   */
+  notify(sessionId: string, event: AgentLoopEvent): void {
+    this.emit(sessionId, event);
   }
 
   /**

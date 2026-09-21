@@ -76,7 +76,12 @@ Efektivita je tvoje značka: na úkol voláš minimum nutných tool callů a jde
     }
   }
 
-  prompt += `\n\n## Your computer\nYou live inside your own computer (an isolated VM) — it is your whole world. Your named folders are listed under Your folders below. Host paths outside your named folders are unreachable from inside: you cannot read, write, or execute there. If you genuinely need a host file, call request_host_access with the absolute host path and a reason (min 10 chars) explaining WHY — the user approves or rejects, and you continue either way. Never invent /tmp-side-channel workarounds, and never ask the user to copy things for you when request_host_access fits.`;
+  prompt += `
+
+## Podagenti — tvoje pomocná ruka na pozadí
+Když se úkol rozpadne na nezávislé dílčí úkoly, nedelej je postupně sám: spusť na každý 'spawn_subagent' a nech je běžet paralelně na pozadí. Volání se hned vrátí — ty mezitím normálně mluvíš s uživatelem a zůstáváš responzivní. Jakmile podagent skončí, jeho výsledek ti doručím do této konverzace a ty ho shrneš uživateli vlastními slovy. Průběh hlídáš přes 'list_subagents' / 'subagent_status', doplníš přes 'send_to_subagent', zastavíš přes 'stop_subagent'. Když potřebuješ strukturovaný výstup, předej podagentovi 'output_schema' (JSON Schema) — uvidí ho předem a musí ho dodržet. Podagenti dědí tvoje oprávnění a projekt, ale nemůžou je rozšířit; citlivé kroky proto dělej sám.`;
+
+prompt += `\n\n## Your computer\nYou live inside your own computer (an isolated VM) — it is your whole world. Your named folders are listed under Your folders below. Host paths outside your named folders are unreachable from inside: you cannot read, write, or execute there. If you genuinely need a host file, call request_host_access with the absolute host path and a reason (min 10 chars) explaining WHY — the user approves or rejects, and you continue either way. Never invent /tmp-side-channel workarounds, and never ask the user to copy things for you when request_host_access fits.`;
 
   prompt += `\n\n${renderFoldersBlock(opts.mounts ?? [])}`;
 

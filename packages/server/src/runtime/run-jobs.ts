@@ -11,6 +11,7 @@ import type { SandboxRegistry } from "../sandbox/sandbox-registry.js";
 import type { HertzPaths } from "../paths.js";
 import { employeeDir, ensureEmployeeDirs } from "../paths.js";
 import { buildSystemPrompt } from "../agents/system-prompt.js";
+import { SUBAGENT_EXCLUDED_TOOLS, isSubagentChildSession, type SubagentManager } from "../agents/subagents.js";
 import type { JobQueue, JobHandler } from "../queue/job-queue.js";
 import type { ComputerManager } from "../computer/computer-manager.js";
 import type { DesktopManager } from "../computer/desktop-manager.js";
@@ -56,6 +57,8 @@ export interface AgentRunJobPayload {
   userMessage?: ContentBlock[];
   /** Skip the loop's automatic memory note (heartbeats — they'd spam memory every tick). */
   suppressAutoMemory?: boolean;
+  /** Model-call budget for this run (subagents use it to cap child work). */
+  maxTurns?: number;
 }
 
 /** Per (providerConfigId, model) → supportsVision cache; providers are asked once. */
@@ -88,6 +91,8 @@ export interface RunJobsDeps {
   computer: ComputerManager;
   audit: AuditSink;
   fallbackUserId: () => Promise<string>;
+  /** Lifecycle of background subagents — notified when a child session's run ends. */
+  subagents: SubagentManager;
 }
 
 /**
@@ -157,6 +162,14 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
 
     const mode = payload.mode ?? normalizeSessionMode(session.mode);
     const excludeTools = [...(payload.excludeTools ?? [])];
+    // A subagent child runs isolated: no nested spawning, no direct line to the
+    // human. It inherits the parent's agent (permissions, project, approval
+    // flow) and can never escalate beyond it.
+    if (isSubagentChildSession(session.metadata)) {
+      for (const t of SUBAGENT_EXCLUDED_TOOLS) {
+        if (!excludeTools.includes(t)) excludeTools.push(t);
+      }
+    }
 
     const rootRows = await deps.db.select().from(projectRoots).where(eq(projectRoots.projectId, session.projectId));
     const mainRoot = rootRows.find((r) => r.rootId === "main") ?? rootRows[0];
@@ -241,6 +254,7 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
           prePersisted: prePersisted || !payload.userMessage,
           suppressAutoMemory: payload.suppressAutoMemory,
           supportsVision: await modelSupportsVision(deps, agent.providerConfigId, model),
+          maxTurns: payload.maxTurns,
         },
         payload.userMessage ?? [],
       );
@@ -251,6 +265,15 @@ export function createAgentRunHandler(deps: RunJobsDeps): JobHandler {
       if (!deps.agentLoop.isRunning(session.id)) {
         deps.sandboxRegistry.unregister(session.id);
       }
+    }
+
+    // Subagent lifecycle: validate the child's output (with one correction
+    // turn on schema mismatch) and hand the result back to the parent session.
+    // Never breaks the job — the manager treats a lost record as "not mine".
+    try {
+      await deps.subagents.handleRunFinished(session.id);
+    } catch (err) {
+      console.warn(`[hertz] subagent handoff for ${session.id} failed:`, (err as Error).message);
     }
 
     // Layered memory: distill this run's turns into atoms (L1), re-cluster

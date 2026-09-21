@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
@@ -139,9 +139,13 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       .innerJoin(projects, eq(sessions.projectId, projects.id));
     const rows =
       accessible === "all"
-        ? await base.orderBy(desc(sessions.updatedAt)).limit(200)
+        ? await base
+            .where(isNull(sessions.parentSessionId))
+            .orderBy(desc(sessions.updatedAt))
+            .limit(200)
         : await base
-            .where(inArray(sessions.projectId, [...accessible] as string[]))
+            // Subagent child sessions live under their parent session, not in the chat list.
+            .where(and(isNull(sessions.parentSessionId), inArray(sessions.projectId, [...accessible] as string[])))
             .orderBy(desc(sessions.updatedAt))
             .limit(200);
     return { sessions: rows };
@@ -150,7 +154,10 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   instance.get("/api/projects/:projectId/sessions", async (request, reply) => {
     const { projectId } = request.params as { projectId: string };
     if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
-    const rows = await ctx.db.select().from(sessions).where(eq(sessions.projectId, projectId));
+    const rows = await ctx.db
+      .select()
+      .from(sessions)
+      .where(and(isNull(sessions.parentSessionId), eq(sessions.projectId, projectId)));
     return { sessions: rows };
   });
 
@@ -178,6 +185,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       pendingQuestion: (() => { try { return session.metadata ? (JSON.parse(session.metadata).pendingQuestion as string | undefined) ?? null : null; } catch { return null; } })(),
       pendingQuestionAgentId: (() => { try { return session.metadata ? (JSON.parse(session.metadata).pendingQuestionAgentId as string | undefined) ?? null : null; } catch { return null; } })(),
       pendingTakeover: (() => { try { return session.metadata ? ((JSON.parse(session.metadata).pendingTakeover as { reason?: string } | undefined) ?? null) : null; } catch { return null; } })(),
+      // Background subagents spawned from this session — drives the "pracují podagenti" indicator in the chat UI.
+      subagents: ctx.subagents.summariesForParent(id),
       agent,
     };
   });
