@@ -20,6 +20,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Obrana v hloubce: server by už neměl posílat surový Zod JSON v `error`,
+ * ale kdyby se nějaký dostal až ke klientovi (stará verze serveru, proxy,
+ * …), nahradíme ho českou obecnou hláškou. Surový JSON se nikdy nesmí
+ * dostat do DOM.
+ */
+export function sanitizeErrorMessage(message: string): string {
+  const m = message.trim();
+  const looksLikeZodJson =
+    (m.startsWith("[") && m.endsWith("]") && m.includes('"code"')) ||
+    m.includes('"code":"too_small"') ||
+    m.includes('"path":[');
+  if (looksLikeZodJson) return "Zadané údaje nejsou v pořádku, zkontroluj je prosím.";
+  return message;
+}
+
 let unauthorizedHandler: (() => void) | null = null;
 let unauthorizedFired = false;
 
@@ -69,7 +85,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     } catch {
       // ignore
     }
-    throw new ApiError(res.status, message, { code, guideUrl, action });
+    throw new ApiError(res.status, sanitizeErrorMessage(message), { code, guideUrl, action });
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

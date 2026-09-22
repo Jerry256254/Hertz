@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import path from "node:path";
 import type { AppContext } from "../context.js";
 import { connectorOptOuts, mcpServers, oauthApps } from "../db/schema.js";
@@ -264,7 +265,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: AppContext)
       const parsed = z.enum(CONNECTOR_IDS).safeParse((request.params as { id: string }).id);
       if (!parsed.success) return reply.code(400).send({ error: "Neznámý konektor" });
       const body = policySchema.safeParse(request.body);
-      if (!body.success) return reply.code(400).send({ error: body.error.message });
+      if (!body.success) return sendZodError(reply, body.error);
 
       const rows = await rowsForConnector(ctx, parsed.data);
       if (rows.length === 0) return reply.code(404).send({ error: "Konektor není připojený" });
