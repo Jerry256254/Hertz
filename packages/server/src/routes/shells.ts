@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { agents, employeeShellGrants, employeeShells, projectRoots } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -49,7 +50,7 @@ export function registerShellRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.post("/api/agents/:agentId/shells", async (request, reply) => {
       const { agentId } = request.params as { agentId: string };
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
       const agent = agentRows[0];
@@ -73,7 +74,7 @@ export function registerShellRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.post("/api/shells/:id/grant", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = grantSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const rows = await ctx.db.select({ id: employeeShells.id }).from(employeeShells).where(eq(employeeShells.id, id)).limit(1);
       if (!rows[0]) return reply.code(404).send({ error: "Shell not found" });
@@ -107,7 +108,7 @@ export function registerShellRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.post("/api/shells/:id/run", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = runSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const shellRows = await ctx.db.select().from(employeeShells).where(eq(employeeShells.id, id)).limit(1);
       const shell = shellRows[0];

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { mcpServers, oauthApps } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -350,7 +351,7 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
 
     instance.post("/api/oauth/apps", async (request, reply) => {
       const parsed = upsertAppSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const existing = await ctx.db.select({ id: oauthApps.id }).from(oauthApps).where(eq(oauthApps.service, parsed.data.service)).limit(1);
       if (existing[0]) {

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { projectRoots } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
@@ -47,7 +48,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     instance.get("/api/projects/:projectId/files", async (request, reply) => {
       const { projectId } = request.params as { projectId: string };
       const parsed = listQuerySchema.safeParse(request.query);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
 
       const built = await buildGuard(projectId, parsed.data.root, parsed.data.agentId);
@@ -79,7 +80,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     instance.post("/api/projects/:projectId/files/dir", async (request, reply) => {
       const { projectId } = request.params as { projectId: string };
       const parsed = mkdirBodySchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
 
       const built = await buildGuard(projectId, parsed.data.root, parsed.data.agentId);
@@ -111,7 +112,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     instance.get("/api/projects/:projectId/file-content", async (request, reply) => {
       const { projectId } = request.params as { projectId: string };
       const parsed = listQuerySchema.safeParse(request.query);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       if (!(await hasProjectAccess(ctx.db, request.user!, projectId))) return reply.code(403).send({ error: "No access to this project" });
 
       const built = await buildGuard(projectId, parsed.data.root, parsed.data.agentId);

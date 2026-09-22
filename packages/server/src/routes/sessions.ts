@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import { friendlyChatError } from "@kuclab-hertz/providers";
 import { computeBudget } from "@kuclab-hertz/core";
@@ -97,7 +98,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   instance.post("/api/agents/:agentId/sessions", async (request, reply) => {
     const { agentId } = request.params as { agentId: string };
     const parsed = createSessionSchema.safeParse(request.body ?? {});
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return sendZodError(reply, parsed.error);
 
     const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
     const agent = agentRows[0];
@@ -241,7 +242,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     const pSess = await ctx.db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).limit(1);
     if (pSess[0] && !(await hasProjectAccess(ctx.db, request.user!, pSess[0].projectId))) return reply.code(403).send({ error: "No access" });
     const parsed = renameSessionSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return sendZodError(reply, parsed.error);
 
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     if (!sessionRows[0]) return reply.code(404).send({ error: "Session not found" });
@@ -327,7 +328,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   instance.post("/api/sessions/:id/messages", async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = sendMessageSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return sendZodError(reply, parsed.error);
     if (!parsed.data.text && parsed.data.images.length === 0 && parsed.data.files.length === 0) {
       return reply.code(400).send({ error: "Message must include text, an image, or a file" });
     }
@@ -417,7 +418,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
   instance.post("/api/sessions/:id/answer", async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = answerSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return sendZodError(reply, parsed.error);
 
     const sessionRows = await ctx.db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const session = sessionRows[0];

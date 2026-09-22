@@ -57,6 +57,14 @@ export interface PersistedMessage {
   createdAt: Date;
   /** Files the agent attached to this message via the send_file tool. */
   attachments?: FileAttachmentInfo[];
+  /**
+   * True = interní systémová zpráva vstříknutá do smyčky agenta (guard nudge,
+   * kontext screenshotů z nástrojů, syntetické tool_result záplaty…), nikoli
+   * projev uživatele ani odpověď agenta. Takové záznamy se nikdy nesmí
+   * vyrenderovat jako uživatelská bublina — frontendy je z chatového pohledu
+   * filtrují. Zůstávají součástí kontextu pro model.
+   */
+  hidden?: boolean;
 }
 
 export interface UsageRecordInput {

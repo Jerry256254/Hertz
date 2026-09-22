@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { createHash } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { agentMemory, agentMemoryAtoms, agentMemoryScenarios, agents, approvals, channelBindings, employeeShellGrants, employeeShells, mcpServers, messages, mounts, projectRoots, sessions } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -93,7 +94,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     /** Idempotent bootstrap: returns the agent, creating it on first call (setup wizard). */
     instance.post("/api/agent/ensure", async (request, reply) => {
       const parsed = ensureAgentSchema.safeParse(request.body ?? {});
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       // No project picker in the UI anymore — the agent lives in the one
       // implicit workspace; an explicit projectId is still honored for API/CLI callers.
       const projectId = parsed.data.projectId ?? (await ensureDefaultProject(ctx));
@@ -115,7 +116,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.patch("/api/agents/:id", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = updateSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       if (Object.keys(parsed.data).length === 0) return reply.code(400).send({ error: "Nothing to update" });
 
       const rows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
@@ -283,7 +284,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.post("/api/agents/:id/ensure-chat", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = ensureChatSchema.safeParse(request.body ?? {});
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       const projectId = parsed.data.projectId;
 
       const agentRows = await ctx.db.select().from(agents).where(eq(agents.id, id)).limit(1);
@@ -337,7 +338,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.post("/api/agents/:id/clear-chat", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = ensureChatSchema.safeParse(request.body ?? {});
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       const projectId = parsed.data.projectId;
       const agentCheck = await ctx.db.select({ projectId: agents.projectId }).from(agents).where(eq(agents.id, id)).limit(1);
       if (!agentCheck[0]) return reply.code(404).send({ error: "Agent not found" });
@@ -391,7 +392,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     instance.put("/api/agents/:id/skills/:name", async (request, reply) => {
       const { id, name } = request.params as { id: string; name: string };
       const parsed = skillSaveSchema.safeParse(request.body ?? {});
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       const agent = await skillAgent(ctx, id);
       if (!agent) return reply.code(404).send({ error: "Agent not found" });
       if (!(await hasProjectAccess(ctx.db, request.user!, agent.projectId))) return reply.code(403).send({ error: "No access" });

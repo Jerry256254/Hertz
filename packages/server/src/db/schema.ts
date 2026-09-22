@@ -282,6 +282,13 @@ export const messages = sqliteTable("messages", {
   })
     .notNull()
     .default("agent_turn"),
+  /**
+   * 1 = interní systémová zpráva vstříknutá do smyčky agenta (guard nudge,
+   * kontext screenshotů, syntetické tool_result záplaty…) — nikdy se nesmí
+   * renderovat jako bublina uživatele. Starší buildy takové zprávy ukládaly
+   * s rolí "user"; adaptér je při čtení zpětně označí podle textového prefixu.
+   */
+  hidden: integer("hidden").notNull().default(0),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

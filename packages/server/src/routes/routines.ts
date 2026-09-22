@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { agents, routines } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -23,7 +24,7 @@ export function registerRoutineRoutes(app: FastifyInstance, ctx: AppContext): vo
     instance.post("/api/projects/:projectId/routines", async (request, reply) => {
       const { projectId } = request.params as { projectId: string };
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const agentRows = await ctx.db.select({ id: agents.id }).from(agents).where(eq(agents.id, parsed.data.agentId)).limit(1);
       if (!agentRows[0]) return reply.code(400).send({ error: "Unknown agent" });
@@ -59,7 +60,7 @@ export function registerRoutineRoutes(app: FastifyInstance, ctx: AppContext): vo
     instance.patch("/api/routines/:id", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = updateSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const rows = await ctx.db.select().from(routines).where(eq(routines.id, id)).limit(1);
       const routine = rows[0];

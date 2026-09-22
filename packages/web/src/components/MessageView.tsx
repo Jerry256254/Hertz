@@ -1,5 +1,6 @@
 import { ChevronRight, Minimize2 } from "lucide-react";
 import type { PersistedMessage } from "../lib/types";
+import { isInternalMessage } from "../lib/message-visibility";
 import { fmtDateTime, fmtMsgTime } from "../lib/format";
 import { FileAttachmentCard } from "./FileAttachmentCard";
 import { Markdown } from "./Markdown";
@@ -33,6 +34,10 @@ export function MessageView({
   /** False when the next visible block has the same role — tighter spacing, squared corner, no caption. */
   lastInRun?: boolean;
 }) {
+  // Interní zprávy (guard výzvy, hidden/system) se nikdy nerenderují —
+  // nesmí vypadat jako běžná zpráva uživatele ani asistenta.
+  if (isInternalMessage(message)) return null;
+
   if (message.purpose === "summarization") {
     const text = message.content.filter((b) => b.type === "text").map((b) => (b.type === "text" ? b.text : "")).join("\n");
     return (

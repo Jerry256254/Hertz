@@ -264,11 +264,17 @@ describe("agent loop — promised artifacts must be delivered", () => {
 
     // The loop must NOT have stopped after the text-only turn.
     assert.equal(providers.modelCalls(), 5, "loop continues past the text-only 'teď ta hlavní prezentace' turn");
-    // The guard nudged the agent back to work exactly once.
-    const nudges = persistence.messages.filter(
-      (m) => m.role === "user" && m.content.some((b) => b.type === "text" && b.text.includes(ARTIFACT_NUDGE_TEXT.slice(0, 40))),
+    // The guard nudged the agent back to work exactly once — as an in-memory
+    // system-prompt injection, never as a persisted message: nothing carrying
+    // the nudge text may end up in the message history (no fake "user" bubble).
+    const persistedNudges = persistence.messages.filter((m) =>
+      m.content.some((b) => b.type === "text" && b.text.includes(ARTIFACT_NUDGE_TEXT.slice(0, 40))),
     );
-    assert.equal(nudges.length, 1, "one completion-guard nudge expected");
+    assert.equal(persistedNudges.length, 0, "guard nudge must not be persisted as a message");
+    const guardNotices = events.filter(
+      (e) => e.type === "notice" && typeof e.message === "string" && e.message.includes("Systémová kontrola"),
+    );
+    assert.equal(guardNotices.length, 1, "one completion-guard notice expected");
     // Both files were actually sent as attachments (web card / Telegram document).
     const sent = events.filter((e) => e.type === "file_sent");
     assert.deepEqual(
@@ -318,10 +324,15 @@ describe("agent loop — promised artifacts must be delivered", () => {
     unsub();
 
     assert.equal(providers.modelCalls(), MAX_ARTIFACT_NUDGES + 1, "bounded nudges, then stop");
-    const nudgeCount = persistence.messages.filter(
-      (m) => m.role === "user" && m.content.some((b) => b.type === "text" && b.text.startsWith("[Systémová kontrola dokončení")),
-    ).length;
-    assert.equal(nudgeCount, MAX_ARTIFACT_NUDGES);
+    // The guard never persists a message: the nudges surface only as notices.
+    const persistedNudges = persistence.messages.filter((m) =>
+      m.content.some((b) => b.type === "text" && b.text.startsWith("[Systémová kontrola dokončení")),
+    );
+    assert.equal(persistedNudges.length, 0, "guard nudge must not be persisted as a message");
+    const guardNotices = events.filter(
+      (e) => e.type === "notice" && typeof e.message === "string" && e.message.includes("Systémová kontrola"),
+    );
+    assert.equal(guardNotices.length, MAX_ARTIFACT_NUDGES, "one notice per guard intervention");
     // The user sees an honest message instead of a fake "hotovo".
     const honest = persistence.messages.find(
       (m) => m.role === "assistant" && m.content.some((b) => b.type === "text" && b.text.includes(ARTIFACT_GIVEUP_TEXT.slice(0, 40))),

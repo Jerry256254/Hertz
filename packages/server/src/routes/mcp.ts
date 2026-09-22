@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { agents, mcpServers } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -75,7 +76,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
 
     instance.post("/api/mcp-servers", async (request, reply) => {
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const id = newId();
       await ctx.db.insert(mcpServers).values(toRow(id, parsed.data, ctx.masterKey));
@@ -85,7 +86,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
     instance.patch("/api/mcp-servers/:id", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = updateSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const rows = await ctx.db.select({ id: mcpServers.id }).from(mcpServers).where(eq(mcpServers.id, id)).limit(1);
       if (!rows[0]) return reply.code(404).send({ error: "MCP server not found" });

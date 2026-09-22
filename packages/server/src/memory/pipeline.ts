@@ -190,7 +190,7 @@ function buildTranscript(rows: Array<typeof messages.$inferSelect>, maxChars = 6
     } catch {
       continue;
     }
-    const who = row.role === "assistant" ? "Agent" : row.senderAgentId ? "Colleague" : "User";
+    const who = row.role === "assistant" ? "Agent" : row.role === "system" ? "System" : row.senderAgentId ? "Colleague" : "User";
     const text = textOf(blocks).trim();
     if (text) lines.push(`${who}: ${text.slice(0, 1200)}`);
     for (const block of blocks) {

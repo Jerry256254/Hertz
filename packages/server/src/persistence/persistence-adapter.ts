@@ -1,24 +1,31 @@
 import { asc, eq } from "drizzle-orm";
 import type { ContentBlock } from "@kuclab-hertz/providers";
 import type { FileAttachmentInfo, PersistedMessage, PersistencePort, UsageRecordInput } from "@kuclab-hertz/core";
+import { contentLooksInternal } from "@kuclab-hertz/core";
 import type { Database } from "../db/client.js";
 import { newId } from "../db/client.js";
 import { agentMemoryAtoms, agents, messageAttachments, messages, sessions, usageRecords } from "../db/schema.js";
 import { keywordsFor } from "../memory/tokenize.js";
 
 function toPersistedMessage(row: typeof messages.$inferSelect): PersistedMessage {
+  const content = JSON.parse(row.content) as ContentBlock[];
   return {
     id: row.id,
     sessionId: row.sessionId,
     role: row.role,
-    content: JSON.parse(row.content) as ContentBlock[],
+    content,
     senderAgentId: row.senderAgentId,
     tokensIn: row.tokensIn,
-    tokensOut: row.tokensOut,
+    tokensOut: row.tokensIn,
     cachedTokensIn: row.cachedTokensIn,
     cost: row.cost,
     purpose: row.purpose,
     createdAt: row.createdAt,
+    // Zpětná kompatibilita: starší buildy persistovaly interní systémové
+    // zprávy (guard nudge aj.) s rolí "user" a bez příznaku — při čtení je
+    // podle textového prefixu označíme jako skryté, aby je UI nikdy
+    // nevyrenderovalo jako bublinu uživatele.
+    hidden: row.hidden === 1 || contentLooksInternal(content),
   };
 }
 
@@ -38,6 +45,7 @@ export function createPersistenceAdapter(db: Database): PersistencePort {
         cachedTokensIn: msg.cachedTokensIn,
         cost: msg.cost,
         purpose: msg.purpose,
+        hidden: msg.hidden ? 1 : 0,
         createdAt,
       });
       await db.update(sessions).set({ updatedAt: createdAt }).where(eq(sessions.id, msg.sessionId));

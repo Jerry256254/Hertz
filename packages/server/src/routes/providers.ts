@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import { createProviderAdapter, describeScanError, SUPPORTED_PROVIDERS, type SupportedProvider } from "@kuclab-hertz/providers";
 import type { AppContext } from "../context.js";
 import { providerConfigKeys, providerConfigs, agents } from "../db/schema.js";
@@ -33,7 +34,7 @@ export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): v
 
     instance.post("/api/providers", async (request, reply) => {
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       if (parsed.data.provider === "openai-compatible" && !parsed.data.baseUrl) {
         return reply.code(400).send({ error: "baseUrl is required for openai-compatible" });
       }
@@ -93,7 +94,7 @@ export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): v
     instance.post("/api/providers/:id/keys", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = addKeySchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const owned = await ctx.db
         .select({ id: providerConfigs.id })

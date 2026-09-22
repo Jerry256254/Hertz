@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS messages (
   cached_tokens_in INTEGER NOT NULL DEFAULT 0,
   cost REAL NOT NULL DEFAULT 0,
   purpose TEXT NOT NULL DEFAULT 'agent_turn',
+  hidden INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
@@ -423,6 +424,7 @@ const COLUMN_MIGRATIONS: string[] = [
   "ALTER TABLE agents ADD COLUMN vibe TEXT",
   "ALTER TABLE agents ADD COLUMN soul TEXT",
   "ALTER TABLE agents ADD COLUMN user_profile TEXT",
+  "ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
 ];
 
 /**

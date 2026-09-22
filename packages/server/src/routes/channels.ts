@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { newId } from "../db/client.js";
 import { agents, channelBindings, channelConfigs, projects } from "../db/schema.js";
@@ -104,7 +105,7 @@ export function registerChannelRoutes(app: FastifyInstance, ctx: AppContext): vo
     instance.post("/api/channels", async (request, reply) => {
       if (!requireAdmin(request)) return reply.code(403).send({ error: "Admin only" });
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       let botLabel: string;
       try {
@@ -138,7 +139,7 @@ export function registerChannelRoutes(app: FastifyInstance, ctx: AppContext): vo
       if (!requireAdmin(request)) return reply.code(403).send({ error: "Admin only" });
       const { id } = request.params as { id: string };
       const parsed = updateSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const rows = await ctx.db.select().from(channelConfigs).where(eq(channelConfigs.id, id)).limit(1);
       const existing = rows[0];

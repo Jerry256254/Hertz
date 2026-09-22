@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { apiTokens } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
@@ -35,7 +36,7 @@ export function registerApiTokenRoutes(app: FastifyInstance, ctx: AppContext): v
 
     instance.post("/api/tokens", async (request, reply) => {
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       const created = await createApiToken(ctx.db, request.user!.id, parsed.data.name);
       return reply.code(201).send(created);
     });

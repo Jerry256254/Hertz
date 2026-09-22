@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { projectMembers, projectRoots, projects, sessions, users } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -21,7 +22,7 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: AppContext): vo
 
     instance.post("/api/projects", async (request, reply) => {
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       let absolutePath: string;
       try {
@@ -86,7 +87,7 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: AppContext): vo
     instance.post("/api/projects/:id/members", { preHandler: requireAdmin }, async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = memberSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const existing = await ctx.db
         .select({ id: projectMembers.id })

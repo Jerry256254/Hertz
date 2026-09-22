@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { users } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -36,14 +37,14 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     instance.patch("/api/users/:id/budget", { preHandler: requireAdmin }, async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = changeBudgetSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       await ctx.db.update(users).set({ monthlyBudgetUsd: parsed.data.monthlyBudgetUsd }).where(eq(users.id, id));
       return { ok: true };
     });
 
     instance.post("/api/users", { preHandler: requireAdmin }, async (request, reply) => {
       const parsed = createUserSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const existing = await ctx.db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email)).limit(1);
       if (existing.length > 0) return reply.code(400).send({ error: "That email is already in use" });
@@ -62,7 +63,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     instance.patch("/api/users/:id/role", { preHandler: requireAdmin }, async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = changeRoleSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       if (id === request.user!.id && parsed.data.role !== "admin") {
         return reply.code(400).send({ error: "You can't demote yourself" });
       }
@@ -79,7 +80,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     instance.patch("/api/users/:id/password", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = changePasswordSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const isSelf = id === request.user!.id;
       if (!isSelf && request.user!.role !== "admin") {

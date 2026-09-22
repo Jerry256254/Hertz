@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { requireAdmin } from "../auth/plugin.js";
 
@@ -29,7 +30,7 @@ export function registerFsBrowseRoutes(app: FastifyInstance, ctx: AppContext): v
 
     instance.get("/api/fs/browse", async (request, reply) => {
       const parsed = querySchema.safeParse(request.query);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const home = os.homedir();
       const target = parsed.data.path ? path.resolve(parsed.data.path) : home;
@@ -58,7 +59,7 @@ export function registerFsBrowseRoutes(app: FastifyInstance, ctx: AppContext): v
     /** Creates a folder while picking a project root — keeps setup fully in the UI. */
     instance.post("/api/fs/mkdir", async (request, reply) => {
       const parsed = mkdirSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const target = path.resolve(parsed.data.path, parsed.data.name);
       try {

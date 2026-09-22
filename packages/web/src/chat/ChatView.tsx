@@ -5,6 +5,7 @@ import { api, ApiError } from "../lib/api";
 import type { Agent, Budget, HertzSession, PersistedMessage, SubagentInfo } from "../lib/types";
 import { subscribeToSession } from "../lib/ws-client";
 import { firstText, truncate } from "../lib/format";
+import { isInternalMessage, withoutInternalMessages } from "../lib/message-visibility";
 import { MessageView } from "../components/MessageView";
 import { Markdown } from "../components/Markdown";
 import { AgentAvatar, avatarVersionOf } from "../components/AgentAvatar";
@@ -70,7 +71,8 @@ function blockText(m: PersistedMessage): string {
 export function chatToMarkdown(title: string, agentName: string, messages: PersistedMessage[]): string {
   const lines: string[] = [`# ${title}`, "", `Agent: ${agentName}`, `Exportováno: ${new Date().toLocaleString("cs-CZ")}`, ""];
   for (const m of messages) {
-    if (m.role === "system") continue;
+    // Interní zprávy (guard výzvy, skryté/system zprávy) do exportu nepatří.
+    if (isInternalMessage(m)) continue;
     if (!isVisibleMessage(m)) continue;
     const text = blockText(m);
     const tools = m.content.filter((b): b is Extract<typeof b, { type: "tool_use" }> => b.type === "tool_use");
@@ -368,7 +370,7 @@ export function ChatView({
 
   const toolResultsById = useMemo(() => {
     const results = new Map<string, { content: string; isError?: boolean }>();
-    for (const m of data?.messages ?? []) {
+    for (const m of withoutInternalMessages(data?.messages ?? [])) {
       for (const block of m.content) {
         if (block.type === "tool_result") results.set(block.toolUseId, { content: block.content, isError: block.isError });
       }
@@ -381,7 +383,8 @@ export function ChatView({
   /** Consecutive tool-only assistant turns merge into one steps block (no more "N kroků" spam). Hidden tool-result messages are transparent to grouping. */
   const renderBlocks = useMemo(() => {
     const blocks: Array<{ key: string; messages: PersistedMessage[]; grouped: boolean }> = [];
-    for (const m of data?.messages ?? []) {
+    // Interní zprávy (completion guard, skryté/system) se v chatu nikdy nerenderují.
+    for (const m of withoutInternalMessages(data?.messages ?? [])) {
       if (!isVisibleMessage(m)) continue;
       const last = blocks[blocks.length - 1];
       if (isToolOnlyAssistant(m) && last?.grouped) {

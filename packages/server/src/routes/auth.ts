@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { users } from "../db/schema.js";
 import { verifyPassword } from "../auth/password.js";
@@ -18,7 +19,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.post("/api/auth/login", async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.message });
+      return sendZodError(reply, parsed.error);
     }
 
     const rows = await ctx.db.select().from(users).where(eq(users.email, parsed.data.email)).limit(1);

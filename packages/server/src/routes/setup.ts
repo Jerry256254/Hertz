@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import { PROVIDER_PRESETS } from "@kuclab-hertz/providers";
 import type { AppContext } from "../context.js";
 import { createUser, hasAnyUser } from "../bootstrap.js";
@@ -35,7 +36,7 @@ export function registerSetupRoutes(app: FastifyInstance, ctx: AppContext): void
       return reply.code(403).send({ error: "Setup already completed" });
     }
     const parsed = bootstrapSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return sendZodError(reply, parsed.error);
 
     const userId = await createUser(ctx, parsed.data.email, parsed.data.password, "admin");
     const token = await createSessionToken(ctx.db, userId);

@@ -185,10 +185,12 @@ export function isArtifactDeliveryPending(opts: {
   history: PersistedMessage[];
 }): boolean {
   if (opts.filesSentThisRun > 0 || sessionHasDeliveredFiles(opts.history)) return false;
-  const recent = opts.assistantTexts.slice(-3);
+  // Internal system injections are never promises — a stale guard nudge echoing
+  // through the texts must not re-trigger the guard in an unrelated run.
+  const recent = opts.assistantTexts.slice(-3).filter((t) => !textLooksInternal(t));
   // The agent explicitly said it promised no file — believe it, don't nag.
   if (recent.length > 0 && ARTIFACT_DENIAL_RE.test(recent[recent.length - 1]!)) return false;
-  const haystacks = [opts.userText, ...recent];
+  const haystacks = [opts.userText, ...recent].filter((t) => !textLooksInternal(t));
   return haystacks.some((t) => textPromisesArtifact(t));
 }
 
@@ -207,6 +209,29 @@ export const ARTIFACT_NUDGE_TEXT =
 export const ARTIFACT_GIVEUP_TEXT =
   "Slíbil jsem ti soubor (prezentaci / dokument), ale nepodařilo se mi ho dokončit a odeslat, takže ho v chatu nemáš. " +
   "Mrzí mě to — napiš mi prosím, jak mám pokračovat, nebo zkus úkol zadat jinak.";
+
+/**
+ * Textové prefixy interních systémových zpráv, které starší buildy persistovaly
+ * s rolí "user" — pro model i pro UI nerozlišitelné od zprávy od člověka.
+ * Slouží ke zpětné detekci (staré záznamy se při čtení označí hidden) a k
+ * vyřazení zastaralých injekcí z kontextu nových běhů.
+ */
+export const INTERNAL_TEXT_PREFIXES = [
+  "[Systémová kontrola dokončení",
+  "[System nudge — not from the user]",
+  "[Screenshots captured by tools",
+  "[Interrupted — the agent was restarted",
+] as const;
+
+/** True when the text looks like an internal system injection, not user/agent speech. */
+export function textLooksInternal(text: string): boolean {
+  return INTERNAL_TEXT_PREFIXES.some((p) => text.startsWith(p));
+}
+
+/** True when any text block of the message looks like an internal system injection. */
+export function contentLooksInternal(content: ContentBlock[]): boolean {
+  return content.some((b) => b.type === "text" && textLooksInternal(b.text));
+}
 
 function isTransientProviderError(err: unknown): boolean {
   if (isAbortError(err)) return false;
@@ -263,8 +288,17 @@ function toChatMessages(history: PersistedMessage[]): ChatMessage[] {
   const cutoff = history.findLastIndex((m) => m.purpose === "summarization");
   const relevant = cutoff === -1 ? history : history.slice(cutoff);
   return relevant
-    .filter((m): m is PersistedMessage & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ role: m.role, content: m.content }));
+    .filter((m) => {
+      // Stale internal injections from older builds (persisted as role "user")
+      // must never reach the model again: a leftover guard nudge made the
+      // agent echo a file promise and re-triggered the guard in a completely
+      // unrelated conversation ("ahoj" / "mas pc?"). New internal records use
+      // role "system" and stay in the model context (mapped to "user" below —
+      // providers only know user/assistant turns).
+      if (m.role === "user" && contentLooksInternal(m.content)) return false;
+      return m.role === "user" || m.role === "assistant" || m.role === "system";
+    })
+    .map((m) => ({ role: m.role === "assistant" ? ("assistant" as const) : ("user" as const), content: m.content }));
 }
 
 function extractTextSummary(blocks: ContentBlock[], maxLen: number): string {
@@ -660,9 +694,15 @@ export class AgentLoopManager {
     const nudgedSigs = new Set<string>();
     // Completion guard state: assistant texts (for artifact-promise detection),
     // files delivered via send_file, and how many times the guard already nudged.
+    // All of it is bound to THIS run only — locals die with runLoop(), so a
+    // stale guard state can never leak into a later run.
     const assistantTextsThisRun: string[] = [];
     let filesSentThisRun = 0;
     let artifactNudges = 0;
+    // The guard nudge lives here, in the run's in-memory system prompt — never
+    // persisted as a message, so it can neither render as a fake "user" bubble
+    // in the chat UI nor haunt later runs from the message history.
+    let runSystemPrompt = config.systemPrompt;
 
     while (true) {
       // Pause takes effect between turns: the current model call / tool finishes first.
@@ -701,7 +741,7 @@ export class AgentLoopManager {
 
       const req: ChatRequest = {
         model,
-        system: config.systemPrompt,
+        system: runSystemPrompt,
         messages: chatMessages,
         tools: toolDefs,
         maxTokens,
@@ -825,17 +865,12 @@ export class AgentLoopManager {
         ) {
           if (artifactNudges < MAX_ARTIFACT_NUDGES) {
             artifactNudges++;
-            await persistence.appendMessage({
-              sessionId: config.sessionId,
-              role: "user",
-              content: [{ type: "text", text: ARTIFACT_NUDGE_TEXT }],
-              senderAgentId: null,
-              tokensIn: 0,
-              tokensOut: 0,
-              cachedTokensIn: 0,
-              cost: 0,
-              purpose: "agent_turn",
-            });
+            // The nudge is injected into the system prompt for the rest of THIS
+            // run only — deliberately NOT persisted as a message. Older builds
+            // stored it as role "user", which made ChatView render it as a
+            // green user bubble and let it re-trigger the guard in later,
+            // unrelated runs via the message history.
+            runSystemPrompt += "\n\n" + ARTIFACT_NUDGE_TEXT;
             this.emit(config.sessionId, {
               type: "notice",
               message: "Systémová kontrola: agent slíbil soubor, ale neodeslal ho — vracím ho do práce.",
@@ -901,9 +936,12 @@ export class AgentLoopManager {
               ? raw.question.trim()
               : "(the agent wants your input)";
           this.emit(config.sessionId, { type: "tool_call", id: t.id, name: t.name, input });
+          // Synthetic tool_result keeping the history provider-valid — internal
+          // plumbing, not a user message.
           await persistence.appendMessage({
             sessionId: config.sessionId,
-            role: "user",
+            role: "system",
+            hidden: true,
             content: [
               {
                 type: "tool_result",
@@ -1024,9 +1062,12 @@ export class AgentLoopManager {
         return;
       }
       if (spinNudge) {
+        // Internal steering for the model — never a user message. role "system"
+        // + hidden keeps it out of the chat UI while staying in the model context.
         await persistence.appendMessage({
           sessionId: config.sessionId,
-          role: "user",
+          role: "system",
+          hidden: true,
           content: [{ type: "text", text: `[System nudge — not from the user] ${spinNudge}` }],
           senderAgentId: null,
           tokensIn: 0,
@@ -1045,9 +1086,11 @@ export class AgentLoopManager {
           mimeType: a.mimeType,
           data: a.data,
         }));
+        // Internal tool context for the model — screenshots are not user speech.
         await persistence.appendMessage({
           sessionId: config.sessionId,
-          role: "user",
+          role: "system",
+          hidden: true,
           content: [
             { type: "text", text: "[Screenshots captured by tools — read them visually]" },
             ...imageBlocks,
@@ -1113,6 +1156,9 @@ export class AgentLoopManager {
     const history = await this.deps.persistence.listMessages(sessionId);
     const snapshotIndex = snapshotId ? history.findIndex((m) => m.id === snapshotId) : -1;
     for (const message of history.slice(snapshotIndex + 1)) {
+      // Hidden records are internal system injections — never inbound user input
+      // (older builds persisted some of them as role "user").
+      if (message.hidden) continue;
       if (message.role !== "user") continue;
       if (message.content.some((b) => b.type === "text" || b.type === "image")) return true;
     }
@@ -1141,9 +1187,12 @@ export async function repairSessionHistory(persistence: PersistencePort, session
   const missing = allToolUses.filter((id) => !covered.has(id));
   if (missing.length === 0) return false;
 
+  // Synthetic "interrupted" results so the history is valid again — internal
+  // plumbing, not user speech.
   await persistence.appendMessage({
     sessionId,
-    role: "user",
+    role: "system",
+    hidden: true,
     content: missing.map((id) => ({
       type: "tool_result" as const,
       toolUseId: id,

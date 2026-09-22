@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { agents, approvals, projectMembers, projects, sessions, users } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
@@ -65,7 +66,7 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: AppContext): v
     instance.post("/api/approvals/:id/decision", async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = decisionSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       // Authorization: only someone with access to the approval's project may decide it.
       const pending = await ctx.db

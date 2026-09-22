@@ -164,6 +164,16 @@ export interface PersistedMessage {
   createdAt: string;
   /** Files the agent attached to this message via the send_file tool. */
   attachments?: MessageAttachment[];
+  /**
+   * Interní skrytá zpráva (např. systémová výzva completion guardu) — frontend
+   * ji nikdy nerenderuje v uživatelském chatu.
+   */
+  hidden?: boolean;
+  /**
+   * Explicitní příznak viditelnosti; `false` = zprávu v chatu nezobrazovat.
+   * Pokud není nastaveno, zprávy se zobrazují normálně.
+   */
+  visible?: boolean;
 }
 
 /** A file the agent delivered to the user — downloadable by id. */

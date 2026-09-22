@@ -3,6 +3,7 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { agents, mounts, projectRoots } from "../db/schema.js";
 import { newId } from "../db/client.js";
@@ -60,7 +61,7 @@ export function registerMountRoutes(app: FastifyInstance, ctx: Pick<AppContext, 
         return reply.code(403).send({ error: "No access to this project" });
       }
       const parsed = createSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const nameError = validateMountName(parsed.data.name);
       if (nameError) return reply.code(400).send({ error: nameError });
@@ -129,7 +130,7 @@ export function registerMountRoutes(app: FastifyInstance, ctx: Pick<AppContext, 
         return reply.code(400).send({ error: "hostPath is immutable — delete the mount and create a new one to move it" });
       }
       const parsed = patchSchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
       if (parsed.data.name === undefined && parsed.data.purpose === undefined) {
         return reply.code(400).send({ error: "Nothing to update" });
       }

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendZodError } from "../validation/czech-errors.js";
 import type { AppContext } from "../context.js";
 import { usageRecords } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
@@ -14,7 +15,7 @@ export function registerUsageRoutes(app: FastifyInstance, ctx: AppContext): void
 
     instance.get("/api/usage", async (request, reply) => {
       const parsed = querySchema.safeParse(request.query);
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+      if (!parsed.success) return sendZodError(reply, parsed.error);
 
       const rows = parsed.data.sessionId
         ? await ctx.db
